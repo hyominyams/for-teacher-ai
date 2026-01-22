@@ -1,70 +1,39 @@
----
-trigger: always_on
-glob: "**/*"
-description: "For Teacher AI 프로젝트의 핵심 규칙 및 컨텍스트 정의"
----
-
-# For Teacher AI - Project Rules
+# For Teacher AI - Project Rules (v2.0)
 
 ## 1. 프로젝트 개요 (Project Overview)
 - **제품명**: For Teacher AI
-- **목표**: 교사가 생활기록부를 쉽고 빠르게 작성하도록 돕는 웹 애플리케이션.
-- **Phase 1 범위**:
-  - **핵심 기능**: 로그인/회원가입, 메인 대시보드, **행동특성 및 종합의견(Behavior Specifics)** 생성 기능.
-  - **UI 제공 (기능 미구현)**: 교과 세특(Subject), 창의적 체험활동(Creative), 업무 문서(Docs) -> 이들은 "준비중"으로 표시.
-- **타겟 사용자**: 초/중/고 교사.
+- **목적**: 교사의 생활기록부 작성 효율을 극대화하는 AI 기반 작업 플랫폼.
+- **Phase 1 집중 범위**: 행동특성 및 종합의견 생성 기능 구현 및 저장 시스템 구축.
 
-## 2. 기술 스택 (Tech Stack)
-- **Framework**: Next.js 16+ (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS v4
-  - *Note*: 사용자 글로벌 룰의 "Vanilla CSS" 원칙보다 프로젝트에 이미 설치된 Tailwind 설정을 우선함.
-- **UI Library**: Shadcn/ui (Radix UI 기반), Lucide React.
-- **Backend/Auth**: Supabase (Authentication, PostgreSQL, RLS).
-- **Deploy**: Vercel (권장).
+## 2. 인터페이스 및 UX 규칙 (UI/UX Rules)
+- **메인 대시보드 (`/app`)**:
+  - 간결한 선택 허브 페이지. (철학적 랜딩 페이지보다 단순하게 구성)
+  - 4대 서비스 카드 배치: 행동특성(활성), 교과세특/창체/업무문서(Waiting).
+  - 하단 익스텐션 배너: 나이스 연동용 크롬 익스텐션 안내 및 링크.
+- **작업 페이지 (`/app/behavior` 등)**:
+  - **좌/우 분할 레이아웃**: 좌측(입력 및 설정), 우측(결과 카드) 각각 독립 스크롤.
+  - **가시성 최우선**: 사용자가 800자 이상의 텍스트를 다루므로 대비율이 명확한 입력창과 카드 디자인 적용.
 
-## 3. 아키텍처 및 라우팅 (Architecture & Routing)
-- **페이지 구조**:
-  - `/`: 디자인 페이지 (비로그인 랜딩, 마케팅/설명 중심).
-  - `/login`: 로그인/회원가입 (Supabase Auth, 이메일+비밀번호).
-  - `/app`: 메인 대시보드 (로그인 후 진입, 4개 영역 선택).
-    - `/app/behavior`: **행동특성 페이지 (Phase 1 핵심)**. 좌측 입력 / 우측 결과 레이아웃.
-    - `/app/grade`: 교과 세특 (준비중 카드/페이지).
-    - `/app/creative`: 창체 (준비중 카드/페이지).
-    - `/app/docs`: 업무 문서 (준비중 카드/페이지).
+## 3. 기능 구현 규칙 (Functional Rules)
+- **슬롯 관리**: 
+  - 학생 수(1~40)에 따라 슬롯 동적 생성/삭제.
+  - **번호 스왑(Swap)**: 번호가 자리값이므로, 교체 시 키워드와 결과를 통째로 교환.
+  - **키워드**: 슬롯당 최소 2개 필수 입력 후 생성 가능.
+- **생성 로직**: 
+  - 슬롯 단위의 개별 API 호출 (`/api/generate`).
+  - 진행 상태 실시간 UI 반영 (`i/N`).
+- **데이터 저장**: 
+  - `behavior` 카테고리별로 사용자 한 명당 하나의 최종 저장본(`JSONB`)을 Upsert 방식으로 유지.
+  - 엑셀 다운로드 시 현재 화면의 최신 상태(수정본 포함)를 반영.
 
-- **데이터 처리**:
-  - Server Actions를 사용하여 데이터 mutation 처리.
-  - Supabase 클라이언트를 통한 데이터 조회.
+## 4. 데이터베이스 및 API (Data & API)
+- **Table**: `saved_results`
+  - `data` JSONB 구조: `students: array`, `options: object`, `metadata: object`.
+  - 학생 실명 절대 저장 금지 (번호로만 식별).
+- **Security**: Supabase RLS를 통한 사용자 본인 데이터 보호 필수.
 
-## 4. 데이터베이스 및 스키마 (Database)
-- **테이블**: `saved_results`
-- **구조**:
-  - `id`: UUID (PK)
-  - `user_id`: UUID (FK to auth.users)
-  - `category`: String (`"behavior"`, `"grade"`, `"creative"`, `"docs"`)
-  - `data`: JSONB (생성된 결과, 슬롯 정보, 키워드 등을 구조화하여 저장)
-  - `created_at`: Timestamptz
-- **보안**: RLS(Row Level Security) 필수 적용 (본인 데이터만 조회/수정 가능).
+## 5. 컴포넌트 개발 가이드
+- **Design System**: 랜딩 페이지의 프리미엄 테마를 계승하되, 기능 페이지에서는 인터랙션 속도와 가독성을 상위 가치로 둠.
+- **수동 편집**: AI 결과물은 언제든 수동 수정이 가능해야 하며, 수정 중에도 글자수 카운트가 즉시 반영되어야 함.
 
-## 5. UI/UX 가이드라인
-- **디자인 컨셉**: 교사용이지만 딱딱하지 않은, 프리미엄하고 세련된 디자인.
-- **레이아웃**: 생성형 도구의 표준인 **Left Input / Right Output** 구조 준수.
-- **반응성**: PC 환경 위주이나 모바일 대응도 고려.
-
-## 6. 개발 원칙 (Development Principles)
-- **Focus**: Phase 1에서는 무리하게 모든 기능을 구현하지 않고, "행동특성" 기능의 완성도에 집중한다.
-- **Scalability**: 데이터 구조(`saved_results`의 JSONB 활용)는 향후 카테고리 확장을 고려하여 설계한다.
-- **Privacy**: 학생의 실명 등 개인식별정보는 가능한 저장하지 않거나 암호화/최소화한다 (슬롯 번호 위주 관리).
-
-## 7. 컴포넌트 개발 및 관리 규칙 (Component Guidelines)
-- **Workflow**:
-  1. 공통 컴포넌트 파일을 생성한다.
-  2. 반드시 **Demo 페이지**에 해당 컴포넌트를 구현하여 시각적으로 확인 및 시연해야 한다.
-- **Documentation**:
-  - 각 컴포넌트 제작 후, `.agent/rules/` 내에 개별 문서(`[component-name]-rules.md` 등)를 생성하여 저장한다.
-  - **필수 포함 내용**: 디자인 의도, Props 구조, 구현 방식 등 핵심 사항.
-  - **Trigger 설정**: `trigger: model_decision`을 반드시 포함해야 한다.
-- **UI Library**: `shadcn/ui`를 기본적으로 사용한다.
-- **Configuration**:
-  - API 키 및 민감 정보는 반드시 `.env` 환경 변수로 주입한다. (코드 내 하드코딩 금지)
+trigger: model_decision
