@@ -14,13 +14,13 @@ const FEATURES = [
     title: "교과 학기말 종합의견",
     description: "교과별 평가기준 및 성취수준을 고려한 개인 맞춤형 시스템",
     url: "/korean_studying_hand_pencil_v2_1769013648129.png",
-    badge: "Waiting"
+    badge: "Start"
   },
   {
     title: "창의적 체험활동",
     description: "학생이 참여한 활동에 맞춰 자동 작성",
     url: "/korean_creative_activities_kids_v2_1769013677774.png",
-    badge: "Waiting"
+    badge: "Start"
   },
   {
     title: "문서작성",

@@ -46,23 +46,25 @@ export function Footer() {
                     <div className="lg:col-span-7 grid grid-cols-2 sm:grid-cols-3 gap-8">
                         <div className="space-y-6">
                             <h4 className="text-xs font-black text-foreground uppercase tracking-[0.2em]">Service</h4>
-                            <nav className="flex flex-col gap-4">
-                                <Link href="/app/behavior" className="text-sm text-muted-foreground hover:text-primary transition-colors">행동특성 기록</Link>
-                                <Link href="/app/grade" className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
-                                    교과 세특 <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold">SOON</span>
-                                </Link>
-                                <Link href="/app/creative" className="text-sm text-muted-foreground hover:text-primary transition-colors">창의적 체험활동</Link>
-                                <Link href="/app/docs" className="text-sm text-muted-foreground hover:text-primary transition-colors">업무 자동화</Link>
+                            <nav className="flex flex-col gap-4 select-none">
+                                <span className="text-sm text-muted-foreground/50 cursor-default">행동특성 및 종합의견</span>
+                                <span className="text-sm text-muted-foreground/50 cursor-default flex items-center gap-2">
+                                    학기말 종합의견 <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold opacity-50">PRO</span>
+                                </span>
+                                <span className="text-sm text-muted-foreground/50 cursor-default">창의적 체험활동</span>
+                                <span className="text-sm text-muted-foreground/50 cursor-default">문서 작성</span>
                             </nav>
                         </div>
 
                         <div className="space-y-6">
                             <h4 className="text-xs font-black text-foreground uppercase tracking-[0.2em]">Resource</h4>
                             <nav className="flex flex-col gap-4">
-                                <Link href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">가이드북</Link>
-                                <Link href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">자주 묻는 질문</Link>
-                                <Link href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">업데이트 소식</Link>
-                                <Link href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">커뮤니티</Link>
+                                <Link href="/app/resource/guide" className="text-sm text-muted-foreground hover:text-primary transition-colors">가이드북</Link>
+                                <Link href="/app/resource/faq" className="text-sm text-muted-foreground hover:text-primary transition-colors">자주 묻는 질문 (FAQ)</Link>
+                                <Link href="/app/resource/updates" className="text-sm text-muted-foreground hover:text-primary transition-colors">업데이트 소식</Link>
+                                <Link href="/app/resource/contact" className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
+                                    문의하기 <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-bold group-hover:bg-primary/10 group-hover:text-primary">Waiting</span>
+                                </Link>
                             </nav>
                         </div>
 
