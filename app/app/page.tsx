@@ -34,11 +34,13 @@ import { supabase } from "@/lib/supabase";
 import { Student } from "@/types";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
+import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
 import { PlaceholderWorkspace } from "@/components/workspace/PlaceholderWorkspace";
 import { NavbarMain } from "@/components/layout/NavbarMain";
 import { Footer } from "@/components/layout/Footer";
 import { studentKeywordPool, defaultKeywords } from "@/lib/constants/behavior-keywords";
 import { CREATIVE_CATEGORIES } from "@/lib/constants/creative-events";
+import { SubjectGlobalConfig } from "@/types";
 
 const features = [
     {
@@ -86,6 +88,12 @@ export default function DashboardPage() {
     const [newKeywordInput, setNewKeywordInput] = useState("");
     const [isExpanded, setIsExpanded] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
+    const [subjectConfig, setSubjectConfig] = useState<SubjectGlobalConfig>({
+        schoolLevel: "elementary",
+        grade: "1",
+        subjectName: "",
+        assessments: []
+    });
 
     // User Session Profile
     useEffect(() => {
@@ -112,7 +120,7 @@ export default function DashboardPage() {
         if (!userId) return;
 
         // 지원하는 탭만 데이터를 가져옴
-        const supportedTabs = ['behavior', 'creative'];
+        const supportedTabs = ['behavior', 'creative', 'subject'];
         if (!supportedTabs.includes(activeTabId)) {
             return;
         }
@@ -133,6 +141,10 @@ export default function DashboardPage() {
                 } else if (data.data.charLimit) {
                     // 호환성 유지
                     setCharLimits(prev => ({ ...prev, [activeTabId]: data.data.charLimit }));
+                }
+
+                if (activeTabId === 'subject' && data.data.globalConfig) {
+                    setSubjectConfig(data.data.globalConfig);
                 }
             } else {
                 // 초기화
@@ -159,11 +171,15 @@ export default function DashboardPage() {
     const saveWorkLog = async (silent = false, overrideStudents?: Student[]) => {
         if (!userId) return;
 
-        const workLogData = {
+        const workLogData: any = {
             students: overrideStudents || students,
             studentCount,
             charLimits
         };
+
+        if (activeTabId === 'subject') {
+            workLogData.globalConfig = subjectConfig;
+        }
 
         const { error } = await supabase
             .from('work_logs')
@@ -193,7 +209,7 @@ export default function DashboardPage() {
         }, 3000); // 3초 뒤 자동 저장
 
         return () => clearTimeout(timer);
-    }, [students, studentCount, charLimits, userId, activeTabId]);
+    }, [students, studentCount, charLimits, userId, activeTabId, subjectConfig]);
 
     // 학생 수 변경 시 처리
     useEffect(() => {
@@ -250,7 +266,13 @@ export default function DashboardPage() {
                     term: student.officerPeriod || "",
                     role: student.officerRole || "임원아님",
                     targetChars: charLimits[activeTabId],
-                    category: activeTabId
+                    category: activeTabId,
+                    // 교과세특 전용 데이터
+                    subjectMeta: activeTabId === 'subject' ? {
+                        ...subjectConfig,
+                        individualNote: student.subjectData?.individualNote || "",
+                        studentAssessments: student.subjectData?.assessments || []
+                    } : undefined
                 })
             });
 
@@ -276,11 +298,16 @@ export default function DashboardPage() {
         const targetStudents = students.filter(s => {
             if (activeTabId === 'behavior') return s.selectedKeywords.length >= 2;
             if (activeTabId === 'creative') return (s.participatedEvents?.length || 0) > 0;
+            if (activeTabId === 'subject') return (s.subjectData?.assessments?.length || 0) > 0;
             return false;
         });
 
         if (targetStudents.length === 0) {
-            alert(activeTabId === 'behavior' ? "키워드가 2개 이상 선택된 학생이 없습니다." : "참여 행사가 선택된 학생이 없습니다.");
+            let msg = "조건을 만족하는 학생이 없습니다.";
+            if (activeTabId === 'behavior') msg = "키워드가 2개 이상 선택된 학생이 없습니다.";
+            if (activeTabId === 'creative') msg = "참여 행사가 선택된 학생이 없습니다.";
+            if (activeTabId === 'subject') msg = "평가 점수가 입력된 학생이 없습니다.";
+            alert(msg);
             return;
         }
 
@@ -303,7 +330,12 @@ export default function DashboardPage() {
                         term: student.officerPeriod || "",
                         role: student.officerRole || "임원아님",
                         targetChars: charLimits[activeTabId],
-                        category: activeTabId
+                        category: activeTabId,
+                        subjectMeta: activeTabId === 'subject' ? {
+                            ...subjectConfig,
+                            individualNote: student.subjectData?.individualNote || "",
+                            studentAssessments: student.subjectData?.assessments || []
+                        } : undefined
                     })
                 });
                 const data = await response.json();
@@ -327,6 +359,7 @@ export default function DashboardPage() {
             if (!s.selected) return false;
             if (activeTabId === 'behavior') return s.selectedKeywords.length >= 2;
             if (activeTabId === 'creative') return (s.participatedEvents?.length || 0) > 0;
+            if (activeTabId === 'subject') return (s.subjectData?.assessments?.length || 0) > 0;
             return false;
         });
 
@@ -354,7 +387,12 @@ export default function DashboardPage() {
                         term: student.officerPeriod || "",
                         role: student.officerRole || "임원아님",
                         targetChars: charLimits[activeTabId],
-                        category: activeTabId
+                        category: activeTabId,
+                        subjectMeta: activeTabId === 'subject' ? {
+                            ...subjectConfig,
+                            individualNote: student.subjectData?.individualNote || "",
+                            studentAssessments: student.subjectData?.assessments || []
+                        } : undefined
                     })
                 });
                 const data = await response.json();
@@ -381,6 +419,7 @@ export default function DashboardPage() {
             participatedEvents: [],
             officerRole: "임원아님",
             officerPeriod: "",
+            subjectData: { assessments: [], individualNote: "" },
             aiResult: "",
             isEditable: false,
             isGenerating: false
@@ -398,6 +437,7 @@ export default function DashboardPage() {
             participatedEvents: [],
             officerRole: "임원아님",
             officerPeriod: "",
+            subjectData: { assessments: [], individualNote: "" },
             aiResult: "",
             isEditable: false,
             isGenerating: false
@@ -570,6 +610,75 @@ export default function DashboardPage() {
 
                 setStudents(newStudents);
                 setStudentCount(newStudents.length);
+            } else if (activeTabId === 'subject') {
+                // 1. 평가 컬럼(평가1, 평가2...) 찾기
+                const assessmentCols = header.filter(h => h.startsWith("평가") && !isNaN(Number(h.replace("평가", ""))));
+                const noteIdx = header.findIndex(h => ["개별특이사항", "특이사항"].includes(h.replace(/\s+/g, "")));
+
+                if (noIdx === -1 || assessmentCols.length === 0) {
+                    alert("교과 CSV 헤더에는 '번호'와 최소 하나 이상의 '평가N' 컬럼이 포함되어야 합니다.");
+                    return;
+                }
+
+                // 2. config 업데이트 (평가 영역 자동 생성)
+                // 기존 config의 assessment 정보를 유지하려면 별도 로직이 필요하나,
+                // 여기서는 "양식 업로드" 개념이므로 파일 내용에 맞춰 재구성합니다.
+                // 단, 평가 문구(성취기준 등)는 CSV에 없으므로 빈 값으로 생성됩니다.
+                const newAssessments = assessmentCols.map((col, i) => ({
+                    id: crypto.randomUUID(),
+                    area: col, // 임시로 컬럼명을 영역명으로
+                    standard: "",
+                    criteria: "",
+                    competency: ""
+                }));
+
+                setSubjectConfig(prev => ({
+                    ...prev,
+                    assessments: newAssessments
+                }));
+
+                // 3. 학생 데이터 파싱
+                const newStudents: Student[] = lines.slice(1).map((line, idx): Student | null => {
+                    const cols = parseCSVLine(line);
+                    if (cols.length < 2) return null;
+
+                    const studentNo = parseInt(cols[noIdx]) || (idx + 1);
+                    const resultText = cols[resultIdx] || "";
+                    const noteText = noteIdx !== -1 ? (cols[noteIdx] || "") : "";
+
+                    // 평가 점수 매핑
+                    const studentAssessments = newAssessments.map(ass => {
+                        const colIdx = header.indexOf(ass.area);
+                        let val = colIdx !== -1 ? (cols[colIdx] || "") : "";
+                        // 유효성 검사 (상/중/하 아니면 빈값 처리)
+                        if (!["상", "중", "하"].includes(val)) val = "";
+                        return {
+                            assessmentId: ass.id,
+                            level: val as "상" | "중" | "하" | ""
+                        };
+                    });
+
+                    return {
+                        id: studentNo,
+                        name: `${studentNo}번 학생`,
+                        customKeywords: [],
+                        selectedKeywords: [],
+                        participatedEvents: [],
+                        officerRole: "임원아님",
+                        officerPeriod: "",
+                        aiResult: resultText,
+                        isGenerating: false,
+                        isEditable: !!resultText,
+                        selected: false,
+                        subjectData: {
+                            assessments: studentAssessments,
+                            individualNote: noteText
+                        }
+                    };
+                }).filter((s): s is Student => s !== null);
+
+                setStudents(newStudents);
+                setStudentCount(newStudents.length);
             }
         };
         reader.readAsText(file);
@@ -580,7 +689,6 @@ export default function DashboardPage() {
     // --- UI Rendering ---
     return (
         <div className="min-h-screen bg-[#FAFBFF]">
-            <NavbarMain />
 
             <main className="pt-32 pb-24">
                 <div className="container mx-auto px-6 max-w-7xl">
@@ -705,6 +813,73 @@ export default function DashboardPage() {
                                                 setNewKeywordInput={setNewKeywordInput}
                                                 addCustomKeyword={addCustomKeyword}
                                                 defaultKeywords={defaultKeywords}
+                                            />
+                                        </div>
+                                    ) : activeTabId === "subject" ? (
+                                        <div className="space-y-10">
+                                            <Card className="p-0 border-0 bg-white shadow-2xl shadow-slate-200/40 rounded-[3.5rem] overflow-hidden">
+                                                <div className="grid grid-cols-1 md:grid-cols-2">
+                                                    <div className="p-10 border-r border-slate-100 space-y-8 bg-slate-50/30">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 uppercase tracking-widest">
+                                                                <Target className="size-5 text-indigo-500" /> 워크스페이스 설정
+                                                            </div>
+                                                            <input
+                                                                type="file"
+                                                                id="csv-upload-subject"
+                                                                accept=".csv"
+                                                                className="hidden"
+                                                                onChange={handleFileUpload}
+                                                            />
+                                                            <Button
+                                                                variant="outline"
+                                                                onClick={() => document.getElementById('csv-upload-subject')?.click()}
+                                                                className="rounded-xl h-10 px-5 font-black bg-white text-slate-600 border-slate-200 gap-2 hover:bg-slate-50 transition-all shadow-sm text-[11px]"
+                                                            >
+                                                                양식 업로드 <Upload className="size-3.5" />
+                                                            </Button>
+                                                        </div>
+                                                        <div className="flex flex-col items-center justify-center h-24">
+                                                            <span className="text-6xl font-black text-slate-900 tracking-tighter">{studentCount}</span>
+                                                            <span className="text-xs font-bold text-slate-400 uppercase">Selected Students</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-10 space-y-8">
+                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 uppercase tracking-widest">
+                                                            <Edit3 className="size-5 text-indigo-500" /> 교과세특 글자수 가이드
+                                                        </div>
+                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                            {[100, 200, 300, 500].map(limit => (
+                                                                <button
+                                                                    key={limit}
+                                                                    onClick={() => setCharLimits(prev => ({ ...prev, subject: limit }))}
+                                                                    className={cn(
+                                                                        "h-20 rounded-[1.5rem] flex flex-col items-center justify-center gap-1 transition-all border-4",
+                                                                        charLimits.subject === limit ? "bg-indigo-500 border-indigo-500 text-white scale-105 shadow-xl shadow-indigo-200/40" : "bg-white border-slate-50 text-slate-400 hover:border-slate-200 hover:scale-105"
+                                                                    )}
+                                                                >
+                                                                    <span className="text-xl font-black">{limit}</span>
+                                                                    <span className="text-[10px] font-bold uppercase opacity-60">Char</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </Card>
+
+                                            <SubjectWorkspace
+                                                students={students}
+                                                setStudents={setStudents}
+                                                globalConfig={subjectConfig}
+                                                setGlobalConfig={setSubjectConfig}
+                                                handleGenerate={handleGenerate}
+                                                handleAllGenerate={handleAllGenerate}
+                                                handleSelectedGenerate={handleSelectedGenerate}
+                                                handleResetAll={handleResetAll}
+                                                toggleAllSelection={toggleAllSelection}
+                                                toggleStudentSelection={toggleStudentSelection}
+                                                isExpanded={isExpanded}
+                                                setIsExpanded={setIsExpanded}
                                             />
                                         </div>
                                     ) : activeTabId === "creative" ? (

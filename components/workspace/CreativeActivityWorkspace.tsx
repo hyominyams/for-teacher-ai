@@ -165,210 +165,215 @@ export const CreativeActivityWorkspace = ({
                     </div>
                 </div>
 
-                <div className="space-y-4">
-                    <div className="grid grid-cols-[40px_80px_minmax(250px,1fr)_140px_140px_minmax(400px,2fr)_120px] gap-6 px-8 py-5 bg-slate-50 rounded-2xl border border-slate-100 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 items-center">
-                        <div className="flex items-center justify-center">
-                            <input
-                                type="checkbox"
-                                onChange={toggleAllSelection}
-                                checked={students.length > 0 && students.every(s => s.selected)}
-                                className="size-5 rounded-lg border-slate-300 accent-amber-500 cursor-pointer"
-                            />
-                        </div>
-                        <div className="text-center font-black">번호</div>
-                        <div>참여 행사 (복수 선택)</div>
-                        <div className="text-center">임원 여부</div>
-                        <div className="text-center">임원 기간</div>
-                        <div>AI 결과 및 편집</div>
-                        <div className="text-center">관리 액션</div>
-                    </div>
-
-                    <div className={cn(
-                        "space-y-3 pr-2 custom-scrollbar overflow-y-auto",
-                        isExpanded ? "h-[calc(100vh-450px)]" : "h-[500px]"
-                    )}>
-                        {students.map((student) => (
-                            <div key={student.id} className={cn(
-                                "grid grid-cols-[40px_80px_minmax(250px,1fr)_140px_140px_minmax(400px,2fr)_120px] gap-6 px-8 py-6 rounded-[2rem] border transition-all items-start group/row",
-                                student.selected ? "bg-amber-50/50 border-amber-200" : "bg-white border-slate-50 hover:bg-slate-50 hover:border-slate-100"
-                            )}>
-                                <div className="flex items-center justify-center pt-3">
+                <div
+                    className="bg-amber-100/10 rounded-[2.5rem] border border-slate-100 overflow-auto custom-scrollbar relative"
+                    style={{ height: isExpanded ? "calc(100vh - 400px)" : "600px" }}
+                >
+                    <div className="min-w-max flex flex-col min-h-full">
+                        {/* Sticky Table Header */}
+                        <div className="sticky top-0 z-20 bg-slate-50 border-b border-slate-100 shadow-sm">
+                            <div className="grid grid-cols-[40px_80px_minmax(250px,1fr)_140px_140px_minmax(400px,2fr)_120px] gap-6 px-10 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 items-center">
+                                <div className="flex items-center justify-center">
                                     <input
                                         type="checkbox"
-                                        checked={student.selected}
-                                        onChange={() => toggleStudentSelection(student.id)}
+                                        onChange={toggleAllSelection}
+                                        checked={students.length > 0 && students.every(s => s.selected)}
                                         className="size-5 rounded-lg border-slate-300 accent-amber-500 cursor-pointer"
                                     />
                                 </div>
-                                <div className="text-lg font-black text-slate-900 text-center pt-2 whitespace-nowrap">{student.id}번</div>
+                                <div className="text-center font-black">번호</div>
+                                <div>참여 행사 (복수 선택)</div>
+                                <div className="text-center">임원 여부</div>
+                                <div className="text-center">임원 기간</div>
+                                <div>AI 결과 및 편집</div>
+                                <div className="text-center">관리 액션</div>
+                            </div>
+                        </div>
 
-                                <div className="flex flex-wrap gap-2 pt-1">
-                                    <AnimatePresence mode="popLayout">
-                                        {student.participatedEvents?.map((ev) => (
-                                            <motion.div
-                                                initial={{ scale: 0.8, opacity: 0 }}
-                                                animate={{ scale: 1, opacity: 1 }}
-                                                exit={{ scale: 0.8, opacity: 0 }}
-                                                key={ev}
-                                            >
-                                                <Badge variant="secondary" className="pl-3 pr-1 py-1 rounded-lg bg-amber-50 text-amber-700 border-amber-100 font-bold group/tag">
-                                                    {ev}
-                                                    <button
-                                                        onClick={() => {
-                                                            setStudents(prev => prev.map(s => s.id === student.id ? {
-                                                                ...s, participatedEvents: s.participatedEvents?.filter(e => e !== ev)
-                                                            } : s));
-                                                        }}
-                                                        className="size-5 rounded-md hover:bg-amber-100 flex items-center justify-center text-amber-400 hover:text-amber-800 transition-all ml-1"
-                                                    >
-                                                        <X className="size-3" />
-                                                    </button>
-                                                </Badge>
-                                            </motion.div>
-                                        ))}
-                                    </AnimatePresence>
-                                    <EventPicker
-                                        studentId={student.id}
-                                        selectedEvents={student.participatedEvents || []}
-                                        setStudents={setStudents}
-                                    />
-                                </div>
+                        {/* List Content */}
+                        <div className="p-6 pt-4 space-y-3">
+                            {students.map((student) => (
+                                <div key={student.id} className={cn(
+                                    "grid grid-cols-[40px_80px_minmax(250px,1fr)_140px_140px_minmax(400px,2fr)_120px] gap-6 px-8 py-6 rounded-[2rem] border transition-all items-start group/row",
+                                    student.selected ? "bg-amber-50/50 border-amber-200" : "bg-white border-slate-50 hover:bg-slate-50 hover:border-slate-100"
+                                )}>
+                                    <div className="flex items-center justify-center pt-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={student.selected}
+                                            onChange={() => toggleStudentSelection(student.id)}
+                                            className="size-5 rounded-lg border-slate-300 accent-amber-500 cursor-pointer"
+                                        />
+                                    </div>
+                                    <div className="text-lg font-black text-slate-900 text-center pt-2 whitespace-nowrap">{student.id}번</div>
 
-                                <div className="pt-1">
-                                    <Select
-                                        value={student.officerRole || "임원아님"}
-                                        onValueChange={(val) => {
-                                            setStudents(prev => prev.map(s =>
-                                                s.id === student.id ? { ...s, officerRole: val, officerPeriod: val === "임원아님" ? "" : s.officerPeriod } : s
-                                            ));
-                                        }}
-                                    >
-                                        <SelectTrigger className="w-full h-10 rounded-xl bg-white border-slate-200 font-bold text-xs ring-0 focus:ring-1 focus:ring-amber-200">
-                                            <SelectValue placeholder="임원아님" />
-                                        </SelectTrigger>
-                                        <SelectContent className="rounded-xl border-slate-100 shadow-2xl z-[10000]">
-                                            {["임원아님", "반장", "부반장", "회장", "부회장", "전교회장", "전교부회장"].map(role => (
-                                                <SelectItem key={role} value={role} className="rounded-lg font-bold text-xs py-2.5">{role}</SelectItem>
+                                    <div className="flex flex-wrap gap-2 pt-1">
+                                        <AnimatePresence mode="popLayout">
+                                            {student.participatedEvents?.map((ev) => (
+                                                <motion.div
+                                                    initial={{ scale: 0.8, opacity: 0 }}
+                                                    animate={{ scale: 1, opacity: 1 }}
+                                                    exit={{ scale: 0.8, opacity: 0 }}
+                                                    key={ev}
+                                                >
+                                                    <Badge variant="secondary" className="pl-3 pr-1 py-1 rounded-lg bg-amber-50 text-amber-700 border-amber-100 font-bold group/tag">
+                                                        {ev}
+                                                        <button
+                                                            onClick={() => {
+                                                                setStudents(prev => prev.map(s => s.id === student.id ? {
+                                                                    ...s, participatedEvents: s.participatedEvents?.filter(e => e !== ev)
+                                                                } : s));
+                                                            }}
+                                                            className="size-5 rounded-md hover:bg-amber-100 flex items-center justify-center text-amber-400 hover:text-amber-800 transition-all ml-1"
+                                                        >
+                                                            <X className="size-3" />
+                                                        </button>
+                                                    </Badge>
+                                                </motion.div>
                                             ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                                        </AnimatePresence>
+                                        <EventPicker
+                                            studentId={student.id}
+                                            selectedEvents={student.participatedEvents || []}
+                                            setStudents={setStudents}
+                                        />
+                                    </div>
 
-                                <div className="pt-1">
-                                    <input
-                                        type="text"
-                                        placeholder="예: 25.03~"
-                                        value={student.officerPeriod || ""}
-                                        disabled={(student.officerRole || "임원아님") === "임원아님"}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setStudents(prev => prev.map(s => s.id === student.id ? { ...s, officerPeriod: val } : s));
-                                        }}
-                                        className="w-full h-10 px-4 rounded-xl border border-slate-200 bg-white text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all disabled:bg-slate-50 disabled:border-slate-100 disabled:text-slate-300"
-                                    />
-                                </div>
+                                    <div className="pt-1">
+                                        <Select
+                                            value={student.officerRole || "임원아님"}
+                                            onValueChange={(val) => {
+                                                setStudents(prev => prev.map(s =>
+                                                    s.id === student.id ? { ...s, officerRole: val, officerPeriod: val === "임원아님" ? "" : s.officerPeriod } : s
+                                                ));
+                                            }}
+                                        >
+                                            <SelectTrigger className="w-full h-10 rounded-xl bg-white border-slate-200 font-bold text-xs ring-0 focus:ring-1 focus:ring-amber-200">
+                                                <SelectValue placeholder="임원아님" />
+                                            </SelectTrigger>
+                                            <SelectContent className="rounded-xl border-slate-100 shadow-2xl z-[10000]">
+                                                {["임원아님", "반장", "부반장", "회장", "부회장", "전교회장", "전교부회장"].map(role => (
+                                                    <SelectItem key={role} value={role} className="rounded-lg font-bold text-xs py-2.5">{role}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
 
-                                <div className="relative group/txt pt-1">
-                                    <div className={cn(
-                                        "p-5 rounded-2xl text-[12px] font-medium min-h-[100px] leading-[1.7] transition-all",
-                                        student.aiResult ? "bg-slate-50 text-slate-700 border border-slate-100" : "bg-slate-50/50 text-slate-300 italic border border-dashed border-slate-200"
-                                    )}>
-                                        {student.isGenerating ? (
-                                            <div className="flex flex-col gap-2.5">
-                                                <div className="h-2 w-full bg-slate-200 rounded-full animate-pulse" />
-                                                <div className="h-2 w-4/5 bg-slate-200 rounded-full animate-pulse" />
+                                    <div className="pt-1">
+                                        <input
+                                            type="text"
+                                            placeholder="예: 25.03~"
+                                            value={student.officerPeriod || ""}
+                                            disabled={(student.officerRole || "임원아님") === "임원아님"}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setStudents(prev => prev.map(s => s.id === student.id ? { ...s, officerPeriod: val } : s));
+                                            }}
+                                            className="w-full h-10 px-4 rounded-xl border border-slate-200 bg-white text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all disabled:bg-slate-50 disabled:border-slate-100 disabled:text-slate-300"
+                                        />
+                                    </div>
+
+                                    <div className="relative group/txt pt-1">
+                                        <div className={cn(
+                                            "p-5 rounded-2xl text-[12px] font-medium min-h-[100px] leading-[1.7] transition-all",
+                                            student.aiResult ? "bg-slate-50 text-slate-700 border border-slate-100" : "bg-slate-50/50 text-slate-300 italic border border-dashed border-slate-200"
+                                        )}>
+                                            {student.isGenerating ? (
+                                                <div className="flex flex-col gap-2.5">
+                                                    <div className="h-2 w-full bg-slate-200 rounded-full animate-pulse" />
+                                                    <div className="h-2 w-4/5 bg-slate-200 rounded-full animate-pulse" />
+                                                </div>
+                                            ) : student.isEditable ? (
+                                                <textarea
+                                                    value={student.aiResult}
+                                                    onChange={(e) => {
+                                                        const newVal = e.target.value;
+                                                        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, aiResult: newVal } : s));
+                                                    }}
+                                                    className="w-full min-h-[100px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0"
+                                                />
+                                            ) : (
+                                                student.aiResult || "참여 행사를 클릭하고 생성을 눌러주세요."
+                                            )}
+                                        </div>
+                                        {student.aiResult && !student.isGenerating && (
+                                            <div className="absolute top-3 right-3 opacity-0 group-hover/txt:opacity-100 transition-opacity">
+                                                <div
+                                                    onClick={() => {
+                                                        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isEditable: !s.isEditable } : s));
+                                                    }}
+                                                    className={cn(
+                                                        "size-8 rounded-lg shadow-lg border border-slate-100 flex items-center justify-center cursor-pointer transition-all hover:scale-110",
+                                                        student.isEditable ? "bg-amber-500 text-white" : "bg-white text-slate-400 hover:text-amber-500"
+                                                    )}
+                                                >
+                                                    <Edit3 className="size-3.5" />
+                                                </div>
                                             </div>
-                                        ) : student.isEditable ? (
-                                            <textarea
-                                                value={student.aiResult}
-                                                onChange={(e) => {
-                                                    const newVal = e.target.value;
-                                                    setStudents(prev => prev.map(s => s.id === student.id ? { ...s, aiResult: newVal } : s));
-                                                }}
-                                                className="w-full min-h-[100px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0"
-                                            />
-                                        ) : (
-                                            student.aiResult || "참여 행사를 클릭하고 생성을 눌러주세요."
                                         )}
                                     </div>
-                                    {student.aiResult && !student.isGenerating && (
-                                        <div className="absolute top-3 right-3 opacity-0 group-hover/txt:opacity-100 transition-opacity">
-                                            <div
-                                                onClick={() => {
-                                                    setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isEditable: !s.isEditable } : s));
-                                                }}
-                                                className={cn(
-                                                    "size-8 rounded-lg shadow-lg border border-slate-100 flex items-center justify-center cursor-pointer transition-all hover:scale-110",
-                                                    student.isEditable ? "bg-amber-500 text-white" : "bg-white text-slate-400 hover:text-amber-500"
-                                                )}
-                                            >
-                                                <Edit3 className="size-3.5" />
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
 
-                                <div className="flex flex-col gap-2 pt-1 min-w-[100px]">
-                                    <Button
-                                        onClick={() => handleGenerate(student.id)}
-                                        disabled={student.isGenerating || (student.participatedEvents?.length || 0) === 0}
-                                        className={cn(
-                                            "w-full rounded-2xl font-black h-12 px-5 gap-2 text-[13px] transition-all shadow-lg",
-                                            student.aiResult
-                                                ? "bg-amber-100 text-amber-600 hover:bg-amber-200 shadow-amber-100"
-                                                : "bg-amber-500 text-white hover:bg-amber-600 shadow-amber-200/20"
-                                        )}
-                                    >
-                                        {student.aiResult ? "재생성" : "생성"} <Sparkles className="size-3.5" />
-                                    </Button>
-                                    <button
-                                        onClick={() => {
-                                            setStudents(prev => prev.map(s => s.id === student.id ? {
-                                                ...s,
-                                                participatedEvents: [],
-                                                officerRole: "임원아님",
-                                                officerPeriod: "",
-                                                aiResult: ""
-                                            } : s));
-                                        }}
-                                        className="w-full h-11 rounded-2xl bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center gap-2 font-black text-[11px]"
-                                    >
-                                        <RotateCcw className="size-3" /> 초기화
-                                    </button>
+                                    <div className="flex flex-col gap-2 pt-1 min-w-[100px]">
+                                        <Button
+                                            onClick={() => handleGenerate(student.id)}
+                                            disabled={student.isGenerating || (student.participatedEvents?.length || 0) === 0}
+                                            className={cn(
+                                                "w-full rounded-2xl font-black h-12 px-5 gap-2 text-[13px] transition-all shadow-lg",
+                                                student.aiResult
+                                                    ? "bg-amber-100 text-amber-600 hover:bg-amber-200 shadow-amber-100"
+                                                    : "bg-amber-500 text-white hover:bg-amber-600 shadow-amber-200/20"
+                                            )}
+                                        >
+                                            {student.aiResult ? "재생성" : "생성"} <Sparkles className="size-3.5" />
+                                        </Button>
+                                        <button
+                                            onClick={() => {
+                                                setStudents(prev => prev.map(s => s.id === student.id ? {
+                                                    ...s,
+                                                    participatedEvents: [],
+                                                    officerRole: "임원아님",
+                                                    officerPeriod: "",
+                                                    aiResult: ""
+                                                } : s));
+                                            }}
+                                            className="w-full h-11 rounded-2xl bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center gap-2 font-black text-[11px]"
+                                        >
+                                            <RotateCcw className="size-3" /> 초기화
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </div>
-
-                    <div className="flex items-center justify-between py-8 px-6 bg-slate-50/50 rounded-[2.5rem] border border-slate-100">
-                        <div className="flex items-center gap-4">
-                            <div className="px-6 py-3 bg-white rounded-2xl text-sm font-black text-slate-600 border border-slate-200 shadow-sm flex items-center gap-3">
-                                <div className="size-2 rounded-full bg-amber-500 animate-pulse" />
-                                {students.filter(s => s.selected).length} Students Focused
-                            </div>
+                </div>
+                <div className="flex items-center justify-between py-8 px-6 bg-slate-50/50 rounded-[2.5rem] border border-slate-100">
+                    <div className="flex items-center gap-4">
+                        <div className="px-6 py-3 bg-white rounded-2xl text-sm font-black text-slate-600 border border-slate-200 shadow-sm flex items-center gap-3">
+                            <div className="size-2 rounded-full bg-amber-500 animate-pulse" />
+                            {students.filter(s => s.selected).length} Students Focused
                         </div>
-                        <div className="flex gap-4">
-                            <Button
-                                onClick={handleResetAll}
-                                variant="ghost"
-                                className="rounded-2xl bg-white text-slate-500 font-black h-16 px-10 hover:bg-slate-100 border border-slate-200 shadow-sm transition-all"
-                            >
-                                전체 초기화
-                            </Button>
-                            <Button
-                                onClick={handleSelectedGenerate}
-                                variant="outline"
-                                className="rounded-2xl border-2 border-slate-900 text-slate-900 font-black h-16 px-10 hover:bg-slate-50 shadow-sm gap-3 transition-all"
-                            >
-                                <UserCheck className="size-5" /> 선택 생성
-                            </Button>
-                            <Button
-                                onClick={handleAllGenerate}
-                                className="rounded-2xl bg-slate-900 text-white font-black h-16 px-12 hover:bg-slate-800 shadow-2xl shadow-slate-300 gap-4 text-lg transition-all"
-                            >
-                                <Zap className="size-5 text-amber-400" /> 전체 생성
-                            </Button>
-                        </div>
+                    </div>
+                    <div className="flex gap-4">
+                        <Button
+                            onClick={handleResetAll}
+                            variant="ghost"
+                            className="rounded-2xl bg-white text-slate-500 font-black h-16 px-10 hover:bg-slate-100 border border-slate-200 shadow-sm transition-all"
+                        >
+                            전체 초기화
+                        </Button>
+                        <Button
+                            onClick={handleSelectedGenerate}
+                            variant="outline"
+                            className="rounded-2xl border-2 border-slate-900 text-slate-900 font-black h-16 px-10 hover:bg-slate-50 shadow-sm gap-3 transition-all"
+                        >
+                            <UserCheck className="size-5" /> 선택 생성
+                        </Button>
+                        <Button
+                            onClick={handleAllGenerate}
+                            className="rounded-2xl bg-slate-900 text-white font-black h-16 px-12 hover:bg-slate-800 shadow-2xl shadow-slate-300 gap-4 text-lg transition-all"
+                        >
+                            <Zap className="size-5 text-amber-400" /> 전체 생성
+                        </Button>
                     </div>
                 </div>
             </Card>

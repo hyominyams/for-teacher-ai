@@ -9,7 +9,7 @@ const openai = new OpenAI({
 
 export async function POST(req: Request) {
     try {
-        const { keywords, targetChars, category = "behavior", role, term } = await req.json();
+        const { keywords, targetChars, category = "behavior", role, term, subjectMeta } = await req.json();
 
         // prompts 폴더에서 카테고리에 맞는 파일 읽기
         const promptPath = path.join(process.cwd(), "prompts", `${category}.md`);
@@ -28,11 +28,41 @@ export async function POST(req: Request) {
         }
 
         // 템플릿 변수 치환
-        const prompt = promptTemplate
+        let prompt = promptTemplate
             .replaceAll("[KEYWORDS]", keywords.join(", "))
             .replaceAll("[EVENTS]", keywords.join(", ")) // 창체의 경우 keywords에 행사가 들어옴
             .replaceAll("[OFFICER_INFO]", officerInfo)
             .replaceAll("[TARGET_CHARS]", targetChars.toString());
+
+        if (category === "subject") {
+            if (subjectMeta) {
+                const { schoolLevel, grade, subjectName, assessments, studentAssessments, individualNote } = subjectMeta;
+
+                const assessmentsText = (assessments || []).map((a: any) => {
+                    const studentLevel = (studentAssessments || []).find((sa: any) => sa.assessmentId === a.id)?.level || "미선택";
+                    // Skip if not selected, or handle as needed. Currently showing all connected assessments.
+                    if (studentLevel === "" || studentLevel === "none") return null;
+
+                    return `- 평가영역: ${a.area}
+  - 성취기준: ${a.standard}
+  - 평가기준: ${a.criteria}
+  - 핵심역량: ${a.competency}
+  - 성취도: ${studentLevel}`;
+                }).filter(Boolean).join("\n\n");
+
+                const subjectData = `
+학교급: ${schoolLevel}
+학년: ${grade}학년
+교과: ${subjectName}
+특이사항: ${individualNote || "없음"}
+
+[평가 상세 내역]
+${assessmentsText || "선택된 평가 항목이 없습니다."}
+                `.trim();
+
+                prompt = prompt.replace("[SUBJECT_DATA]", subjectData);
+            }
+        }
 
         const response = await openai.chat.completions.create({
             model: "gpt-4o-mini", // 더 빠르고 정확한 모델로 변경
