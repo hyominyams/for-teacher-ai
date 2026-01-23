@@ -7,6 +7,7 @@ import { Sparkles, User, LogOut, Menu, X, LayoutDashboard, Loader2 } from "lucid
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
+import { ModeToggle } from "@/components/mode-toggle"
 
 export function NavbarMain() {
     const pathname = usePathname()
@@ -58,7 +59,7 @@ export function NavbarMain() {
             className={cn(
                 "fixed top-0 left-0 right-0 z-50 transition-all duration-300",
                 isScrolled
-                    ? "bg-white/70 backdrop-blur-2xl py-3 border-b border-black/5 shadow-sm"
+                    ? "bg-white/70 dark:bg-slate-950/90 backdrop-blur-2xl py-3 border-b border-black/5 dark:border-white/5 shadow-sm"
                     : "bg-transparent py-6"
             )}
         >
@@ -94,6 +95,7 @@ export function NavbarMain() {
                 </nav>
 
                 <div className="hidden md:flex items-center gap-4">
+                    <ModeToggle />
                     <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/5 border border-black/5">
                         <User className="size-4 text-primary" />
                         <span className="text-xs font-bold text-foreground">

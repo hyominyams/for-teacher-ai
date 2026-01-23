@@ -54,6 +54,23 @@ export default function SignupPage() {
         }
     };
 
+    const handleGoogleLogin = async () => {
+        setIsLoading(true);
+        try {
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: "google",
+                options: {
+                    redirectTo: `${window.location.origin}/auth/callback`,
+                },
+            });
+
+            if (error) throw error;
+        } catch (error: any) {
+            alert(error.message || "구글 로그인 중 오류가 발생했습니다.");
+            setIsLoading(false);
+        }
+    };
+
     return (
         <main className="min-h-screen relative flex items-center justify-center p-6 overflow-hidden">
             {/* Dynamic Atmospheric Background Reused */}
@@ -94,7 +111,14 @@ export default function SignupPage() {
                         <form onSubmit={handleSignup} className="space-y-6">
                             {/* Social Login Section */}
                             <div className="space-y-4">
-                                <Button type="button" variant="outline" size="lg" className="w-full h-12 rounded-xl font-bold border-border bg-white/50 hover:bg-white transition-all shadow-sm gap-3">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="lg"
+                                    className="w-full h-12 rounded-xl font-bold border-border bg-white/50 hover:bg-white transition-all shadow-sm gap-3"
+                                    onClick={handleGoogleLogin}
+                                    disabled={isLoading}
+                                >
                                     <svg className="size-5" viewBox="0 0 24 24">
                                         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
                                         <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
@@ -103,6 +127,7 @@ export default function SignupPage() {
                                     </svg>
                                     Google로 계속하기
                                 </Button>
+
 
                                 <div className="relative">
                                     <div className="absolute inset-0 flex items-center">

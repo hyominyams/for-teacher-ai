@@ -1,7 +1,14 @@
+"use client"
+
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { Mail, Github, ExternalLink } from "lucide-react"
 
 export function Footer() {
+    const pathname = usePathname()
+    const isAuthPage = ["/login", "/signup", "/auth/callback"].includes(pathname || "")
+    if (isAuthPage) return null
+
     const currentYear = new Date().getFullYear()
 
     return (
@@ -59,10 +66,10 @@ export function Footer() {
                         <div className="space-y-6">
                             <h4 className="text-xs font-black text-foreground uppercase tracking-[0.2em]">Resource</h4>
                             <nav className="flex flex-col gap-4">
-                                <Link href="/app/resource/guide" className="text-sm text-muted-foreground hover:text-primary transition-colors">가이드북</Link>
-                                <Link href="/app/resource/faq" className="text-sm text-muted-foreground hover:text-primary transition-colors">자주 묻는 질문 (FAQ)</Link>
-                                <Link href="/app/resource/updates" className="text-sm text-muted-foreground hover:text-primary transition-colors">업데이트 소식</Link>
-                                <Link href="/app/resource/contact" className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
+                                <Link href="/resource/guide" className="text-sm text-muted-foreground hover:text-primary transition-colors">가이드북</Link>
+                                <Link href="/resource/faq" className="text-sm text-muted-foreground hover:text-primary transition-colors">자주 묻는 질문 (FAQ)</Link>
+                                <Link href="/resource/updates" className="text-sm text-muted-foreground hover:text-primary transition-colors">업데이트 소식</Link>
+                                <Link href="/resource/contact" className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-2">
                                     문의하기 <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-bold group-hover:bg-primary/10 group-hover:text-primary">Waiting</span>
                                 </Link>
                             </nav>

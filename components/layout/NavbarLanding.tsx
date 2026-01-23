@@ -7,9 +7,22 @@ import { Sparkles, User, LogOut, Menu, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
+import { supabase } from "@/lib/supabase"
+import { ArrowLeft, LayoutDashboard } from "lucide-react"
+import { ModeToggle } from "@/components/mode-toggle"
+
 export function NavbarLanding() {
     const [isScrolled, setIsScrolled] = React.useState(false)
     const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false)
+    const [isLoggedIn, setIsLoggedIn] = React.useState(false)
+
+    React.useEffect(() => {
+        const checkSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession()
+            setIsLoggedIn(!!session)
+        }
+        checkSession()
+    }, [])
 
     React.useEffect(() => {
         const handleScroll = () => {
@@ -31,12 +44,12 @@ export function NavbarLanding() {
             className={cn(
                 "fixed top-0 left-0 right-0 z-50 transition-all duration-700",
                 isScrolled
-                    ? "bg-background/40 backdrop-blur-2xl py-3 border-b border-white/5 shadow-[0_8px_32px_rgba(0,0,0,0.12)]"
+                    ? "bg-background/40 dark:bg-slate-950/80 backdrop-blur-2xl py-3 border-b border-white/5 shadow-[0_8px_32px_rgba(0,0,0,0.12)]"
                     : "bg-transparent py-6"
             )}
         >
             <div className="container mx-auto px-6 md:px-12 flex items-center justify-between">
-                <Link href="/" className="flex items-center gap-2 group tracking-tighter">
+                <Link href={isLoggedIn ? "/app" : "/"} className="flex items-center gap-2 group tracking-tighter">
                     <span className="text-xl md:text-2xl font-black text-foreground group-hover:opacity-70 transition-all duration-300">
                         FOR TEACHER <span className="text-primary italic">AI</span>
                     </span>
@@ -56,12 +69,23 @@ export function NavbarLanding() {
                 </nav>
 
                 <div className="hidden md:flex items-center gap-8">
-                    <Link href="/login" className="text-sm font-bold text-muted-foreground hover:text-foreground transition-colors">
-                        로그인
-                    </Link>
-                    <Button variant="default" className="shadow-[0_10px_30px_rgba(var(--primary-rgb),0.3)] rounded-full font-bold px-8 h-12 text-sm" asChild>
-                        <Link href="/signup">무료 시작하기</Link>
-                    </Button>
+                    <ModeToggle />
+                    {isLoggedIn ? (
+                        <Button variant="default" className="shadow-[0_10px_30px_rgba(var(--primary-rgb),0.3)] rounded-full font-bold px-8 h-12 text-sm gap-2" asChild>
+                            <Link href="/app">
+                                <LayoutDashboard className="size-4" /> 대시보드로 이동
+                            </Link>
+                        </Button>
+                    ) : (
+                        <>
+                            <Link href="/login" className="text-sm font-bold text-muted-foreground hover:text-foreground transition-colors">
+                                로그인
+                            </Link>
+                            <Button variant="default" className="shadow-[0_10px_30px_rgba(var(--primary-rgb),0.3)] rounded-full font-bold px-8 h-12 text-sm" asChild>
+                                <Link href="/signup">무료 시작하기</Link>
+                            </Button>
+                        </>
+                    )}
                 </div>
 
                 <button
@@ -90,9 +114,18 @@ export function NavbarLanding() {
                         </Link>
                     ))}
                     <div className="h-px bg-white/5 w-full" />
-                    <Button className="w-full h-14 rounded-2xl font-bold text-lg" asChild>
-                        <Link href="/signup">지금 시작하기</Link>
-                    </Button>
+                    <div className="h-px bg-white/5 w-full" />
+                    {isLoggedIn ? (
+                        <Button className="w-full h-14 rounded-2xl font-bold text-lg gap-2" asChild>
+                            <Link href="/app">
+                                <LayoutDashboard className="size-5" /> 대시보드로 이동
+                            </Link>
+                        </Button>
+                    ) : (
+                        <Button className="w-full h-14 rounded-2xl font-bold text-lg" asChild>
+                            <Link href="/signup">지금 시작하기</Link>
+                        </Button>
+                    )}
                 </div>
             </div>
         </header>

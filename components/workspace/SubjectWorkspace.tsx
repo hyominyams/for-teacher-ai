@@ -422,11 +422,11 @@ export const SubjectWorkspace = ({
                             "bg-slate-50 rounded-[2.5rem] border border-slate-100 overflow-auto custom-scrollbar relative",
                             isExpanded ? "flex-1 h-full" : "h-[600px]"
                         )}>
-                        <div className="min-w-max flex flex-col min-h-full">
+                        <div className="w-full flex flex-col min-h-full">
                             {/* Sticky Table Header */}
                             <div className="sticky top-0 z-20 bg-slate-50 border-b border-slate-100 shadow-sm">
                                 <div
-                                    className="grid gap-8 px-10 py-5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 items-center"
+                                    className="grid gap-6 px-10 py-5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 items-center"
                                     style={{ gridTemplateColumns: gridTemplateCols }}
                                 >
                                     <div className="flex items-center justify-center">
@@ -456,7 +456,7 @@ export const SubjectWorkspace = ({
                                     <div
                                         key={student.id}
                                         className={cn(
-                                            "grid gap-8 px-8 py-6 rounded-[2rem] border transition-all items-start group/row",
+                                            "grid gap-6 px-8 py-6 rounded-[2rem] border transition-all items-start group/row",
                                             student.selected ? "bg-indigo-50 border-indigo-200" : "bg-white border-slate-50 hover:bg-slate-50 hover:border-slate-100"
                                         )}
                                         style={{ gridTemplateColumns: gridTemplateCols }}

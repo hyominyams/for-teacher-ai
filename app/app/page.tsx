@@ -193,6 +193,8 @@ export default function DashboardPage() {
             });
 
         if (error) {
+            // Silence common auth/session errors
+            if (error.code === 'PGRST116' || error.message?.includes('JWT')) return;
             console.error("Save Error:", error);
             if (!silent) alert("저장 중 오류가 발생했습니다.");
         } else {
@@ -432,6 +434,7 @@ export default function DashboardPage() {
         if (!confirm("모든 입력값(키워드 및 결과)을 초기화하시겠습니까? 초기화 후 즉시 저장되므로 복구할 수 없습니다.")) return;
         const nextStudents = students.map(s => ({
             ...s,
+            selected: false,
             selectedKeywords: [],
             customKeywords: [],
             participatedEvents: [],
@@ -688,35 +691,35 @@ export default function DashboardPage() {
 
     // --- UI Rendering ---
     return (
-        <div className="min-h-screen bg-[#FAFBFF]">
+        <div className="min-h-screen bg-[#FAFBFF] dark:bg-background transition-colors duration-300">
 
             <main className="pt-32 pb-24">
                 <div className="container mx-auto px-6 max-w-7xl">
                     {/* Header Section */}
-                    <header className="flex flex-col gap-6 mb-12 border-b border-slate-200 pb-12">
+                    <header className="flex flex-col gap-6 mb-12 border-b border-slate-200 dark:border-border pb-12">
                         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                             <div className="space-y-2">
                                 <div className="flex items-center gap-2 mb-2">
                                     <div className="h-6 w-1 bg-primary rounded-full" />
-                                    <span className="text-[10px] font-black tracking-[0.4em] uppercase text-primary/60">Advanced Dashboard v2.9</span>
+                                    <span className="text-[10px] font-black tracking-[0.4em] uppercase text-primary/60 dark:text-primary/80">Advanced Dashboard v2.9</span>
                                 </div>
-                                <h2 className="text-5xl font-black tracking-tight text-slate-900 leading-tight">
+                                <h2 className="text-5xl font-black tracking-tight text-slate-900 dark:text-foreground leading-tight">
                                     Welcome <span className="text-primary">Teacher!</span>
                                 </h2>
                             </div>
 
-                            <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40">
+                            <div className="flex flex-col sm:flex-row items-center gap-4 bg-white dark:bg-card p-6 rounded-[2.5rem] border border-slate-100 dark:border-border shadow-xl shadow-slate-200/40 dark:shadow-none">
                                 <div className="flex items-center gap-6 px-4">
                                     <div className="flex flex-col items-center min-w-[80px]">
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">학생 수</span>
+                                        <span className="text-[10px] font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest mb-1">학생 수</span>
                                         <div className="flex items-center gap-4">
                                             <input
                                                 type="range" min="1" max="40"
                                                 value={studentCount}
                                                 onChange={(e) => setStudentCount(Number(e.target.value))}
-                                                className="w-24 h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-primary"
+                                                className="w-24 h-2 bg-slate-100 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary"
                                             />
-                                            <span className="text-2xl font-black text-slate-900 tracking-tighter w-8">{studentCount}</span>
+                                            <span className="text-2xl font-black text-slate-900 dark:text-foreground tracking-tighter w-8">{studentCount}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -740,11 +743,11 @@ export default function DashboardPage() {
                                     {activeTabId === "behavior" ? (
                                         <div className="space-y-10">
                                             {/* Configuration Card */}
-                                            <Card className="p-0 border-0 bg-white shadow-2xl shadow-slate-200/40 rounded-[3.5rem] overflow-hidden">
+                                            <Card className="p-0 border-0 bg-white dark:bg-card dark:border dark:border-border shadow-2xl shadow-slate-200/40 dark:shadow-none rounded-[3.5rem] overflow-hidden">
                                                 <div className="grid grid-cols-1 md:grid-cols-2">
-                                                    <div className="p-10 border-r border-slate-100 space-y-8 bg-slate-50/30">
+                                                    <div className="p-10 border-r border-slate-100 dark:border-border space-y-8 bg-slate-50/30 dark:bg-slate-900/20">
                                                         <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 uppercase tracking-widest">
+                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
                                                                 <Target className="size-5 text-primary" /> 워크스페이스 설정
                                                             </div>
                                                             <input
@@ -757,18 +760,18 @@ export default function DashboardPage() {
                                                             <Button
                                                                 variant="outline"
                                                                 onClick={() => document.getElementById('csv-upload-behavior')?.click()}
-                                                                className="rounded-xl h-10 px-5 font-black bg-white text-slate-600 border-slate-200 gap-2 hover:bg-slate-50 transition-all shadow-sm text-[11px]"
+                                                                className="rounded-xl h-10 px-5 font-black bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
                                                             >
                                                                 양식 업로드 <Upload className="size-3.5" />
                                                             </Button>
                                                         </div>
                                                         <div className="flex flex-col items-center justify-center h-24">
-                                                            <span className="text-6xl font-black text-slate-900 tracking-tighter">{studentCount}</span>
-                                                            <span className="text-xs font-bold text-slate-400 uppercase">Selected Students</span>
+                                                            <span className="text-6xl font-black text-slate-900 dark:text-foreground tracking-tighter">{studentCount}</span>
+                                                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">Selected Students</span>
                                                         </div>
                                                     </div>
                                                     <div className="p-10 space-y-8">
-                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 uppercase tracking-widest">
+                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
                                                             <Edit3 className="size-5 text-primary" /> 행동특성 글자수 가이드
                                                         </div>
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -778,7 +781,9 @@ export default function DashboardPage() {
                                                                     onClick={() => setCharLimits(prev => ({ ...prev, behavior: limit }))}
                                                                     className={cn(
                                                                         "h-20 rounded-[1.5rem] flex flex-col items-center justify-center gap-1 transition-all border-4",
-                                                                        charLimits.behavior === limit ? "bg-primary border-primary text-white scale-105 shadow-xl shadow-primary/20" : "bg-white border-slate-50 text-slate-400 hover:border-slate-200 hover:scale-105"
+                                                                        charLimits.behavior === limit
+                                                                            ? "bg-primary border-primary text-white scale-105 shadow-xl shadow-primary/20 dark:shadow-none"
+                                                                            : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 text-slate-400 dark:text-slate-500 hover:border-slate-200 dark:hover:border-slate-700 hover:scale-105"
                                                                     )}
                                                                 >
                                                                     <span className="text-xl font-black">{limit}</span>
@@ -817,11 +822,11 @@ export default function DashboardPage() {
                                         </div>
                                     ) : activeTabId === "subject" ? (
                                         <div className="space-y-10">
-                                            <Card className="p-0 border-0 bg-white shadow-2xl shadow-slate-200/40 rounded-[3.5rem] overflow-hidden">
+                                            <Card className="p-0 border-0 bg-white dark:bg-card dark:border dark:border-border shadow-2xl shadow-slate-200/40 dark:shadow-none rounded-[3.5rem] overflow-hidden">
                                                 <div className="grid grid-cols-1 md:grid-cols-2">
-                                                    <div className="p-10 border-r border-slate-100 space-y-8 bg-slate-50/30">
+                                                    <div className="p-10 border-r border-slate-100 dark:border-border space-y-8 bg-slate-50/30 dark:bg-slate-900/20">
                                                         <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 uppercase tracking-widest">
+                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
                                                                 <Target className="size-5 text-indigo-500" /> 워크스페이스 설정
                                                             </div>
                                                             <input
@@ -834,18 +839,18 @@ export default function DashboardPage() {
                                                             <Button
                                                                 variant="outline"
                                                                 onClick={() => document.getElementById('csv-upload-subject')?.click()}
-                                                                className="rounded-xl h-10 px-5 font-black bg-white text-slate-600 border-slate-200 gap-2 hover:bg-slate-50 transition-all shadow-sm text-[11px]"
+                                                                className="rounded-xl h-10 px-5 font-black bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
                                                             >
                                                                 양식 업로드 <Upload className="size-3.5" />
                                                             </Button>
                                                         </div>
                                                         <div className="flex flex-col items-center justify-center h-24">
-                                                            <span className="text-6xl font-black text-slate-900 tracking-tighter">{studentCount}</span>
-                                                            <span className="text-xs font-bold text-slate-400 uppercase">Selected Students</span>
+                                                            <span className="text-6xl font-black text-slate-900 dark:text-foreground tracking-tighter">{studentCount}</span>
+                                                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">Selected Students</span>
                                                         </div>
                                                     </div>
                                                     <div className="p-10 space-y-8">
-                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 uppercase tracking-widest">
+                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
                                                             <Edit3 className="size-5 text-indigo-500" /> 교과세특 글자수 가이드
                                                         </div>
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -855,7 +860,9 @@ export default function DashboardPage() {
                                                                     onClick={() => setCharLimits(prev => ({ ...prev, subject: limit }))}
                                                                     className={cn(
                                                                         "h-20 rounded-[1.5rem] flex flex-col items-center justify-center gap-1 transition-all border-4",
-                                                                        charLimits.subject === limit ? "bg-indigo-500 border-indigo-500 text-white scale-105 shadow-xl shadow-indigo-200/40" : "bg-white border-slate-50 text-slate-400 hover:border-slate-200 hover:scale-105"
+                                                                        charLimits.subject === limit
+                                                                            ? "bg-indigo-500 border-indigo-500 text-white scale-105 shadow-xl shadow-indigo-200/40 dark:shadow-none"
+                                                                            : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 text-slate-400 dark:text-slate-500 hover:border-slate-200 dark:hover:border-slate-700 hover:scale-105"
                                                                     )}
                                                                 >
                                                                     <span className="text-xl font-black">{limit}</span>
@@ -884,11 +891,11 @@ export default function DashboardPage() {
                                         </div>
                                     ) : activeTabId === "creative" ? (
                                         <div className="space-y-10">
-                                            <Card className="p-0 border-0 bg-white shadow-2xl shadow-slate-200/40 rounded-[3.5rem] overflow-hidden">
+                                            <Card className="p-0 border-0 bg-white dark:bg-card dark:border dark:border-border shadow-2xl shadow-slate-200/40 dark:shadow-none rounded-[3.5rem] overflow-hidden">
                                                 <div className="grid grid-cols-1 md:grid-cols-2">
-                                                    <div className="p-10 border-r border-slate-100 space-y-8 bg-slate-50/30">
+                                                    <div className="p-10 border-r border-slate-100 dark:border-border space-y-8 bg-slate-50/30 dark:bg-slate-900/20">
                                                         <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 uppercase tracking-widest">
+                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
                                                                 <Target className="size-5 text-amber-500" /> 워크스페이스 설정
                                                             </div>
                                                             <input
@@ -901,18 +908,18 @@ export default function DashboardPage() {
                                                             <Button
                                                                 variant="outline"
                                                                 onClick={() => document.getElementById('csv-upload-creative')?.click()}
-                                                                className="rounded-xl h-10 px-5 font-black bg-white text-slate-600 border-slate-200 gap-2 hover:bg-slate-50 transition-all shadow-sm text-[11px]"
+                                                                className="rounded-xl h-10 px-5 font-black bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
                                                             >
                                                                 양식 업로드 <Upload className="size-3.5" />
                                                             </Button>
                                                         </div>
                                                         <div className="flex flex-col items-center justify-center h-24">
-                                                            <span className="text-6xl font-black text-slate-900 tracking-tighter">{studentCount}</span>
-                                                            <span className="text-xs font-bold text-slate-400 uppercase">Selected Students</span>
+                                                            <span className="text-6xl font-black text-slate-900 dark:text-foreground tracking-tighter">{studentCount}</span>
+                                                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">Selected Students</span>
                                                         </div>
                                                     </div>
                                                     <div className="p-10 space-y-8">
-                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 uppercase tracking-widest">
+                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
                                                             <Edit3 className="size-5 text-amber-500" /> 창체활동 글자수 가이드
                                                         </div>
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -922,7 +929,9 @@ export default function DashboardPage() {
                                                                     onClick={() => setCharLimits(prev => ({ ...prev, creative: limit }))}
                                                                     className={cn(
                                                                         "h-20 rounded-[1.5rem] flex flex-col items-center justify-center gap-1 transition-all border-4",
-                                                                        charLimits.creative === limit ? "bg-amber-500 border-amber-500 text-white scale-105 shadow-xl shadow-amber-200/40" : "bg-white border-slate-50 text-slate-400 hover:border-slate-200 hover:scale-105"
+                                                                        charLimits.creative === limit
+                                                                            ? "bg-amber-500 border-amber-500 text-white scale-105 shadow-xl shadow-amber-200/40 dark:shadow-none"
+                                                                            : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 text-slate-400 dark:text-slate-500 hover:border-slate-200 dark:hover:border-slate-700 hover:scale-105"
                                                                     )}
                                                                 >
                                                                     <span className="text-xl font-black">{limit}</span>
@@ -974,38 +983,55 @@ export default function DashboardPage() {
                                                 onClick={() => setActiveTabId(f.id)}
                                                 className={cn(
                                                     "w-full p-6 h-28 rounded-[2.5rem] flex items-center gap-6 transition-all text-left border",
-                                                    isActive ? "bg-white border-primary shadow-2xl shadow-primary/5 ring-1 ring-primary/20" : "bg-white border-transparent text-slate-600 hover:border-slate-200"
+                                                    isActive
+                                                        ? "bg-white dark:bg-card border-primary shadow-2xl shadow-primary/5 dark:shadow-none ring-1 ring-primary/20 dark:ring-primary/40"
+                                                        : "bg-white dark:bg-slate-900/50 border-transparent dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-200 dark:hover:border-slate-700"
                                                 )}
                                             >
-                                                <div className={cn("size-14 rounded-3xl flex items-center justify-center shrink-0", isActive ? "bg-primary text-white shadow-lg shadow-primary/30" : "bg-slate-50")}>
+                                                <div className={cn("size-14 rounded-3xl flex items-center justify-center shrink-0", isActive ? "bg-primary text-white shadow-lg shadow-primary/30" : "bg-slate-50 dark:bg-slate-800")}>
                                                     <Icon className="size-7" />
                                                 </div>
                                                 <div className="flex-1">
-                                                    <span className={cn("font-black text-sm block mb-1", isActive ? "text-slate-900" : "text-slate-500")}>{f.title}</span>
-                                                    <span className="text-[10px] font-bold text-slate-300 uppercase tracking-tighter">Feature</span>
+                                                    <span className={cn("font-black text-sm block mb-1", isActive ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400")}>{f.title}</span>
+                                                    <span className="text-[10px] font-bold text-slate-300 dark:text-slate-600 uppercase tracking-tighter">Feature</span>
                                                 </div>
                                             </button>
                                         );
                                     })}
 
-                                    {/* Chrome Extension Promo */}
-                                    <div className="w-full p-6 rounded-[2.5rem] bg-slate-900 flex flex-col items-start gap-4 text-left border border-slate-800 shadow-2xl relative overflow-hidden group mt-4">
-                                        <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
-                                            <Zap className="size-24 text-white" />
+                                    {/* Chrome Extension Promo Card - Neon Dark Design */}
+                                    <div className="w-full p-11 rounded-[2.5rem] bg-[#0A101E] border border-white/5 shadow-2xl relative overflow-hidden group mt-6 text-center transition-all hover:scale-[1.01]">
+                                        {/* Radial background glow */}
+                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none" />
+
+                                        {/* Stable Badge */}
+                                        <div className="absolute top-6 right-6 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
+                                            <span className="size-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                                            <span className="text-[10px] font-bold text-slate-300">Stable</span>
                                         </div>
-                                        <div className="relative z-10 w-full">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className="flex size-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
-                                                <span className="text-sm font-black text-white">나이스에 붙여넣기</span>
+
+                                        <div className="relative z-10 flex flex-col items-center space-y-8">
+                                            {/* Neon Icon */}
+                                            <div className="relative">
+                                                <div className="absolute inset-0 bg-cyan-400 blur-2xl opacity-20 animate-pulse" />
+                                                <Zap className="size-20 text-cyan-400 stroke-[1.5] relative filter drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
                                             </div>
-                                            <p className="text-[11px] font-medium text-slate-400 leading-relaxed mb-4">
-                                                나이스에 바로 붙여넣고 싶으시면 <br />크롬 확장프로그램을 다운로드하세요.
-                                            </p>
+
+                                            <div className="space-y-4">
+                                                <h4 className="text-2xl font-black text-white tracking-tight">나이스 붙여넣기</h4>
+                                                <p className="text-[13px] font-medium text-slate-400 leading-relaxed max-w-[280px]">
+                                                    열심히 작업하신 결과를 <br />
+                                                    <span className="text-white font-bold">크롬 확장프로그램</span>을 통해 <br /> 나이스에 바로 입력하세요.
+                                                </p>
+                                            </div>
+
                                             <Button
                                                 onClick={() => alert("추후 링크 삽입 예정")}
-                                                className="w-full rounded-2xl h-10 bg-white hover:bg-slate-100 text-slate-900 font-black text-xs transition-all"
+                                                variant="outline"
+                                                className="w-full rounded-[1.25rem] h-16 border-2 border-cyan-500/40 hover:border-cyan-400 bg-transparent hover:bg-cyan-500/5 text-cyan-400 font-extrabold text-sm transition-all shadow-[0_0_20px_rgba(6,182,212,0.1)] active:scale-95 flex items-center justify-center gap-2 group/btn"
                                             >
                                                 다운로드하러가기
+                                                <ChevronRight className="size-4 group-hover/btn:translate-x-1 transition-transform" />
                                             </Button>
                                         </div>
                                     </div>
@@ -1022,6 +1048,12 @@ export default function DashboardPage() {
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
                 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+
+                @keyframes shimmer {
+                    0% { transform: translateX(-150%) skewX(-20deg); }
+                    100% { transform: translateX(150%) skewX(-20deg); }
+                }
+
                 input[type='range']::-webkit-slider-thumb {
                     width: 24px; height: 24px; border: 4px solid white;
                     box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);

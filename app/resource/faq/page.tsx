@@ -2,8 +2,6 @@
 
 import React from "react";
 import { HelpCircle, MessagesSquare } from "lucide-react";
-import { NavbarMain } from "@/components/layout/NavbarMain";
-import { Footer } from "@/components/layout/Footer";
 import {
     Accordion,
     AccordionContent,
@@ -36,32 +34,32 @@ const FAQS = [
 
 export default function FAQPage() {
     return (
-        <div className="min-h-screen bg-[#FAFBFF]">
+        <div className="min-h-screen bg-[#FAFBFF] dark:bg-background transition-colors duration-300">
             <main className="pt-32 pb-24">
                 <div className="container mx-auto px-6 max-w-4xl space-y-12">
                     {/* Header */}
                     <div className="text-center space-y-4">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 text-orange-600 text-[10px] font-black uppercase tracking-widest">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 text-[10px] font-black uppercase tracking-widest">
                             <HelpCircle className="size-3" /> Support Center
                         </div>
-                        <h1 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tight">
+                        <h1 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-foreground tracking-tight">
                             자주 묻는 <span className="text-orange-500">질문들 (FAQ)</span>
                         </h1>
-                        <p className="text-lg text-slate-500 font-medium max-w-2xl mx-auto">
+                        <p className="text-lg text-slate-500 dark:text-muted-foreground font-medium max-w-2xl mx-auto">
                             서비스 이용 중 궁금한 점을 빠르게 해결해 드립니다.
                         </p>
                     </div>
 
                     {/* Accordion */}
-                    <div className="bg-white rounded-[2.5rem] p-10 shadow-2xl shadow-slate-200/50 border border-slate-100">
+                    <div className="bg-white dark:bg-card rounded-[2.5rem] p-10 shadow-2xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-border">
                         <Accordion type="single" collapsible className="w-full space-y-4">
                             {FAQS.map((faq, idx) => (
-                                <AccordionItem key={idx} value={`item-${idx}`} className="border-b border-slate-100 last:border-0 px-4">
-                                    <AccordionTrigger className="text-lg font-bold text-slate-800 hover:text-orange-500 hover:no-underline py-6">
+                                <AccordionItem key={idx} value={`item-${idx}`} className="border-b border-slate-100 dark:border-border last:border-0 px-4">
+                                    <AccordionTrigger className="text-lg font-bold text-slate-800 dark:text-foreground hover:text-orange-500 dark:hover:text-orange-400 hover:no-underline py-6">
                                         <span className="text-left">{faq.question}</span>
                                     </AccordionTrigger>
-                                    <AccordionContent className="text-slate-500 font-medium text-base leading-relaxed pb-6">
-                                        <div className="bg-slate-50 p-6 rounded-2xl">
+                                    <AccordionContent className="text-slate-500 dark:text-slate-400 font-medium text-base leading-relaxed pb-6">
+                                        <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-2xl">
                                             {faq.answer}
                                         </div>
                                     </AccordionContent>
@@ -72,17 +70,16 @@ export default function FAQPage() {
 
                     {/* Contact CTA */}
                     <div className="text-center space-y-6 pt-10">
-                        <div className="inline-flex items-center justify-center size-16 rounded-3xl bg-white border border-slate-100 shadow-xl text-indigo-600">
+                        <div className="inline-flex items-center justify-center size-16 rounded-3xl bg-white dark:bg-card border border-slate-100 dark:border-border shadow-xl dark:shadow-none text-indigo-600 dark:text-indigo-400">
                             <MessagesSquare className="size-8" />
                         </div>
                         <div>
-                            <h3 className="text-xl font-bold text-slate-900">추가 질문이 있으신가요?</h3>
-                            <p className="text-slate-400 mt-2">1:1 문의 게시판을 통해 상세한 답변을 받아보세요.</p>
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-foreground">추가 질문이 있으신가요?</h3>
+                            <p className="text-slate-400 dark:text-slate-500 mt-2">1:1 문의 게시판을 통해 상세한 답변을 받아보세요.</p>
                         </div>
                     </div>
                 </div>
             </main>
-
         </div>
     );
 }
