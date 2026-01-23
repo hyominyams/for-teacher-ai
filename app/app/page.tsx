@@ -421,7 +421,12 @@ export default function DashboardPage() {
     };
 
     const handleAutoGenerateKeywords = () => {
+        if (!students.some(s => s.selected)) {
+            alert("선택된 학생이 없습니다.");
+            return;
+        }
         setStudents(prev => prev.map(student => {
+            if (!student.selected) return student;
             // 섞어서 2개 추출
             const shuffled = [...studentKeywordPool].sort(() => 0.5 - Math.random());
             const selected = shuffled.slice(0, 2);
@@ -435,8 +440,13 @@ export default function DashboardPage() {
     };
 
     const handleAutoGenerateEvents = () => {
+        if (!students.some(s => s.selected)) {
+            alert("선택된 학생이 없습니다.");
+            return;
+        }
         const allEvents = CREATIVE_CATEGORIES.flatMap(cat => cat.events);
         setStudents(prev => prev.map(student => {
+            if (!student.selected) return student;
             const shuffled = [...allEvents].sort(() => 0.5 - Math.random());
             const selected = shuffled.slice(0, 3);
             return {
@@ -616,7 +626,9 @@ export default function DashboardPage() {
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -20 }}
                                     transition={{ duration: 0.3 }}
+                                    className={cn(isExpanded && "!transform-none")}
                                 >
+
                                     {activeTabId === "behavior" ? (
                                         <div className="space-y-10">
                                             {/* Configuration Card */}
@@ -800,12 +812,35 @@ export default function DashboardPage() {
                                             </button>
                                         );
                                     })}
+
+                                    {/* Chrome Extension Promo */}
+                                    <div className="w-full p-6 rounded-[2.5rem] bg-slate-900 flex flex-col items-start gap-4 text-left border border-slate-800 shadow-2xl relative overflow-hidden group mt-4">
+                                        <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+                                            <Zap className="size-24 text-white" />
+                                        </div>
+                                        <div className="relative z-10 w-full">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="flex size-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
+                                                <span className="text-sm font-black text-white">나이스에 붙여넣기</span>
+                                            </div>
+                                            <p className="text-[11px] font-medium text-slate-400 leading-relaxed mb-4">
+                                                나이스에 바로 붙여넣고 싶으시면 <br />크롬 확장프로그램을 다운로드하세요.
+                                            </p>
+                                            <Button
+                                                onClick={() => alert("추후 링크 삽입 예정")}
+                                                className="w-full rounded-2xl h-10 bg-white hover:bg-slate-100 text-slate-900 font-black text-xs transition-all"
+                                            >
+                                                다운로드하러가기
+                                            </Button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </aside>
                     </div>
                 </div>
             </main>
+
 
             <style jsx global>{`
                 .custom-scrollbar::-webkit-scrollbar { width: 6px; }

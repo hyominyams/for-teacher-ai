@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
     Zap,
     Layout,
@@ -67,11 +68,39 @@ export const CreativeActivityWorkspace = ({
     setIsExpanded,
     handleAutoGenerateEvents
 }: CreativeActivityWorkspaceProps) => {
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => setMounted(true), []);
+
+    useEffect(() => {
+        if (!isExpanded) return;
+        const prevBodyOverflow = document.body.style.overflow;
+        const prevHtmlOverflow = document.documentElement.style.overflow;
+        document.body.style.overflow = "hidden";
+        document.documentElement.style.overflow = "hidden";
+        return () => {
+            document.body.style.overflow = prevBodyOverflow;
+            document.documentElement.style.overflow = prevHtmlOverflow;
+        };
+    }, [isExpanded]);
+
+    const Wrapper = ({ children }: { children: React.ReactNode }) => {
+        if (isExpanded && mounted) {
+            return createPortal(
+                <div className="fixed inset-0 z-[9999] isolate">
+                    <div className="absolute inset-0 bg-white pointer-events-auto" />
+                    {children}
+                </div>,
+                document.body
+            );
+        }
+        return <div className="space-y-8 mt-8 pb-20 transform-none">{children}</div>;
+    };
+
     return (
-        <div className="space-y-8 mt-8 pb-20">
+        <Wrapper>
             <Card className={cn(
-                "p-10 border-0 bg-white shadow-2xl shadow-slate-200/50 space-y-8 overflow-hidden transition-all duration-500",
-                isExpanded ? "fixed inset-4 z-[200] rounded-[3rem] border border-blue-100 shadow-primary/20" : "rounded-[3rem]"
+                "p-10 border-0 bg-white shadow-2xl shadow-slate-200/50 space-y-8 transition-all duration-500 relative",
+                isExpanded ? "fixed inset-4 z-[9999] rounded-[3rem] border border-blue-100 shadow-primary/20 !transform-none overflow-y-auto overscroll-contain pointer-events-auto cursor-default" : "rounded-[3rem] overflow-hidden"
             )}>
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -209,14 +238,16 @@ export const CreativeActivityWorkspace = ({
                                     <Select
                                         value={student.officerRole || "임원아님"}
                                         onValueChange={(val) => {
-                                            setStudents(prev => prev.map(s => s.id === student.id ? { ...s, officerRole: val } : s));
+                                            setStudents(prev => prev.map(s =>
+                                                s.id === student.id ? { ...s, officerRole: val, officerPeriod: val === "임원아님" ? "" : s.officerPeriod } : s
+                                            ));
                                         }}
                                     >
                                         <SelectTrigger className="w-full h-10 rounded-xl bg-white border-slate-200 font-bold text-xs ring-0 focus:ring-1 focus:ring-amber-200">
-                                            <SelectValue />
+                                            <SelectValue placeholder="임원아님" />
                                         </SelectTrigger>
-                                        <SelectContent className="rounded-xl border-slate-100 shadow-2xl">
-                                            {OFFICER_ROLES.map(role => (
+                                        <SelectContent className="rounded-xl border-slate-100 shadow-2xl z-[10000]">
+                                            {["임원아님", "반장", "부반장", "회장", "부회장", "전교회장", "전교부회장"].map(role => (
                                                 <SelectItem key={role} value={role} className="rounded-lg font-bold text-xs py-2.5">{role}</SelectItem>
                                             ))}
                                         </SelectContent>
@@ -228,12 +259,12 @@ export const CreativeActivityWorkspace = ({
                                         type="text"
                                         placeholder="예: 25.03~"
                                         value={student.officerPeriod || ""}
-                                        disabled={student.officerRole === "임원아님"}
+                                        disabled={(student.officerRole || "임원아님") === "임원아님"}
                                         onChange={(e) => {
                                             const val = e.target.value;
                                             setStudents(prev => prev.map(s => s.id === student.id ? { ...s, officerPeriod: val } : s));
                                         }}
-                                        className="w-full h-10 px-4 rounded-xl border border-slate-200 bg-white text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all disabled:bg-slate-50 disabled:border-slate-100"
+                                        className="w-full h-10 px-4 rounded-xl border border-slate-200 bg-white text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all disabled:bg-slate-50 disabled:border-slate-100 disabled:text-slate-300"
                                     />
                                 </div>
 
@@ -341,7 +372,7 @@ export const CreativeActivityWorkspace = ({
                     </div>
                 </div>
             </Card>
-        </div>
+        </Wrapper>
     );
 };
 
@@ -363,7 +394,7 @@ const EventPicker = ({
                     <Plus className="size-4" />
                 </button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 p-0 rounded-2xl border-slate-100 shadow-2xl overflow-hidden" align="start">
+            <PopoverContent className="w-80 p-0 rounded-2xl border-slate-100 shadow-2xl overflow-hidden z-[10050]" align="start">
                 <div className="p-4 bg-slate-50 border-b border-slate-100">
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
