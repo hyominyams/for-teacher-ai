@@ -248,18 +248,71 @@ export default function DashboardPage() {
         const student = students.find(s => s.id === id);
         if (!student) return;
 
-        let tokens: string[] = [];
-        if (activeTabId === 'behavior') {
-            if (student.selectedKeywords.length < 2) return;
-            tokens = student.selectedKeywords;
-        } else if (activeTabId === 'creative') {
-            if (!student.participatedEvents || student.participatedEvents.length === 0) return;
-            tokens = student.participatedEvents;
-        }
-
         setStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: true } : s));
 
         try {
+            let tokens: string[] = [];
+            let currentSubjectConfig = subjectConfig;
+
+            if (activeTabId === 'behavior') {
+                if (student.selectedKeywords.length < 2) {
+                    setStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: false } : s));
+                    return;
+                }
+                tokens = student.selectedKeywords;
+            } else if (activeTabId === 'creative') {
+                if (!student.participatedEvents || student.participatedEvents.length === 0) {
+                    setStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: false } : s));
+                    return;
+                }
+                tokens = student.participatedEvents;
+            } else if (activeTabId === 'subject') {
+                // 1단계: 성취기준이 비어있는지 확인 및 자동 채우기
+                const missingAssessments = subjectConfig.assessments.filter(a => {
+                    const studentLevel = student.subjectData?.assessments?.find(sa => sa.assessmentId === a.id)?.level;
+                    // studentLevel이 존재하고(상,중,하) 성취기준이 비어있는 경우
+                    return studentLevel && !a.standard;
+                });
+
+                if (missingAssessments.length > 0) {
+                    // 모든 누락된 성취기준을 병렬로 요청
+                    const standardPromises = missingAssessments.map(async (ass) => {
+                        try {
+                            const sResp = await fetch("/api/generate/standard", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    schoolLevel: subjectConfig.schoolLevel,
+                                    grade: subjectConfig.grade,
+                                    subjectName: subjectConfig.subjectName,
+                                    area: ass.area,
+                                    criteria: ass.criteria,
+                                    competency: ass.competency
+                                })
+                            });
+                            const sData = await sResp.json();
+                            return { id: ass.id, standard: sData.standard };
+                        } catch (e) {
+                            console.error(e);
+                            return { id: ass.id, standard: null };
+                        }
+                    });
+
+                    const results = await Promise.all(standardPromises);
+
+                    let updatedAssessments = [...subjectConfig.assessments];
+                    results.forEach(res => {
+                        if (res.standard) {
+                            updatedAssessments = updatedAssessments.map(a => a.id === res.id ? { ...a, standard: res.standard } : a);
+                        }
+                    });
+
+                    currentSubjectConfig = { ...subjectConfig, assessments: updatedAssessments };
+                    setSubjectConfig(currentSubjectConfig);
+                }
+            }
+
+            // 2단계: 본문 생성
             const response = await fetch("/api/generate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -269,9 +322,8 @@ export default function DashboardPage() {
                     role: student.officerRole || "임원아님",
                     targetChars: charLimits[activeTabId],
                     category: activeTabId,
-                    // 교과세특 전용 데이터
                     subjectMeta: activeTabId === 'subject' ? {
-                        ...subjectConfig,
+                        ...currentSubjectConfig,
                         individualNote: student.subjectData?.individualNote || "",
                         studentAssessments: student.subjectData?.assessments || []
                     } : undefined
@@ -317,6 +369,51 @@ export default function DashboardPage() {
             targetStudents.find(ss => ss.id === s.id) ? { ...s, isGenerating: true } : s
         ));
 
+        // 성취기준 전처리 (교과 세특인 경우)
+        let currentSubjectConfig = subjectConfig;
+        if (activeTabId === 'subject') {
+            const missingAssessments = subjectConfig.assessments.filter(a => {
+                return targetStudents.some(s => {
+                    const level = s.subjectData?.assessments?.find(sa => sa.assessmentId === a.id)?.level;
+                    return level && !a.standard;
+                });
+            });
+
+            if (missingAssessments.length > 0) {
+                const standardPromises = missingAssessments.map(async (ass) => {
+                    try {
+                        const sResp = await fetch("/api/generate/standard", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                schoolLevel: subjectConfig.schoolLevel,
+                                grade: subjectConfig.grade,
+                                subjectName: subjectConfig.subjectName,
+                                area: ass.area, criteria: ass.criteria, competency: ass.competency
+                            })
+                        });
+                        const sData = await sResp.json();
+                        return { id: ass.id, standard: sData.standard };
+                    } catch (e) {
+                        console.error(e);
+                        return { id: ass.id, standard: null };
+                    }
+                });
+
+                const results = await Promise.all(standardPromises);
+
+                let updatedAssessments = [...subjectConfig.assessments];
+                results.forEach(res => {
+                    if (res.standard) {
+                        updatedAssessments = updatedAssessments.map(a => a.id === res.id ? { ...a, standard: res.standard } : a);
+                    }
+                });
+
+                currentSubjectConfig = { ...subjectConfig, assessments: updatedAssessments };
+                setSubjectConfig(currentSubjectConfig);
+            }
+        }
+
         // 병렬 처리 실행
         targetStudents.forEach(async (student) => {
             try {
@@ -334,7 +431,7 @@ export default function DashboardPage() {
                         targetChars: charLimits[activeTabId],
                         category: activeTabId,
                         subjectMeta: activeTabId === 'subject' ? {
-                            ...subjectConfig,
+                            ...currentSubjectConfig,
                             individualNote: student.subjectData?.individualNote || "",
                             studentAssessments: student.subjectData?.assessments || []
                         } : undefined
@@ -374,6 +471,51 @@ export default function DashboardPage() {
             selectedStudents.find(ss => ss.id === s.id) ? { ...s, isGenerating: true } : s
         ));
 
+        // 성취기준 전처리
+        let currentSubjectConfig = subjectConfig;
+        if (activeTabId === 'subject') {
+            const missingAssessments = subjectConfig.assessments.filter(a => {
+                return selectedStudents.some(s => {
+                    const level = s.subjectData?.assessments?.find(sa => sa.assessmentId === a.id)?.level;
+                    return level && !a.standard;
+                });
+            });
+
+            if (missingAssessments.length > 0) {
+                const standardPromises = missingAssessments.map(async (ass) => {
+                    try {
+                        const sResp = await fetch("/api/generate/standard", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                schoolLevel: subjectConfig.schoolLevel,
+                                grade: subjectConfig.grade,
+                                subjectName: subjectConfig.subjectName,
+                                area: ass.area, criteria: ass.criteria, competency: ass.competency
+                            })
+                        });
+                        const sData = await sResp.json();
+                        return { id: ass.id, standard: sData.standard };
+                    } catch (e) {
+                        console.error(e);
+                        return { id: ass.id, standard: null };
+                    }
+                });
+
+                const results = await Promise.all(standardPromises);
+
+                let updatedAssessments = [...subjectConfig.assessments];
+                results.forEach(res => {
+                    if (res.standard) {
+                        updatedAssessments = updatedAssessments.map(a => a.id === res.id ? { ...a, standard: res.standard } : a);
+                    }
+                });
+
+                currentSubjectConfig = { ...subjectConfig, assessments: updatedAssessments };
+                setSubjectConfig(currentSubjectConfig);
+            }
+        }
+
         // 병렬 처리 실행
         selectedStudents.forEach(async (student) => {
             try {
@@ -391,7 +533,7 @@ export default function DashboardPage() {
                         targetChars: charLimits[activeTabId],
                         category: activeTabId,
                         subjectMeta: activeTabId === 'subject' ? {
-                            ...subjectConfig,
+                            ...currentSubjectConfig,
                             individualNote: student.subjectData?.individualNote || "",
                             studentAssessments: student.subjectData?.assessments || []
                         } : undefined

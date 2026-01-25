@@ -40,10 +40,9 @@ export async function POST(req: Request) {
 
                 const assessmentsText = (assessments || []).map((a: any) => {
                     const studentLevel = (studentAssessments || []).find((sa: any) => sa.assessmentId === a.id)?.level || "미선택";
-                    // Skip if not selected, or handle as needed. Currently showing all connected assessments.
                     if (studentLevel === "" || studentLevel === "none") return null;
 
-                    return `- 평가영역: ${a.area}
+                    return `- 영역: ${a.area}
   - 성취기준: ${a.standard}
   - 평가기준: ${a.criteria}
   - 핵심역량: ${a.competency}
@@ -65,7 +64,7 @@ ${assessmentsText || "선택된 평가 항목이 없습니다."}
         }
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini", // 더 빠르고 정확한 모델로 변경
+            model: "gpt-4o-mini",
             messages: [
                 { role: "system", content: "당신은 학생 생활기록부를 전문적으로 작성하는 대한민국 교사입니다. 학생의 이름이나 번호를 절대 언급하지 마세요." },
                 { role: "user", content: prompt }

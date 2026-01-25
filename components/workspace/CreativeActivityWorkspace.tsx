@@ -37,6 +37,25 @@ import {
 import { Student } from "@/types";
 import { CREATIVE_CATEGORIES, OFFICER_ROLES } from "@/lib/constants/creative-events";
 
+interface WrapperProps {
+    children: React.ReactNode;
+    isExpanded: boolean;
+    mounted: boolean;
+}
+
+const Wrapper = ({ children, isExpanded, mounted }: WrapperProps) => {
+    if (isExpanded && mounted) {
+        return createPortal(
+            <div className="fixed inset-0 z-[9999] isolate">
+                <div className="absolute inset-0 bg-white pointer-events-auto" />
+                {children}
+            </div>,
+            document.body
+        );
+    }
+    return <div className="space-y-8 mt-8 pb-20 transform-none">{children}</div>;
+};
+
 interface CreativeActivityWorkspaceProps {
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
@@ -83,21 +102,9 @@ export const CreativeActivityWorkspace = ({
         };
     }, [isExpanded]);
 
-    const Wrapper = ({ children }: { children: React.ReactNode }) => {
-        if (isExpanded && mounted) {
-            return createPortal(
-                <div className="fixed inset-0 z-[9999] isolate">
-                    <div className="absolute inset-0 bg-white pointer-events-auto" />
-                    {children}
-                </div>,
-                document.body
-            );
-        }
-        return <div className="space-y-8 mt-8 pb-20 transform-none">{children}</div>;
-    };
 
     return (
-        <Wrapper>
+        <Wrapper isExpanded={isExpanded} mounted={mounted}>
             <Card className={cn(
                 "p-10 border-0 bg-white shadow-2xl shadow-slate-200/50 space-y-8 transition-all duration-500 relative",
                 isExpanded ? "fixed inset-4 z-[9999] rounded-[3rem] border border-blue-100 shadow-primary/20 !transform-none overflow-y-auto overscroll-contain pointer-events-auto cursor-default" : "rounded-[3rem] overflow-hidden"
