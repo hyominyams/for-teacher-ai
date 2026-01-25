@@ -450,11 +450,11 @@ export const SubjectWorkspace = ({
                                 "bg-slate-50 rounded-[2.5rem] border border-slate-100 overflow-auto custom-scrollbar relative",
                                 isExpanded ? "flex-1 h-full" : "h-[600px]"
                             )}>
-                            <div className="w-full flex flex-col min-h-full">
+                            <div className="w-fit min-w-full flex flex-col min-h-full">
                                 {/* Sticky Table Header */}
                                 <div className="sticky top-0 z-20 bg-slate-50 border-b border-slate-100 shadow-sm">
                                     <div
-                                        className="grid gap-6 px-10 py-5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 items-center"
+                                        className="grid gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 items-center"
                                         style={{ gridTemplateColumns: gridTemplateCols }}
                                     >
                                         <div className="flex items-center justify-center">
@@ -472,8 +472,8 @@ export const SubjectWorkspace = ({
                                                 <div className="text-[8px] opacity-40 truncate">{a.area || "영역"}</div>
                                             </div>
                                         ))}
-                                        <div>개별 특이사항 (선택)</div>
-                                        <div>AI 결과 및 편집</div>
+                                        <div className="pl-4">개별 특이사항 (선택)</div>
+                                        <div className="pl-5">AI 결과 및 편집</div>
                                         <div className="text-center">관리 액션</div>
                                     </div>
                                 </div>

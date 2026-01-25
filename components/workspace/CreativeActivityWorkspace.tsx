@@ -176,10 +176,10 @@ export const CreativeActivityWorkspace = ({
                     className="bg-amber-100/10 rounded-[2.5rem] border border-slate-100 overflow-auto custom-scrollbar relative"
                     style={{ height: isExpanded ? "calc(100vh - 400px)" : "600px" }}
                 >
-                    <div className="w-full flex flex-col min-h-full">
+                    <div className="w-fit min-w-full flex flex-col min-h-full">
                         {/* Sticky Table Header */}
                         <div className="sticky top-0 z-20 bg-slate-50 border-b border-slate-100 shadow-sm">
-                            <div className="grid grid-cols-[40px_60px_minmax(200px,1.2fr)_140px_140px_minmax(350px,2fr)_120px] gap-6 px-10 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 items-center">
+                            <div className="grid grid-cols-[40px_60px_minmax(200px,1.2fr)_140px_140px_minmax(350px,2fr)_120px] gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 items-center">
                                 <div className="flex items-center justify-center">
                                     <input
                                         type="checkbox"
@@ -190,9 +190,9 @@ export const CreativeActivityWorkspace = ({
                                 </div>
                                 <div className="text-center font-black">번호</div>
                                 <div>참여 행사 (복수 선택)</div>
-                                <div className="text-center">임원 여부</div>
-                                <div className="text-center">임원 기간</div>
-                                <div>AI 결과 및 편집</div>
+                                <div className="pl-3">임원 여부</div>
+                                <div className="pl-3">임원 기간</div>
+                                <div className="pl-5">AI 결과 및 편집</div>
                                 <div className="text-center">관리 액션</div>
                             </div>
                         </div>
