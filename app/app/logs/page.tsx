@@ -43,7 +43,8 @@ interface WorkLog {
     data: {
         students: Student[];
         studentCount: number;
-        charLimit: number;
+        charLimit?: number;
+        charLimits?: Record<string, number>;
     };
     updated_at: string;
 }
@@ -246,7 +247,7 @@ export default function WorkLogPage() {
 
                                                 <div className="flex flex-wrap gap-2">
                                                     <div className="px-3 py-1.5 rounded-xl bg-slate-50 text-[10px] font-black text-slate-500 border border-slate-100 italic">
-                                                        {log.data.charLimit} chars limit
+                                                        {log.data.charLimits?.[log.category] ?? log.data.charLimit ?? '-'} chars limit
                                                     </div>
                                                     {hasData ? (
                                                         <div className="px-3 py-1.5 rounded-xl bg-green-50 text-[10px] font-black text-green-600 border border-green-100 flex items-center gap-1.5">
