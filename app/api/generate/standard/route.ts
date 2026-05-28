@@ -3,12 +3,17 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
-
 export async function POST(req: Request) {
     try {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            return NextResponse.json(
+                { error: "OPENAI_API_KEY가 설정되어 있지 않습니다. .env.local에 키를 추가하고 dev 서버를 재시작해주세요." },
+                { status: 503 }
+            );
+        }
+        const openai = new OpenAI({ apiKey });
+
         const { schoolLevel, grade, subjectName, area, criteria, competency } = await req.json();
 
         // 1. 성취기준 데이터 파일 읽기

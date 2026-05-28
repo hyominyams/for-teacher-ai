@@ -415,7 +415,8 @@ export default function DashboardPage() {
         }
 
         // 병렬 처리 실행
-        targetStudents.forEach(async (student) => {
+        let firstError: string | null = null;
+        const results = await Promise.all(targetStudents.map(async (student) => {
             try {
                 let tokens: string[] = [];
                 if (activeTabId === 'behavior') tokens = student.selectedKeywords;
@@ -439,6 +440,12 @@ export default function DashboardPage() {
                 });
                 const data = await response.json();
 
+                if (!response.ok) {
+                    if (!firstError) firstError = data.error || `생성 실패 (HTTP ${response.status})`;
+                    setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
+                    return false;
+                }
+
                 // 결과 도착 시 즉시 상태 업데이트 (개별 업데이트)
                 setStudents(prev => prev.map(s => s.id === student.id ? {
                     ...s,
@@ -446,11 +453,18 @@ export default function DashboardPage() {
                     aiResult: data.result || s.aiResult,
                     isEditable: !!data.result
                 } : s));
-            } catch (error) {
+                return true;
+            } catch (error: any) {
                 console.error(`Error generating for student ${student.id}:`, error);
+                if (!firstError) firstError = error?.message || "네트워크 오류가 발생했습니다.";
                 setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
+                return false;
             }
-        });
+        }));
+
+        if (firstError && results.every(ok => !ok)) {
+            alert(`전체 생성 실패: ${firstError}`);
+        }
     };
 
     const handleSelectedGenerate = async () => {
