@@ -166,11 +166,11 @@ export const SubjectWorkspace = ({
     // cols: Checkbox(40px) + Number(80px) + (Assessments x 140px) + Note(minmax 200) + Result(minmax 300) + Actions(160px)
     // cols: Checkbox(40px) + Number(80px) + (Assessments x 140px) + Note(minmax 200) + Result(minmax 300) + Actions(160px)
     const assessmentCols = globalConfig.assessments.length > 0
-        ? `${"140px ".repeat(globalConfig.assessments.length)}`
+        ? `${"120px ".repeat(globalConfig.assessments.length)}`
         : ""; // If no assessments, do not create a placeholder column to avoid grid misalignment
 
     // Adjusted ratios: AI Result gets more space (2.5fr) vs Note (1fr)
-    const gridTemplateCols = `40px 80px ${assessmentCols} minmax(200px, 1fr) minmax(350px, 2.5fr) 160px`;
+    const gridTemplateCols = `40px 70px ${assessmentCols} minmax(180px, 1fr) minmax(280px, 2.5fr) 140px`;
 
     return (
         <Wrapper isExpanded={isExpanded} mounted={mounted}>

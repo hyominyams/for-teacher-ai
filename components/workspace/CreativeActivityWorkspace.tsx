@@ -179,7 +179,7 @@ export const CreativeActivityWorkspace = ({
                     <div className="w-fit min-w-full flex flex-col min-h-full">
                         {/* Sticky Table Header */}
                         <div className="sticky top-0 z-20 bg-slate-50 border-b border-slate-100 shadow-sm">
-                            <div className="grid grid-cols-[40px_60px_minmax(200px,1.2fr)_140px_140px_minmax(350px,2fr)_120px] gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 items-center">
+                            <div className="grid grid-cols-[40px_60px_minmax(180px,1.2fr)_120px_130px_minmax(280px,2fr)_120px] gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 items-center">
                                 <div className="flex items-center justify-center">
                                     <input
                                         type="checkbox"
@@ -201,7 +201,7 @@ export const CreativeActivityWorkspace = ({
                         <div className="p-6 pt-4 space-y-3">
                             {students.map((student) => (
                                 <div key={student.id} className={cn(
-                                    "grid grid-cols-[40px_60px_minmax(200px,1.2fr)_140px_140px_minmax(350px,2fr)_120px] gap-6 px-8 py-6 rounded-[2rem] border transition-all items-start group/row",
+                                    "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_120px_130px_minmax(280px,2fr)_120px] gap-6 px-8 py-6 rounded-[2rem] border transition-all items-start group/row",
                                     student.selected ? "bg-amber-50/50 border-amber-200" : "bg-white border-slate-50 hover:bg-slate-50 hover:border-slate-100"
                                 )}>
                                     <div className="flex items-center justify-center pt-3">

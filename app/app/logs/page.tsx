@@ -222,26 +222,26 @@ export default function WorkLogPage() {
                                             )} />
 
                                             <div className="space-y-6">
-                                                <div className="flex items-center justify-between">
+                                                <div className="flex items-center justify-between gap-3">
                                                     <div className={cn(
-                                                        "size-14 rounded-2xl flex items-center justify-center transition-all group-hover:scale-110",
+                                                        "size-14 shrink-0 rounded-2xl flex items-center justify-center transition-all group-hover:scale-110",
                                                         category.color === "blue" ? "bg-blue-50 text-blue-500" :
                                                             category.color === "purple" ? "bg-purple-50 text-purple-500" :
                                                                 category.color === "emerald" ? "bg-emerald-50 text-emerald-500" : "bg-orange-50 text-orange-500"
                                                     )}>
                                                         <category.icon className="size-7" />
                                                     </div>
-                                                    <div className="text-right">
-                                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Students</div>
+                                                    <div className="text-right min-w-0">
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 whitespace-nowrap">Total Students</div>
                                                         <div className="text-2xl font-black text-slate-900 tracking-tighter">{log.data.studentCount}</div>
                                                     </div>
                                                 </div>
 
                                                 <div className="space-y-2">
-                                                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">{category.name}</h3>
-                                                    <div className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-wider">
-                                                        <Calendar className="size-3.5" />
-                                                        {formatDate(log.updated_at)}
+                                                    <h3 className="text-2xl font-black text-slate-900 tracking-tight break-keep">{category.name}</h3>
+                                                    <div className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-wider min-w-0">
+                                                        <Calendar className="size-3.5 shrink-0" />
+                                                        <span className="truncate">{formatDate(log.updated_at)}</span>
                                                     </div>
                                                 </div>
 

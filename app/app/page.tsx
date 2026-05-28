@@ -836,7 +836,7 @@ export default function DashboardPage() {
         <div className="min-h-screen bg-[#FAFBFF] dark:bg-background transition-colors duration-300">
 
             <main className="pt-32 pb-24">
-                <div className="container mx-auto px-6 max-w-7xl">
+                <div className="container mx-auto px-6 max-w-[1440px]">
                     {/* Header Section */}
                     <header className="flex flex-col gap-6 mb-12 border-b border-slate-200 dark:border-border pb-12">
                         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -869,9 +869,9 @@ export default function DashboardPage() {
                         </div>
                     </header>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
+                    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-8">
                         {/* Workspace Content (Left) */}
-                        <div className="lg:col-span-3 space-y-10">
+                        <div className="min-w-0 space-y-10">
                             <AnimatePresence mode="wait">
                                 <motion.div
                                     key={activeTabId}
@@ -889,8 +889,8 @@ export default function DashboardPage() {
                                                 <div className="grid grid-cols-1 md:grid-cols-2">
                                                     <div className="p-10 border-r border-slate-100 dark:border-border space-y-8 bg-slate-50/30 dark:bg-slate-900/20">
                                                         <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
-                                                                <Target className="size-5 text-primary" /> 워크스페이스 설정
+                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
+                                                                <Target className="size-5 text-primary shrink-0" /> 워크스페이스 설정
                                                             </div>
                                                             <input
                                                                 type="file"
@@ -913,8 +913,8 @@ export default function DashboardPage() {
                                                         </div>
                                                     </div>
                                                     <div className="p-10 space-y-8">
-                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
-                                                            <Edit3 className="size-5 text-primary" /> 행동특성 글자수 가이드
+                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
+                                                            <Edit3 className="size-5 text-primary shrink-0" /> 행동특성 글자수 가이드
                                                         </div>
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                             {[100, 200, 300, 500].map(limit => (
@@ -968,8 +968,8 @@ export default function DashboardPage() {
                                                 <div className="grid grid-cols-1 md:grid-cols-2">
                                                     <div className="p-10 border-r border-slate-100 dark:border-border space-y-8 bg-slate-50/30 dark:bg-slate-900/20">
                                                         <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
-                                                                <Target className="size-5 text-indigo-500" /> 워크스페이스 설정
+                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
+                                                                <Target className="size-5 text-indigo-500 shrink-0" /> 워크스페이스 설정
                                                             </div>
                                                             <input
                                                                 type="file"
@@ -992,8 +992,8 @@ export default function DashboardPage() {
                                                         </div>
                                                     </div>
                                                     <div className="p-10 space-y-8">
-                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
-                                                            <Edit3 className="size-5 text-indigo-500" /> 교과세특 글자수 가이드
+                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
+                                                            <Edit3 className="size-5 text-indigo-500 shrink-0" /> 교과세특 글자수 가이드
                                                         </div>
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                             {[100, 200, 300, 500].map(limit => (
@@ -1037,8 +1037,8 @@ export default function DashboardPage() {
                                                 <div className="grid grid-cols-1 md:grid-cols-2">
                                                     <div className="p-10 border-r border-slate-100 dark:border-border space-y-8 bg-slate-50/30 dark:bg-slate-900/20">
                                                         <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
-                                                                <Target className="size-5 text-amber-500" /> 워크스페이스 설정
+                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
+                                                                <Target className="size-5 text-amber-500 shrink-0" /> 워크스페이스 설정
                                                             </div>
                                                             <input
                                                                 type="file"
@@ -1061,8 +1061,8 @@ export default function DashboardPage() {
                                                         </div>
                                                     </div>
                                                     <div className="p-10 space-y-8">
-                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest">
-                                                            <Edit3 className="size-5 text-amber-500" /> 창체활동 글자수 가이드
+                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
+                                                            <Edit3 className="size-5 text-amber-500 shrink-0" /> 창체활동 글자수 가이드
                                                         </div>
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                             {[100, 200, 300, 500].map(limit => (
@@ -1124,7 +1124,7 @@ export default function DashboardPage() {
                                                 key={f.id}
                                                 onClick={() => setActiveTabId(f.id)}
                                                 className={cn(
-                                                    "w-full p-6 h-28 rounded-[2.5rem] flex items-center gap-6 transition-all text-left border",
+                                                    "w-full p-6 min-h-28 rounded-[2.5rem] flex items-center gap-6 transition-all text-left border",
                                                     isActive
                                                         ? "bg-white dark:bg-card border-primary shadow-2xl shadow-primary/5 dark:shadow-none ring-1 ring-primary/20 dark:ring-primary/40"
                                                         : "bg-white dark:bg-slate-900/50 border-transparent dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-200 dark:hover:border-slate-700"
@@ -1133,8 +1133,8 @@ export default function DashboardPage() {
                                                 <div className={cn("size-14 rounded-3xl flex items-center justify-center shrink-0", isActive ? "bg-primary text-white shadow-lg shadow-primary/30" : "bg-slate-50 dark:bg-slate-800")}>
                                                     <Icon className="size-7" />
                                                 </div>
-                                                <div className="flex-1">
-                                                    <span className={cn("font-black text-sm block mb-1", isActive ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400")}>{f.title}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <span className={cn("font-black text-sm block mb-1 break-keep", isActive ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400")}>{f.title}</span>
                                                     <span className="text-[10px] font-bold text-slate-300 dark:text-slate-600 uppercase tracking-tighter">Feature</span>
                                                 </div>
                                             </button>

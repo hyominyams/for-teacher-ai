@@ -136,7 +136,7 @@ export const BehaviorWorkspace = ({
                 <div className="w-fit min-w-full flex flex-col min-h-full">
                     {/* Sticky Table Header */}
                     <div className="sticky top-0 z-20 bg-slate-50 dark:bg-black/80 dark:backdrop-blur-md border-b border-slate-100 dark:border-slate-800 shadow-sm">
-                        <div className="grid grid-cols-[40px_60px_minmax(200px,1.2fr)_minmax(300px,2fr)_160px] gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 items-center">
+                        <div className="grid grid-cols-[40px_60px_minmax(180px,1.2fr)_minmax(260px,2fr)_140px] gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 items-center">
                             <div className="flex items-center justify-center">
                                 <input type="checkbox" onChange={toggleAllSelection} checked={students.length > 0 && students.every(s => s.selected)} className="size-5 rounded-lg border-slate-300 dark:border-slate-600 accent-primary cursor-pointer" />
                             </div>
@@ -153,7 +153,7 @@ export const BehaviorWorkspace = ({
                             <div
                                 key={student.id}
                                 className={cn(
-                                    "grid grid-cols-[40px_60px_minmax(200px,1.2fr)_minmax(300px,2fr)_160px] gap-6 px-8 py-7 rounded-[2rem] border transition-all items-start group/row",
+                                    "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_minmax(260px,2fr)_140px] gap-6 px-8 py-7 rounded-[2rem] border transition-all items-start group/row",
                                     student.selected ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800" : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-100 dark:hover:border-slate-700"
                                 )}
                             >
