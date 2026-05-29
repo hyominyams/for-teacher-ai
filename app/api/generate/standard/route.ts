@@ -88,7 +88,7 @@ export async function POST(req: Request) {
                 { role: "developer", content: "당신은 대한민국 교육과정과 성취기준 전문가입니다. 반드시 제공된 목록에서만 답변하세요." },
                 { role: "user", content: prompt }
             ],
-            temperature: 0.6,
+            temperature: 0.7,
         });
 
         const content = response.choices[0].message.content?.trim();

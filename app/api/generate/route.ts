@@ -95,7 +95,7 @@ ${assessmentsText || "선택된 평가 항목이 없습니다."}
                 { role: "system", content: "당신은 학생 생활기록부를 전문적으로 작성하는 대한민국 교사입니다. 학생의 이름이나 번호를 절대 언급하지 마세요." },
                 { role: "user", content: prompt }
             ],
-            temperature: 0.6,
+            temperature: 0.7,
         });
 
         const result = response.choices[0].message.content?.trim();
