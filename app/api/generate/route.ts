@@ -3,6 +3,27 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
+type SubjectAssessment = {
+    id: string;
+    area: string;
+    standard: string;
+    criteria: string;
+    competency: string;
+};
+
+type StudentAssessment = {
+    assessmentId: string;
+    level?: string;
+};
+
+const getErrorMessage = (error: unknown) => {
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    return "AI 생성 중 오류가 발생했습니다.";
+};
+
 export async function POST(req: Request) {
     try {
         const apiKey = process.env.OPENAI_API_KEY;
@@ -43,8 +64,8 @@ export async function POST(req: Request) {
             if (subjectMeta) {
                 const { schoolLevel, grade, subjectName, assessments, studentAssessments, individualNote } = subjectMeta;
 
-                const assessmentsText = (assessments || []).map((a: any) => {
-                    const studentLevel = (studentAssessments || []).find((sa: any) => sa.assessmentId === a.id)?.level || "미선택";
+                const assessmentsText = ((assessments || []) as SubjectAssessment[]).map((a) => {
+                    const studentLevel = ((studentAssessments || []) as StudentAssessment[]).find((sa) => sa.assessmentId === a.id)?.level || "미선택";
                     if (studentLevel === "" || studentLevel === "none") return null;
 
                     return `- 영역: ${a.area}
@@ -69,19 +90,19 @@ ${assessmentsText || "선택된 평가 항목이 없습니다."}
         }
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: "gpt-4o",
             messages: [
                 { role: "system", content: "당신은 학생 생활기록부를 전문적으로 작성하는 대한민국 교사입니다. 학생의 이름이나 번호를 절대 언급하지 마세요." },
                 { role: "user", content: prompt }
             ],
-            temperature: 0.7,
+            temperature: 0.6,
         });
 
         const result = response.choices[0].message.content?.trim();
 
         return NextResponse.json({ result });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("AI Generation Error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
     }
 }

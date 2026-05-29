@@ -8,8 +8,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { LogIn, ArrowLeft, Loader2 } from "lucide-react";
+import { LogIn, ArrowLeft, Loader2, UserRoundCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+
+const DEMO_ACCOUNT = {
+    email: "demo@forteacher.ai",
+    password: "TeacherDemo2026!",
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.message) {
+        return error.message;
+    }
+
+    return fallback;
+};
 
 export default function LoginPage() {
     const router = useRouter();
@@ -19,22 +32,39 @@ export default function LoginPage() {
         password: ""
     });
 
+    const signInWithEmail = async (email: string, password: string) => {
+        const { error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
+
+        if (error) throw error;
+
+        router.push("/app");
+        router.refresh();
+    };
+
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
 
         try {
-            const { error } = await supabase.auth.signInWithPassword({
-                email: formData.email,
-                password: formData.password,
-            });
+            await signInWithEmail(formData.email, formData.password);
+        } catch (error: unknown) {
+            alert(getErrorMessage(error, "로그인 중 오류가 발생했습니다."));
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-            if (error) throw error;
+    const handleDemoLogin = async () => {
+        setIsLoading(true);
+        setFormData(DEMO_ACCOUNT);
 
-            router.push("/app");
-            router.refresh();
-        } catch (error: any) {
-            alert(error.message || "로그인 중 오류가 발생했습니다.");
+        try {
+            await signInWithEmail(DEMO_ACCOUNT.email, DEMO_ACCOUNT.password);
+        } catch (error: unknown) {
+            alert(getErrorMessage(error, "체험 계정 로그인 중 오류가 발생했습니다."));
         } finally {
             setIsLoading(false);
         }
@@ -51,8 +81,8 @@ export default function LoginPage() {
             });
 
             if (error) throw error;
-        } catch (error: any) {
-            alert(error.message || "구글 로그인 중 오류가 발생했습니다.");
+        } catch (error: unknown) {
+            alert(getErrorMessage(error, "구글 로그인 중 오류가 발생했습니다."));
             setIsLoading(false);
         }
     };
@@ -68,7 +98,7 @@ export default function LoginPage() {
                     className="object-cover blur-[100px] opacity-30 scale-125 saturate-150"
                     priority
                 />
-                <div className="absolute inset-0 bg-gradient-to-tr from-background via-background/90 to-transparent" />
+                <div className="absolute inset-0 bg-background/90" />
             </div>
 
             <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out">
@@ -112,6 +142,22 @@ export default function LoginPage() {
                                         <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                                     </svg>
                                     Google로 로그인
+                                </Button>
+
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="lg"
+                                    className="w-full h-12 rounded-xl font-bold border-border bg-white/80 hover:bg-white transition-all shadow-sm gap-3"
+                                    onClick={handleDemoLogin}
+                                    disabled={isLoading}
+                                >
+                                    {isLoading ? (
+                                        <Loader2 className="size-4 animate-spin" />
+                                    ) : (
+                                        <UserRoundCheck className="size-4" />
+                                    )}
+                                    체험 계정으로 시작하기
                                 </Button>
 
 

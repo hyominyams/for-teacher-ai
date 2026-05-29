@@ -3,6 +3,14 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
+const getErrorMessage = (error: unknown) => {
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    return "성취기준 생성 중 오류가 발생했습니다.";
+};
+
 export async function POST(req: Request) {
     try {
         const apiKey = process.env.OPENAI_API_KEY;
@@ -35,7 +43,7 @@ export async function POST(req: Request) {
         const lines = allData.split("\n");
         let inSubject = false;
         let inGrade = false;
-        let standards: string[] = [];
+        const standards: string[] = [];
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
@@ -75,19 +83,20 @@ export async function POST(req: Request) {
             .replace("[SUBJECT_STANDARDS_LIST]", standardsListText);
 
         const response = await openai.chat.completions.create({
-            model: "gpt-5-mini",
+            model: "gpt-5-nano",
             messages: [
                 { role: "developer", content: "당신은 대한민국 교육과정과 성취기준 전문가입니다. 반드시 제공된 목록에서만 답변하세요." },
                 { role: "user", content: prompt }
-            ]
+            ],
+            temperature: 0.6,
         });
 
         const content = response.choices[0].message.content?.trim();
         const parsed = JSON.parse(content || "{}");
 
         return NextResponse.json({ standard: parsed.standard });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Standard Generation Error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
     }
 }
