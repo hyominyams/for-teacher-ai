@@ -15,7 +15,9 @@ import {
     Download,
     RotateCcw,
     UserCheck,
-    Edit3
+    ChevronDown,
+    ChevronUp,
+    ListPlus
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -88,6 +90,7 @@ export const CreativeActivityWorkspace = ({
     handleAutoGenerateEvents
 }: CreativeActivityWorkspaceProps) => {
     const [mounted, setMounted] = useState(false);
+    const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
     useEffect(() => setMounted(true), []);
 
     useEffect(() => {
@@ -130,6 +133,7 @@ export const CreativeActivityWorkspace = ({
                         >
                             행사 자동생성 <Sparkles className="size-4" />
                         </Button>
+                        <BulkEventAdd students={students} setStudents={setStudents} />
                         <Button
                             variant="outline"
                             onClick={() => {
@@ -199,10 +203,14 @@ export const CreativeActivityWorkspace = ({
 
                         {/* List Content */}
                         <div className="p-6 pt-4 space-y-3">
-                            {students.map((student) => (
+                            {students.map((student) => {
+                                const isRowOpen = expandedRowId === student.id;
+                                return (
                                 <div key={student.id} className={cn(
-                                    "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_120px_130px_minmax(280px,2fr)_120px] gap-6 px-8 py-6 rounded-[2rem] border transition-all items-start group/row",
-                                    student.selected ? "bg-amber-50/50 border-amber-200" : "bg-white border-slate-50 hover:bg-slate-50 hover:border-slate-100"
+                                    "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_120px_130px_minmax(280px,2fr)_120px] gap-6 px-8 rounded-[2rem] border transition-all items-start group/row",
+                                    isRowOpen ? "py-6" : "py-3.5",
+                                    student.selected ? "bg-amber-50/50 border-amber-200" : "bg-white border-slate-50 hover:bg-slate-50 hover:border-slate-100",
+                                    isRowOpen && "ring-2 ring-amber-400/30 border-amber-300 shadow-xl shadow-amber-100/40"
                                 )}>
                                     <div className="flex items-center justify-center pt-3">
                                         <input
@@ -281,42 +289,45 @@ export const CreativeActivityWorkspace = ({
                                     </div>
 
                                     <div className="relative group/txt pt-1">
-                                        <div className={cn(
-                                            "p-5 rounded-2xl text-[12px] font-medium min-h-[100px] leading-[1.7] transition-all",
-                                            student.aiResult ? "bg-slate-50 text-slate-700 border border-slate-100" : "bg-slate-50/50 text-slate-300 italic border border-dashed border-slate-200"
-                                        )}>
+                                        <div
+                                            onClick={() => { if (!isRowOpen && !student.isGenerating) setExpandedRowId(student.id); }}
+                                            className={cn(
+                                                "rounded-2xl text-[12px] font-medium leading-[1.7] transition-all",
+                                                isRowOpen ? "p-5 min-h-[180px]" : "p-4 h-[100px] overflow-hidden cursor-pointer hover:ring-2 hover:ring-amber-300/50",
+                                                student.aiResult ? "bg-slate-50 text-slate-700 border border-slate-100" : "bg-slate-50/50 text-slate-300 italic border border-dashed border-slate-200"
+                                            )}
+                                        >
                                             {student.isGenerating ? (
                                                 <div className="flex flex-col gap-2.5">
                                                     <div className="h-2 w-full bg-slate-200 rounded-full animate-pulse" />
                                                     <div className="h-2 w-4/5 bg-slate-200 rounded-full animate-pulse" />
                                                 </div>
-                                            ) : student.isEditable ? (
+                                            ) : isRowOpen ? (
                                                 <textarea
+                                                    autoFocus
                                                     value={student.aiResult}
+                                                    placeholder="참여 행사를 클릭하고 생성을 눌러주세요."
                                                     onChange={(e) => {
                                                         const newVal = e.target.value;
                                                         setStudents(prev => prev.map(s => s.id === student.id ? { ...s, aiResult: newVal } : s));
                                                     }}
-                                                    className="w-full min-h-[100px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0"
+                                                    className="w-full min-h-[160px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0 leading-[1.7]"
                                                 />
                                             ) : (
-                                                student.aiResult || "참여 행사를 클릭하고 생성을 눌러주세요."
+                                                <div className="line-clamp-3">{student.aiResult || "참여 행사를 클릭하고 생성을 눌러주세요."}</div>
                                             )}
                                         </div>
-                                        {student.aiResult && !student.isGenerating && (
-                                            <div className="absolute top-3 right-3 opacity-0 group-hover/txt:opacity-100 transition-opacity">
-                                                <div
-                                                    onClick={() => {
-                                                        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isEditable: !s.isEditable } : s));
-                                                    }}
-                                                    className={cn(
-                                                        "size-8 rounded-lg shadow-lg border border-slate-100 flex items-center justify-center cursor-pointer transition-all hover:scale-110",
-                                                        student.isEditable ? "bg-amber-500 text-white" : "bg-white text-slate-400 hover:text-amber-500"
-                                                    )}
-                                                >
-                                                    <Edit3 className="size-3.5" />
-                                                </div>
-                                            </div>
+                                        {!student.isGenerating && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setExpandedRowId(isRowOpen ? null : student.id); }}
+                                                title={isRowOpen ? "접기" : "펼쳐서 편집"}
+                                                className={cn(
+                                                    "absolute top-2.5 right-2.5 size-8 rounded-lg shadow-lg border flex items-center justify-center cursor-pointer transition-all hover:scale-110",
+                                                    isRowOpen ? "bg-amber-500 text-white border-amber-500 opacity-100" : "bg-white text-slate-400 border-slate-100 opacity-0 group-hover/txt:opacity-100 hover:text-amber-500"
+                                                )}
+                                            >
+                                                {isRowOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                                            </button>
                                         )}
                                     </div>
 
@@ -349,7 +360,8 @@ export const CreativeActivityWorkspace = ({
                                         </button>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -385,6 +397,99 @@ export const CreativeActivityWorkspace = ({
                 </div>
             </Card>
         </Wrapper>
+    );
+};
+
+const BulkEventAdd = ({
+    students,
+    setStudents
+}: {
+    students: Student[],
+    setStudents: React.Dispatch<React.SetStateAction<Student[]>>
+}) => {
+    const [open, setOpen] = useState(false);
+    const [input, setInput] = useState("");
+    const selectedCount = students.filter(s => s.selected).length;
+
+    // 쉼표(전각/반각) 기준으로 분리하고 앞뒤 공백을 제거해 사용자의 띄어쓰기 실수를 보완한다.
+    const parsedEvents = input
+        .split(/[,，]/)
+        .map(e => e.trim())
+        .filter(Boolean);
+
+    const handleAdd = () => {
+        if (parsedEvents.length === 0 || selectedCount === 0) return;
+        setStudents(prev => prev.map(s => {
+            if (!s.selected) return s;
+            const existing = s.participatedEvents || [];
+            const merged = [...existing];
+            parsedEvents.forEach(ev => {
+                if (!merged.includes(ev)) merged.push(ev);
+            });
+            return { ...s, participatedEvents: merged };
+        }));
+        setInput("");
+        setOpen(false);
+    };
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <Button
+                    variant="outline"
+                    className="rounded-2xl h-11 px-6 font-bold border-blue-100 bg-blue-50 text-blue-600 gap-2 hover:bg-blue-100 transition-all font-black text-xs shrink-0"
+                >
+                    행사 일괄추가 <ListPlus className="size-4" />
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-96 p-0 rounded-2xl border-slate-100 shadow-2xl overflow-hidden z-[10050]" align="end">
+                <div className="p-4 bg-slate-50 border-b border-slate-100">
+                    <div className="text-sm font-black text-slate-700">행사 일괄추가</div>
+                    <p className="text-[11px] text-slate-400 font-medium mt-1 leading-relaxed">
+                        쉼표(,)로 구분해 입력하세요. 띄어쓰기는 자동으로 정리됩니다.
+                    </p>
+                </div>
+                <div className="p-4 space-y-3">
+                    <textarea
+                        autoFocus
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                                e.preventDefault();
+                                handleAdd();
+                            }
+                        }}
+                        placeholder="예: 시업식, 방학식, 운동회"
+                        className="w-full h-24 px-4 py-3 rounded-xl border border-slate-200 bg-white text-xs font-bold placeholder:text-slate-300 focus:border-blue-400 outline-none transition-all resize-none leading-relaxed"
+                    />
+                    {parsedEvents.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                            {parsedEvents.map((ev, i) => (
+                                <Badge key={`${ev}-${i}`} variant="secondary" className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-600 border-blue-100 font-bold text-[11px]">
+                                    {ev}
+                                </Badge>
+                            ))}
+                        </div>
+                    )}
+                    <div className="flex items-center justify-between pt-1">
+                        <div className="text-[11px] font-bold text-slate-400">
+                            선택된 학생 <span className="text-blue-600">{selectedCount}명</span>에게 추가
+                        </div>
+                        <Button
+                            onClick={handleAdd}
+                            disabled={parsedEvents.length === 0 || selectedCount === 0}
+                            className="rounded-xl h-9 px-5 font-black text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-300 transition-all"
+                        >
+                            추가하기
+                        </Button>
+                    </div>
+                    {selectedCount === 0 && (
+                        <p className="text-[11px] font-bold text-red-400">먼저 학생을 체크해주세요.</p>
+                    )}
+                </div>
+            </PopoverContent>
+        </Popover>
     );
 };
 

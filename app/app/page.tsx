@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     UserCheck,
@@ -74,6 +75,7 @@ const features = [
 ];
 
 export default function DashboardPage() {
+    const router = useRouter();
     const [userName, setUserName] = useState<string | null>(null);
     const [activeTabId, setActiveTabId] = useState(features[0].id);
     const [studentCount, setStudentCount] = useState(7);
@@ -95,25 +97,45 @@ export default function DashboardPage() {
         assessments: []
     });
 
-    // User Session Profile
+    // User Session Profile + auth guard
     useEffect(() => {
-        const getUserProfile = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-                setUserId(session.user.id);
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('full_name')
-                    .eq('id', session.user.id)
-                    .single();
+        let mounted = true;
 
-                if (profile) {
-                    setUserName(profile.full_name);
-                }
+        const applySession = async (session: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]) => {
+            if (!mounted) return;
+            if (!session?.user) {
+                setUserId(null);
+                setUserName(null);
+                router.replace("/login");
+                return;
+            }
+
+            setUserId(session.user.id);
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('full_name')
+                .eq('id', session.user.id)
+                .single();
+
+            if (!mounted) return;
+            if (profile) {
+                setUserName(profile.full_name);
             }
         };
-        getUserProfile();
-    }, []);
+
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            applySession(session);
+        });
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            applySession(session);
+        });
+
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
+    }, [router]);
 
     // Load work logs from Supabase
     useEffect(() => {

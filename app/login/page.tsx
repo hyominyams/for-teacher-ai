@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { LogIn, ArrowLeft, Loader2, UserRoundCheck } from "lucide-react";
+import { LogIn, ArrowLeft, Loader2, ShieldCheck, UserRoundCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { DEMO_AUTO_LOGIN_KEY } from "@/lib/auth-storage";
 
 const DEMO_ACCOUNT = {
     email: "demo@forteacher.ai",
@@ -27,12 +28,13 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 export default function LoginPage() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
+    const [isAutoLoginEnabled, setIsAutoLoginEnabled] = useState(false);
     const [formData, setFormData] = useState({
         email: "",
         password: ""
     });
 
-    const signInWithEmail = async (email: string, password: string) => {
+    const signInWithEmail = React.useCallback(async (email: string, password: string) => {
         const { error } = await supabase.auth.signInWithPassword({
             email,
             password,
@@ -42,13 +44,46 @@ export default function LoginPage() {
 
         router.push("/app");
         router.refresh();
-    };
+    }, [router]);
+
+    React.useEffect(() => {
+        const runAutoLogin = async () => {
+            const shouldAutoLogin = localStorage.getItem(DEMO_AUTO_LOGIN_KEY) === "true";
+            setIsAutoLoginEnabled(shouldAutoLogin);
+
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                router.push("/app");
+                router.refresh();
+                return;
+            }
+
+            if (!shouldAutoLogin) return;
+
+            setIsLoading(true);
+            setFormData(DEMO_ACCOUNT);
+
+            try {
+                await signInWithEmail(DEMO_ACCOUNT.email, DEMO_ACCOUNT.password);
+            } catch (error: unknown) {
+                localStorage.removeItem(DEMO_AUTO_LOGIN_KEY);
+                setIsAutoLoginEnabled(false);
+                alert(getErrorMessage(error, "자동 로그인 중 오류가 발생했습니다."));
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        runAutoLogin();
+    }, [router, signInWithEmail]);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
 
         try {
+            localStorage.removeItem(DEMO_AUTO_LOGIN_KEY);
+            setIsAutoLoginEnabled(false);
             await signInWithEmail(formData.email, formData.password);
         } catch (error: unknown) {
             alert(getErrorMessage(error, "로그인 중 오류가 발생했습니다."));
@@ -57,13 +92,26 @@ export default function LoginPage() {
         }
     };
 
-    const handleDemoLogin = async () => {
+    const handleDemoLogin = async (remember = false) => {
         setIsLoading(true);
         setFormData(DEMO_ACCOUNT);
 
         try {
+            if (remember) {
+                localStorage.setItem(DEMO_AUTO_LOGIN_KEY, "true");
+                setIsAutoLoginEnabled(true);
+            } else {
+                localStorage.removeItem(DEMO_AUTO_LOGIN_KEY);
+                setIsAutoLoginEnabled(false);
+            }
+
             await signInWithEmail(DEMO_ACCOUNT.email, DEMO_ACCOUNT.password);
         } catch (error: unknown) {
+            if (remember) {
+                localStorage.removeItem(DEMO_AUTO_LOGIN_KEY);
+                setIsAutoLoginEnabled(false);
+            }
+
             alert(getErrorMessage(error, "체험 계정 로그인 중 오류가 발생했습니다."));
         } finally {
             setIsLoading(false);
@@ -73,6 +121,8 @@ export default function LoginPage() {
     const handleGoogleLogin = async () => {
         setIsLoading(true);
         try {
+            localStorage.removeItem(DEMO_AUTO_LOGIN_KEY);
+            setIsAutoLoginEnabled(false);
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: "google",
                 options: {
@@ -149,7 +199,7 @@ export default function LoginPage() {
                                     variant="outline"
                                     size="lg"
                                     className="w-full h-12 rounded-xl font-bold border-border bg-white/80 hover:bg-white transition-all shadow-sm gap-3"
-                                    onClick={handleDemoLogin}
+                                    onClick={() => handleDemoLogin(false)}
                                     disabled={isLoading}
                                 >
                                     {isLoading ? (
@@ -158,6 +208,22 @@ export default function LoginPage() {
                                         <UserRoundCheck className="size-4" />
                                     )}
                                     체험 계정으로 시작하기
+                                </Button>
+
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="lg"
+                                    className="w-full h-12 rounded-xl font-bold border-border bg-white/80 hover:bg-white transition-all shadow-sm gap-3"
+                                    onClick={() => handleDemoLogin(true)}
+                                    disabled={isLoading || isAutoLoginEnabled}
+                                >
+                                    {isLoading ? (
+                                        <Loader2 className="size-4 animate-spin" />
+                                    ) : (
+                                        <ShieldCheck className="size-4" />
+                                    )}
+                                    {isAutoLoginEnabled ? "자동 로그인 켜짐" : "체험 계정 자동 로그인"}
                                 </Button>
 
 

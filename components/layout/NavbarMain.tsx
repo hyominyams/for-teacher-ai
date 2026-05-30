@@ -2,16 +2,16 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
-import { Sparkles, User, LogOut, Menu, X, LayoutDashboard, Loader2 } from "lucide-react"
+import { usePathname } from "next/navigation"
+import { User, LogOut, Menu, X, LayoutDashboard, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import { ModeToggle } from "@/components/mode-toggle"
+import { DEMO_AUTO_LOGIN_KEY } from "@/lib/auth-storage"
 
 export function NavbarMain() {
     const pathname = usePathname()
-    const router = useRouter()
     const [isScrolled, setIsScrolled] = React.useState(false)
     const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false)
     const [userName, setUserName] = React.useState<string | null>(null)
@@ -22,31 +22,56 @@ export function NavbarMain() {
             setIsScrolled(window.scrollY > 20)
         }
         window.addEventListener("scroll", handleScroll)
-
-        // 사용자 정보 가져오기
-        const getUser = async () => {
-            const { data: { session } } = await supabase.auth.getSession()
-            if (session?.user) {
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('full_name')
-                    .eq('id', session.user.id)
-                    .single()
-
-                setUserName(profile?.full_name || session.user.email?.split('@')[0] || "선생님")
-            }
-        }
-        getUser()
-
         return () => window.removeEventListener("scroll", handleScroll)
+    }, [])
+
+    React.useEffect(() => {
+        let mounted = true
+
+        const loadProfile = async (userId: string, fallbackEmail?: string | null) => {
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('full_name')
+                .eq('id', userId)
+                .single()
+
+            if (!mounted) return
+            setUserName(profile?.full_name || fallbackEmail?.split('@')[0] || "선생님")
+        }
+
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (!mounted) return
+            if (session?.user) {
+                loadProfile(session.user.id, session.user.email)
+            } else {
+                setUserName(null)
+            }
+        })
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (!mounted) return
+            if (session?.user) {
+                loadProfile(session.user.id, session.user.email)
+            } else {
+                setUserName(null)
+            }
+        })
+
+        return () => {
+            mounted = false
+            subscription.unsubscribe()
+        }
     }, [])
 
     const handleLogout = async () => {
         setIsLoggingOut(true)
-        await supabase.auth.signOut()
-        router.push("/")
-        router.refresh()
-        setIsLoggingOut(false)
+        try {
+            localStorage.removeItem(DEMO_AUTO_LOGIN_KEY)
+            await supabase.auth.signOut()
+        } finally {
+            setIsMobileMenuOpen(false)
+            window.location.replace("/")
+        }
     }
 
     const navItems = [

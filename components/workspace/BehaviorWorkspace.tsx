@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
     Brain,
     Download,
@@ -8,7 +8,8 @@ import {
     Minimize2,
     X,
     Plus,
-    Edit3,
+    ChevronDown,
+    ChevronUp,
     Sparkles,
     RotateCcw,
     UserCheck,
@@ -63,6 +64,7 @@ export const BehaviorWorkspace = ({
     addCustomKeyword,
     defaultKeywords,
 }: BehaviorWorkspaceProps) => {
+    const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
     return (
         <Card className={cn(
             "p-10 border-0 bg-white dark:bg-slate-900 shadow-2xl shadow-slate-200/50 dark:shadow-none space-y-8 overflow-hidden transition-all duration-500 dark:border dark:border-slate-800",
@@ -149,12 +151,16 @@ export const BehaviorWorkspace = ({
 
                     {/* List Content */}
                     <div className="p-6 pt-4 space-y-3">
-                        {students.map((student) => (
+                        {students.map((student) => {
+                            const isRowOpen = expandedRowId === student.id;
+                            return (
                             <div
                                 key={student.id}
                                 className={cn(
-                                    "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_minmax(260px,2fr)_140px] gap-6 px-8 py-7 rounded-[2rem] border transition-all items-start group/row",
-                                    student.selected ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800" : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-100 dark:hover:border-slate-700"
+                                    "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_minmax(260px,2fr)_140px] gap-6 px-8 rounded-[2rem] border transition-all items-start group/row",
+                                    isRowOpen ? "py-7" : "py-4",
+                                    student.selected ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800" : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-100 dark:hover:border-slate-700",
+                                    isRowOpen && "ring-2 ring-primary/20 border-primary/40 shadow-xl shadow-primary/5"
                                 )}
                             >
                                 <div className="flex items-center justify-center pt-3">
@@ -218,43 +224,46 @@ export const BehaviorWorkspace = ({
                                 </div>
 
                                 <div className="relative group/txt pt-1">
-                                    <div className={cn(
-                                        "p-6 rounded-2xl text-[13px] font-medium min-h-[120px] leading-[1.8] transition-all",
-                                        student.aiResult ? "bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800" : "bg-slate-50/50 dark:bg-slate-950/30 text-slate-300 dark:text-slate-700 italic border border-dashed border-slate-200 dark:border-slate-800"
-                                    )}>
+                                    <div
+                                        onClick={() => { if (!isRowOpen && !student.isGenerating) setExpandedRowId(student.id); }}
+                                        className={cn(
+                                            "rounded-2xl text-[13px] font-medium leading-[1.8] transition-all",
+                                            isRowOpen ? "p-6 min-h-[200px]" : "p-4 h-[108px] overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary/20",
+                                            student.aiResult ? "bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800" : "bg-slate-50/50 dark:bg-slate-950/30 text-slate-300 dark:text-slate-700 italic border border-dashed border-slate-200 dark:border-slate-800"
+                                        )}
+                                    >
                                         {student.isGenerating ? (
                                             <div className="flex flex-col gap-3">
                                                 <div className="h-2.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full animate-pulse" />
                                                 <div className="h-2.5 w-4/5 bg-slate-200 dark:bg-slate-800 rounded-full animate-pulse" />
                                                 <div className="h-2.5 w-3/5 bg-slate-200 dark:bg-slate-800 rounded-full animate-pulse" />
                                             </div>
-                                        ) : student.isEditable ? (
+                                        ) : isRowOpen ? (
                                             <textarea
+                                                autoFocus
                                                 value={student.aiResult}
+                                                placeholder="선택된 키워드가 없습니다. 키워드를 클릭하고 생성을 눌러주세요."
                                                 onChange={(e) => {
                                                     const newVal = e.target.value;
                                                     setStudents(prev => prev.map(s => s.id === student.id ? { ...s, aiResult: newVal } : s));
                                                 }}
-                                                className="w-full min-h-[120px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0 text-slate-700 dark:text-slate-300 placeholder:text-slate-300 dark:placeholder:text-slate-700"
+                                                className="w-full min-h-[180px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0 leading-[1.8] text-slate-700 dark:text-slate-300 placeholder:text-slate-300 dark:placeholder:text-slate-700"
                                             />
                                         ) : (
-                                            student.aiResult || "선택된 키워드가 없습니다. 키워드를 클릭하고 생성을 눌러주세요."
+                                            <div className="line-clamp-3">{student.aiResult || "선택된 키워드가 없습니다. 키워드를 클릭하고 생성을 눌러주세요."}</div>
                                         )}
                                     </div>
-                                    {student.aiResult && !student.isGenerating && (
-                                        <div className="absolute top-4 right-4 opacity-0 group-hover/txt:opacity-100 transition-opacity">
-                                            <div
-                                                onClick={() => {
-                                                    setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isEditable: !s.isEditable } : s));
-                                                }}
-                                                className={cn(
-                                                    "size-9 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 flex items-center justify-center cursor-pointer transition-all hover:scale-110",
-                                                    student.isEditable ? "bg-primary text-white" : "bg-white dark:bg-slate-800 text-slate-400 hover:text-primary"
-                                                )}
-                                            >
-                                                <Edit3 className="size-4" />
-                                            </div>
-                                        </div>
+                                    {!student.isGenerating && (
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setExpandedRowId(isRowOpen ? null : student.id); }}
+                                            title={isRowOpen ? "접기" : "펼쳐서 편집"}
+                                            className={cn(
+                                                "absolute top-3 right-3 size-9 rounded-xl shadow-xl border flex items-center justify-center cursor-pointer transition-all hover:scale-110",
+                                                isRowOpen ? "bg-primary text-white border-primary opacity-100" : "bg-white dark:bg-slate-800 text-slate-400 border-slate-100 dark:border-slate-700 opacity-0 group-hover/txt:opacity-100 hover:text-primary"
+                                            )}
+                                        >
+                                            {isRowOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                                        </button>
                                     )}
                                 </div>
 
@@ -279,7 +288,8 @@ export const BehaviorWorkspace = ({
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </div>

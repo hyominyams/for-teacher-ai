@@ -10,13 +10,13 @@ import {
     Sparkles,
     RotateCcw,
     UserCheck,
-    Edit3,
     Trash2,
     Settings2,
     Users,
     Download,
     Target,
-    ChevronDown
+    ChevronDown,
+    ChevronUp
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -89,6 +89,7 @@ export const SubjectWorkspace = ({
     setIsExpanded
 }: SubjectWorkspaceProps) => {
     const [isBulkOpen, setIsBulkOpen] = useState(false);
+    const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
 
     const [mounted, setMounted] = useState(false);
     useEffect(() => setMounted(true), []);
@@ -480,12 +481,16 @@ export const SubjectWorkspace = ({
 
                                 {/* List Content */}
                                 <div className="p-6 space-y-3">
-                                    {students.map((student) => (
+                                    {students.map((student) => {
+                                        const isRowOpen = expandedRowId === student.id;
+                                        return (
                                         <div
                                             key={student.id}
                                             className={cn(
-                                                "grid gap-6 px-8 py-6 rounded-[2rem] border transition-all items-start group/row",
-                                                student.selected ? "bg-indigo-50 border-indigo-200" : "bg-white border-slate-50 hover:bg-slate-50 hover:border-slate-100"
+                                                "grid gap-6 px-8 rounded-[2rem] border transition-all items-start group/row",
+                                                isRowOpen ? "py-6" : "py-3.5",
+                                                student.selected ? "bg-indigo-50 border-indigo-200" : "bg-white border-slate-50 hover:bg-slate-50 hover:border-slate-100",
+                                                isRowOpen && "ring-2 ring-indigo-400/30 border-indigo-300 shadow-xl shadow-indigo-100/40"
                                             )}
                                             style={{ gridTemplateColumns: gridTemplateCols }}
                                         >
@@ -532,39 +537,44 @@ export const SubjectWorkspace = ({
                                             </div>
 
                                             <div className="relative group/txt pt-1">
-                                                <div className={cn(
-                                                    "p-5 rounded-2xl text-[12px] font-medium min-h-[44px] leading-[1.7] transition-all",
-                                                    student.aiResult ? "bg-slate-50 text-slate-700 border border-slate-100 shadow-inner" : "bg-slate-50 border border-dashed border-slate-200 text-slate-300 italic"
-                                                )}>
+                                                <div
+                                                    onClick={() => { if (!isRowOpen && !student.isGenerating) setExpandedRowId(student.id); }}
+                                                    className={cn(
+                                                        "rounded-2xl text-[12px] font-medium leading-[1.7] transition-all",
+                                                        isRowOpen ? "p-5 min-h-[160px] shadow-inner" : "p-4 h-[88px] overflow-hidden cursor-pointer hover:ring-2 hover:ring-indigo-300/50",
+                                                        student.aiResult ? "bg-slate-50 text-slate-700 border border-slate-100 shadow-inner" : "bg-slate-50 border border-dashed border-slate-200 text-slate-300 italic"
+                                                    )}
+                                                >
                                                     {student.isGenerating ? (
                                                         <div className="flex flex-col gap-2">
                                                             <div className="h-2 w-full bg-slate-200 rounded-full animate-pulse" />
                                                             <div className="h-2 w-4/5 bg-slate-200 rounded-full animate-pulse" />
                                                         </div>
-                                                    ) : student.isEditable ? (
+                                                    ) : isRowOpen ? (
                                                         <textarea
+                                                            autoFocus
                                                             value={student.aiResult}
+                                                            placeholder="평가 선택 후 생성을 눌러주세요."
                                                             onChange={(e) => {
                                                                 const newVal = e.target.value;
                                                                 setStudents(prev => prev.map(s => s.id === student.id ? { ...s, aiResult: newVal } : s));
                                                             }}
-                                                            className="w-full min-h-[100px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0 font-medium"
+                                                            className="w-full min-h-[140px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0 font-medium leading-[1.7]"
                                                         />
                                                     ) : (
-                                                        <div className="line-clamp-2 group-hover/txt:line-clamp-none transition-all">{student.aiResult || "평가 선택 후 생성을 눌러주세요."}</div>
+                                                        <div className="line-clamp-3">{student.aiResult || "평가 선택 후 생성을 눌러주세요."}</div>
                                                     )}
                                                 </div>
-                                                {student.aiResult && !student.isGenerating && (
+                                                {!student.isGenerating && (
                                                     <button
-                                                        onClick={() => {
-                                                            setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isEditable: !s.isEditable } : s));
-                                                        }}
+                                                        onClick={(e) => { e.stopPropagation(); setExpandedRowId(isRowOpen ? null : student.id); }}
+                                                        title={isRowOpen ? "접기" : "펼쳐서 편집"}
                                                         className={cn(
-                                                            "absolute top-3 right-3 size-8 rounded-lg border border-slate-100 flex items-center justify-center bg-white shadow-xl transition-all hover:scale-110",
-                                                            student.isEditable ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-indigo-600"
+                                                            "absolute top-2.5 right-2.5 size-8 rounded-lg border flex items-center justify-center shadow-xl transition-all hover:scale-110",
+                                                            isRowOpen ? "bg-indigo-600 text-white border-indigo-600 opacity-100" : "bg-white text-slate-400 border-slate-100 opacity-0 group-hover/txt:opacity-100 hover:text-indigo-600"
                                                         )}
                                                     >
-                                                        <Edit3 className="size-3.5" />
+                                                        {isRowOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                                                     </button>
                                                 )}
                                             </div>
@@ -596,7 +606,8 @@ export const SubjectWorkspace = ({
                                                 </button>
                                             </div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>

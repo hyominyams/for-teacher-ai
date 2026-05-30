@@ -65,16 +65,31 @@ export default function WorkLogPage() {
     const router = useRouter();
 
     useEffect(() => {
-        const getSession = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
+        let mounted = true;
+
+        const applySession = (session: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]) => {
+            if (!mounted) return;
             if (session?.user) {
                 setUserId(session.user.id);
             } else {
-                router.push("/login");
+                setUserId(null);
+                router.replace("/login");
             }
         };
-        getSession();
-    }, []);
+
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            applySession(session);
+        });
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            applySession(session);
+        });
+
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
+    }, [router]);
 
     useEffect(() => {
         if (!userId) return;

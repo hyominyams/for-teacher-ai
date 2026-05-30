@@ -17,11 +17,20 @@ export function NavbarLanding() {
     const [isLoggedIn, setIsLoggedIn] = React.useState(false)
 
     React.useEffect(() => {
-        const checkSession = async () => {
-            const { data: { session } } = await supabase.auth.getSession()
-            setIsLoggedIn(!!session)
+        let mounted = true
+
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (mounted) setIsLoggedIn(!!session)
+        })
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (mounted) setIsLoggedIn(!!session)
+        })
+
+        return () => {
+            mounted = false
+            subscription.unsubscribe()
         }
-        checkSession()
     }, [])
 
     React.useEffect(() => {
