@@ -2,13 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { Sparkles, User, LogOut, Menu, X } from "lucide-react"
+import { Menu, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
 import { supabase } from "@/lib/supabase"
-import { ArrowLeft, LayoutDashboard } from "lucide-react"
+import { LayoutDashboard } from "lucide-react"
 import { ModeToggle } from "@/components/mode-toggle"
 
 export function NavbarLanding() {
