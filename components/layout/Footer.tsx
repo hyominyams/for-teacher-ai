@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Mail, Github, ExternalLink } from "lucide-react"
+import { Github, ExternalLink } from "lucide-react"
 
 export function Footer() {
     const pathname = usePathname()
@@ -106,7 +106,7 @@ export function Footer() {
                         </p>
                         <div className="flex gap-4">
                             <Link href="#" className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">이용약관</Link>
-                            <Link href="#" className="text-[11px] text-muted-foreground hover:text-foreground transition-colors font-bold border-b border-muted-foreground/30">개인정보처리방침</Link>
+                            <Link href="/privacy" className="text-[11px] text-muted-foreground hover:text-foreground transition-colors font-bold border-b border-muted-foreground/30">개인정보처리방침</Link>
                         </div>
                     </div>
 

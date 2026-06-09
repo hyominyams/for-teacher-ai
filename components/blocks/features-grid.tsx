@@ -78,8 +78,8 @@ export const FeaturesGrid = () => {
         },
         {
             icon: ShieldCheck,
-            title: "개인정보 완벽 보호",
-            description: "학생의 실명 등 민감한 정보는 서버에 저장하지 않으며, 로컬 환경에서 안전하게 처리됩니다.",
+            title: "학생 정보 최소화",
+            description: "학생 실명 입력을 권장하지 않고 번호와 키워드 중심으로 필요한 정보만 다루도록 설계했습니다.",
             iconBgColor: "bg-emerald-500/10",
             iconColor: "text-emerald-500"
         }

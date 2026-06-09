@@ -11,6 +11,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { UserPlus, ArrowLeft, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.message) {
+        return error.message;
+    }
+
+    return fallback;
+};
+
 export default function SignupPage() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
@@ -47,8 +55,8 @@ export default function SignupPage() {
 
             alert("회원가입이 완료되었습니다! 이메일 인증을 확인해주세요.");
             router.push("/login");
-        } catch (error: any) {
-            alert(error.message || "회원가입 중 오류가 발생했습니다.");
+        } catch (error: unknown) {
+            alert(getErrorMessage(error, "회원가입 중 오류가 발생했습니다."));
         } finally {
             setIsLoading(false);
         }
@@ -65,8 +73,8 @@ export default function SignupPage() {
             });
 
             if (error) throw error;
-        } catch (error: any) {
-            alert(error.message || "구글 로그인 중 오류가 발생했습니다.");
+        } catch (error: unknown) {
+            alert(getErrorMessage(error, "구글 로그인 중 오류가 발생했습니다."));
             setIsLoading(false);
         }
     };
@@ -227,7 +235,7 @@ export default function SignupPage() {
                 </Card>
 
                 <p className="mt-8 text-center text-xs text-muted-foreground px-8 leading-relaxed text-balance">
-                    가입 시 For Teacher AI의 <Link href="#" className="underline hover:text-foreground">이용약관</Link> 및 <Link href="#" className="underline hover:text-foreground">개인정보처리방침</Link>에 동의하게 됩니다.
+                    가입 시 For Teacher AI의 <Link href="#" className="underline hover:text-foreground">이용약관</Link> 및 <Link href="/privacy" className="underline hover:text-foreground">개인정보처리방침</Link>에 동의하게 됩니다.
                 </p>
             </div>
         </main>

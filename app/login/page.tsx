@@ -293,7 +293,7 @@ export default function LoginPage() {
                 </Card>
 
                 <p className="mt-8 text-center text-xs text-muted-foreground px-8 leading-relaxed">
-                    로그인함으로써 귀하는 For Teacher AI의 <Link href="#" className="underline hover:text-foreground">이용약관</Link> 및 <Link href="#" className="underline hover:text-foreground">개인정보처리방침</Link>에 동의하게 됩니다.
+                    로그인함으로써 귀하는 For Teacher AI의 <Link href="#" className="underline hover:text-foreground">이용약관</Link> 및 <Link href="/privacy" className="underline hover:text-foreground">개인정보처리방침</Link>에 동의하게 됩니다.
                 </p>
             </div>
         </main>
