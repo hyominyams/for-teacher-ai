@@ -1,3 +1,3 @@
 window.FORTEACHER_EXTENSION_CONFIG = {
-  appOrigin: "http://localhost:3000"
+  appOrigin: "https://for-teacher-ai.vercel.app"
 };
