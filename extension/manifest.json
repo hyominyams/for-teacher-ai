@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "ForTeacher AI NEIS Uploader",
+  "description": "ForTeacher AI results are uploaded into NEIS fields.",
+  "version": "0.1.0",
+  "permissions": ["activeTab", "scripting", "storage", "clipboardRead", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "NEIS Upload",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:3000/extension/bridge*", "https://*/extension/bridge*"],
+      "js": ["bridge-content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
