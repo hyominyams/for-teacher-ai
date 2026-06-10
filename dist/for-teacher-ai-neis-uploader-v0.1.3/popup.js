@@ -1,8 +1,16 @@
 const STORAGE_KEY = "neisUploadRecords";
 const WEB_RECORDS_KEY = "neisUploadWebRecordsByCategory";
 const SESSION_KEY = "forteacherSession";
-const BEHAVIOR_SELECTOR = ".cl-grid-cell[data-cellindex='3'] .cl-textarea:not(.cl-disabled)";
-const CREATIVE_SELECTOR = ".cl-grid-cell[data-cellindex='5'] .cl-textarea:not(.cl-disabled)";
+const NEIS_GRID_EDITABLE_SELECTOR = ".cl-textarea:not(.cl-disabled)";
+const BEHAVIOR_SELECTOR = [
+  ".cl-grid-cell[data-cellindex='3'][aria-label*='행동특성'] .cl-textarea:not(.cl-disabled)",
+  ".cl-grid-cell[data-cellindex='3'][aria-label*='종합의견'] .cl-textarea:not(.cl-disabled)",
+  ".cl-grid-cell[data-cellindex='3'] .cl-textarea:not(.cl-disabled)"
+].join(", ");
+const CREATIVE_SELECTOR = [
+  ".cl-grid-cell[data-cellindex='3'][aria-label*='특기사항']:not([aria-label*='행동특성']):not([aria-label*='종합의견']) .cl-textarea:not(.cl-disabled)",
+  ".cl-grid-cell[data-cellindex='3']:not([aria-label*='행동특성']):not([aria-label*='종합의견']) .cl-textarea:not(.cl-disabled)"
+].join(", ");
 const SUBJECT_SELECTOR = ".cl-grid-cell[data-cellindex='4'][aria-label*='학기말 종합의견'] .cl-textarea:not(.cl-disabled), .cl-grid-cell[data-cellindex='4'] .cl-textarea:not(.cl-disabled)";
 const DEFAULT_SELECTORS = {
   behavior: BEHAVIOR_SELECTOR,
@@ -439,6 +447,7 @@ function getPayload() {
   return {
     records,
     selector: getSelectorForCategory(),
+    fallbackSelector: NEIS_GRID_EDITABLE_SELECTOR,
     delayMs: Math.max(0, Number(delay.value) || 300),
     categoryLabel: getCategoryLabel() || "ForTeacher AI"
   };
@@ -557,7 +566,8 @@ async function runUploaderInPage(action, payload) {
   }
 
   const records = payload?.records || [];
-  const selector = payload?.selector || "";
+  const preferredSelector = payload?.selector || "";
+  const fallbackSelector = payload?.fallbackSelector || ".cl-textarea:not(.cl-disabled)";
   const delayMs = payload?.delayMs || 300;
   const categoryLabel = payload?.categoryLabel || "ForTeacher AI";
 
@@ -565,22 +575,34 @@ async function runUploaderInPage(action, payload) {
     return { ok: false, count: 0, message: "불러온 데이터가 없습니다." };
   }
 
-  installSelectionTracker();
-  if (!document.querySelector(selector)) {
+  const selector = getUsableSelector(preferredSelector, fallbackSelector);
+  if (!selector) {
     return { ok: false, count: 0, message: "이 프레임에는 나이스 입력칸이 없습니다." };
   }
+  installSelectionTracker(selector);
   mountOverlay();
   return { ok: true, count: records.length, message: "나이스 화면에 업로드 패널을 띄웠습니다." };
 
-  function installSelectionTracker() {
+  function getUsableSelector(primarySelector, secondarySelector) {
+    if (primarySelector && findVisibleEditables(primarySelector).length > 0) {
+      return primarySelector;
+    }
+    if (secondarySelector && findVisibleEditables(secondarySelector).length > 0) {
+      return secondarySelector;
+    }
+    return "";
+  }
+
+  function installSelectionTracker(activeSelector) {
+    window.__forTeacherActiveSelector = activeSelector;
     if (window.__forTeacherSelectionTrackerInstalled) return;
     window.__forTeacherSelectionTrackerInstalled = true;
     document.addEventListener("mousedown", (event) => {
-      const target = event.target?.closest?.(selector);
+      const target = event.target?.closest?.(window.__forTeacherActiveSelector || activeSelector);
       if (target) window.__forTeacherLastEditable = target;
     }, true);
     document.addEventListener("focusin", (event) => {
-      const target = event.target?.closest?.(selector);
+      const target = event.target?.closest?.(window.__forTeacherActiveSelector || activeSelector);
       if (target) window.__forTeacherLastEditable = target;
     }, true);
   }

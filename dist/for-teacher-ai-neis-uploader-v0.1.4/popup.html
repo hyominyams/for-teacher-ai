@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>NEIS Upload</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="top">
+        <div>
+          <p class="eyebrow">ForTeacher AI</p>
+          <h1>나이스 붙여넣기</h1>
+        </div>
+        <span id="accountBadge" class="badge neutral">미연결</span>
+      </header>
+
+      <section class="card account-card">
+        <div class="card-head">
+          <div>
+            <h2>계정</h2>
+            <p id="accountState">웹앱 계정을 연결하면 저장 데이터를 불러올 수 있습니다.</p>
+          </div>
+        </div>
+        <div class="button-row">
+          <button id="connectWebApp" type="button" class="button primary">웹앱 계정 연결</button>
+          <button id="logoutWebApp" type="button" class="button ghost">로그아웃</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>데이터 선택</h2>
+            <p>웹앱 저장 데이터 또는 직접 준비한 CSV를 사용할 수 있습니다.</p>
+          </div>
+          <button id="resetData" type="button" class="button compact">초기화</button>
+        </div>
+
+        <div class="source-switch" role="radiogroup" aria-label="데이터 방식">
+          <label>
+            <input type="radio" name="sourceMode" value="web" checked />
+            <span>웹앱 데이터</span>
+          </label>
+          <label>
+            <input type="radio" name="sourceMode" value="csv" />
+            <span>CSV</span>
+          </label>
+        </div>
+
+        <div id="webSourcePanel" class="source-panel">
+          <label class="label" for="category">영역</label>
+          <select id="category">
+            <option value="behavior">행특</option>
+            <option value="subject">학기말 종합의견</option>
+            <option value="creative">창체</option>
+          </select>
+          <div id="subjectScopePanel" class="subject-scope hidden">
+            <label class="label" for="subjectScope">교과</label>
+            <select id="subjectScope"></select>
+          </div>
+          <button id="loadWebData" type="button" class="button primary full">웹앱 저장 데이터 불러오기</button>
+        </div>
+
+        <div id="csvSourcePanel" class="source-panel hidden">
+          <label class="label" for="csvFile">CSV 파일</label>
+          <input id="csvFile" type="file" accept=".csv,text/csv" />
+          <button id="parseClipboard" type="button" class="button full">클립보드 CSV 읽기</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>불러온 목록</h2>
+            <p id="recordSummary">붙여넣을 학생 데이터를 확인하세요.</p>
+          </div>
+          <strong id="recordCount" class="count">0명</strong>
+        </div>
+        <div id="recordTable" class="record-table" aria-label="불러온 학생별 데이터"></div>
+      </section>
+
+      <section class="card settings-card">
+        <div class="settings-grid">
+          <label>
+            <span class="label">입력 간격</span>
+            <input id="delay" type="number" min="0" max="2000" step="50" value="300" />
+          </label>
+        </div>
+      </section>
+
+      <section class="actions">
+        <button id="openOverlay" type="button" class="button primary full action-button">나이스 화면에 패널 띄우기</button>
+      </section>
+
+      <p id="status" role="status"></p>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
