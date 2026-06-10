@@ -1,4 +1,4 @@
--- Convergence migration for project ptgrwqmeiksoaqauywgg
+-- Idempotent convergence migration for project ptgrwqmeiksoaqauywgg
 -- Brings existing profiles/work_logs schema in line with
 -- supabase/migrations/20260528_for_teacher_ai_core.sql while preserving rows.
 

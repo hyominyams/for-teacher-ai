@@ -199,6 +199,10 @@ p {
   margin-top: 12px;
 }
 
+.subject-scope {
+  margin-top: 10px;
+}
+
 .hidden {
   display: none;
 }

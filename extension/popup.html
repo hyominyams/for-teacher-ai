@@ -51,10 +51,14 @@
         <div id="webSourcePanel" class="source-panel">
           <label class="label" for="category">영역</label>
           <select id="category">
-            <option value="behavior">행특 - 행동특성 및 종합의견</option>
-            <option value="creative">창체 - 창의적 체험활동</option>
-            <option value="subject">교과 - 교과 세특</option>
+            <option value="behavior">행특</option>
+            <option value="subject">학기말 종합의견</option>
+            <option value="creative">창체</option>
           </select>
+          <div id="subjectScopePanel" class="subject-scope hidden">
+            <label class="label" for="subjectScope">교과</label>
+            <select id="subjectScope"></select>
+          </div>
           <button id="loadWebData" type="button" class="button primary full">웹앱 저장 데이터 불러오기</button>
         </div>
 

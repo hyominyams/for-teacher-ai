@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useSyncExternalStore } from "react";
 import {
     Zap,
     Maximize2,
@@ -64,11 +64,20 @@ interface SubjectWorkspaceProps {
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
     globalConfig: SubjectGlobalConfig;
     setGlobalConfig: React.Dispatch<React.SetStateAction<SubjectGlobalConfig>>;
+    subjectLogs: Array<{
+        scopeKey: string;
+        scopeLabel: string;
+        updatedAt?: string;
+    }>;
+    activeSubjectScopeKey: string;
+    onSubjectScopeChange: (scopeKey: string) => void;
+    onCreateSubjectLog: () => void;
+    onDeleteSubjectLog: (scopeKey: string) => void;
     handleGenerate: (id: number) => void;
     handleAllGenerate: () => void;
     handleSelectedGenerate: () => void;
     handleResetAll: () => void;
-    toggleAllSelection: (e: any) => void;
+    toggleAllSelection: React.ChangeEventHandler<HTMLInputElement>;
     toggleStudentSelection: (id: number) => void;
     isExpanded: boolean;
     setIsExpanded: React.Dispatch<React.SetStateAction<boolean>>;
@@ -79,6 +88,11 @@ export const SubjectWorkspace = ({
     setStudents,
     globalConfig,
     setGlobalConfig,
+    subjectLogs,
+    activeSubjectScopeKey,
+    onSubjectScopeChange,
+    onCreateSubjectLog,
+    onDeleteSubjectLog,
     handleGenerate,
     handleAllGenerate,
     handleSelectedGenerate,
@@ -91,8 +105,11 @@ export const SubjectWorkspace = ({
     const [isBulkOpen, setIsBulkOpen] = useState(false);
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
 
-    const [mounted, setMounted] = useState(false);
-    useEffect(() => setMounted(true), []);
+    const mounted = useSyncExternalStore(
+        () => () => {},
+        () => true,
+        () => false
+    );
 
     useEffect(() => {
         if (!isExpanded) return;
@@ -172,6 +189,10 @@ export const SubjectWorkspace = ({
 
     // Adjusted ratios: AI Result gets more space (2.5fr) vs Note (1fr)
     const gridTemplateCols = `40px 70px ${assessmentCols} minmax(180px, 1fr) minmax(280px, 2.5fr) 140px`;
+    const currentSubjectLabel = globalConfig.subjectName.trim() || "새 교과";
+    const subjectSelectItems = subjectLogs.some(log => log.scopeKey === activeSubjectScopeKey)
+        ? subjectLogs.map(log => log.scopeKey === activeSubjectScopeKey ? { ...log, scopeLabel: currentSubjectLabel } : log)
+        : [{ scopeKey: activeSubjectScopeKey, scopeLabel: currentSubjectLabel }, ...subjectLogs];
 
     return (
         <Wrapper isExpanded={isExpanded} mounted={mounted}>
@@ -180,7 +201,7 @@ export const SubjectWorkspace = ({
                 isExpanded ? "fixed inset-4 z-[9999] rounded-[3rem] border border-indigo-100 shadow-primary/20 !transform-none overflow-hidden flex flex-col pointer-events-auto cursor-default" : "rounded-[3rem] overflow-hidden"
             )}>
                 {/* Header Section */}
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
                     <div className="flex items-center gap-4">
                         <div className="size-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
                             <Zap className="size-7" />
@@ -193,14 +214,14 @@ export const SubjectWorkspace = ({
                             <p className="text-sm text-slate-400 font-medium">성취수준을 바탕으로 생활기록부 작성을 시작하세요.</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 w-full xl:w-auto">
                         {/* Bulk Level Input */}
                         <Popover open={isBulkOpen} onOpenChange={setIsBulkOpen}>
                             <PopoverTrigger asChild>
                                 <Button
                                     variant="outline"
                                     disabled={students.filter(s => s.selected).length === 0}
-                                    className="rounded-2xl h-11 px-6 font-bold border-indigo-100 bg-indigo-50 text-indigo-600 gap-2 hover:bg-indigo-100 transition-all font-black text-xs shrink-0"
+                                    className="rounded-2xl h-11 px-6 font-bold border-indigo-100 bg-indigo-50 text-indigo-600 gap-2 hover:bg-indigo-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
                                 >
                                     선택 일괄 적용 <ChevronDown className="size-4 opacity-50" />
                                 </Button>
@@ -243,7 +264,7 @@ export const SubjectWorkspace = ({
 
                         <Button
                             variant="outline"
-                            className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 text-emerald-600 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0"
+                            className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 text-emerald-600 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
                             onClick={() => {
                                 const headers = ["번호", ...globalConfig.assessments.map((_, i) => `평가${i + 1}`), "개별특이사항", "AI생성결과"];
                                 const rows = students.map(s => [
@@ -267,7 +288,7 @@ export const SubjectWorkspace = ({
                         <Button
                             variant="outline"
                             onClick={() => setIsExpanded(!isExpanded)}
-                            className="rounded-2xl h-11 px-5 border-slate-100 bg-slate-50 text-slate-500 hover:bg-slate-100 transition-all"
+                            className="rounded-2xl h-11 px-5 border-slate-100 bg-slate-50 text-slate-500 hover:bg-slate-100 transition-all col-span-2 sm:col-span-1"
                         >
                             {isExpanded ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
                         </Button>
@@ -282,15 +303,50 @@ export const SubjectWorkspace = ({
                     </div>
                 </div>
 
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-4 p-4 rounded-[2rem] bg-indigo-50/60 border border-indigo-100">
+                    <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] gap-3 sm:items-center min-w-0">
+                        <Label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-2">교과 선택</Label>
+                        <Select value={activeSubjectScopeKey} onValueChange={onSubjectScopeChange}>
+                            <SelectTrigger className="h-12 rounded-xl bg-white border-indigo-100 font-black text-slate-700 shadow-sm focus:ring-indigo-200 min-w-0">
+                                <SelectValue placeholder="교과 선택" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl border-indigo-100 shadow-2xl z-[10000]">
+                                {subjectSelectItems.map(log => (
+                                    <SelectItem key={log.scopeKey} value={log.scopeKey} className="font-bold">
+                                        {log.scopeLabel || "교과"}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                        <Button
+                            variant="outline"
+                            onClick={onCreateSubjectLog}
+                            className="h-12 rounded-xl px-5 border-indigo-100 bg-white text-indigo-600 hover:bg-indigo-100 font-black text-xs gap-2"
+                        >
+                            새 교과 <Plus className="size-4" />
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={() => onDeleteSubjectLog(activeSubjectScopeKey)}
+                            disabled={subjectLogs.length === 0}
+                            className="h-12 rounded-xl px-5 border-slate-200 bg-white text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 font-black text-xs gap-2 disabled:opacity-40"
+                        >
+                            삭제 <Trash2 className="size-4" />
+                        </Button>
+                    </div>
+                </div>
+
                 <Tabs defaultValue="global" className={cn(
                     "space-y-8",
                     isExpanded && "flex flex-col flex-1 min-h-0"
                 )}>
-                    <TabsList className="bg-slate-50 p-1.5 rounded-2xl border border-slate-100 h-14">
-                        <TabsTrigger value="global" className="rounded-xl px-8 font-black text-[13px] tracking-tight data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all h-full">
+                    <TabsList className="grid grid-cols-2 w-full bg-slate-50 p-1.5 rounded-2xl border border-slate-100 h-auto">
+                        <TabsTrigger value="global" className="rounded-xl px-3 sm:px-8 font-black text-[12px] sm:text-[13px] tracking-tight data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all h-11">
                             <Settings2 className="size-4 mr-2" /> 전체 정보 설정
                         </TabsTrigger>
-                        <TabsTrigger value="individual" className="rounded-xl px-8 font-black text-[13px] tracking-tight data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all h-full">
+                        <TabsTrigger value="individual" className="rounded-xl px-3 sm:px-8 font-black text-[12px] sm:text-[13px] tracking-tight data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all h-11">
                             <Users className="size-4 mr-2" /> 학생별 개별 입력
                         </TabsTrigger>
                     </TabsList>
@@ -511,7 +567,10 @@ export const SubjectWorkspace = ({
                                                     <div key={a.id} className="pt-1">
                                                         <Select
                                                             value={val || "none"}
-                                                            onValueChange={(v) => handleLevelChange(student.id, a.id, (v === "none" ? "" : v) as any)}
+                                                            onValueChange={(v) => {
+                                                                const level = v === "상" || v === "중" || v === "하" ? v : "";
+                                                                handleLevelChange(student.id, a.id, level);
+                                                            }}
                                                         >
                                                             <SelectTrigger className="h-11 rounded-xl bg-slate-50 border-none shadow-inner font-bold text-xs">
                                                                 <SelectValue placeholder="평가" />

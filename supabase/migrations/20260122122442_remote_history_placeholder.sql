@@ -1,0 +1,2 @@
+-- Placeholder for an existing remote migration history entry.
+-- The project was missing the original local migration file for this version.

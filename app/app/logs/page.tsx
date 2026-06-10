@@ -40,6 +40,8 @@ interface Student {
 interface WorkLog {
     id: string;
     category: string;
+    scope_key?: string;
+    scope_label?: string | null;
     data: {
         students: Student[];
         studentCount: number;
@@ -55,6 +57,12 @@ const CATEGORIES = [
     { id: "creative", name: "창체활동", icon: Brain, color: "emerald" },
     { id: "docs", name: "문서작성", icon: Edit3, color: "orange" }
 ];
+
+const getLogTitle = (log: WorkLog) => {
+    const categoryName = CATEGORIES.find(c => c.id === log.category)?.name || log.category;
+    if (log.category !== "subject") return categoryName;
+    return log.scope_label ? `${categoryName} · ${log.scope_label}` : categoryName;
+};
 
 export default function WorkLogPage() {
     const [logs, setLogs] = useState<WorkLog[]>([]);
@@ -128,7 +136,7 @@ export default function WorkLogPage() {
             const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
 
-            const categoryName = CATEGORIES.find(c => c.id === log.category)?.name || log.category;
+            const categoryName = getLogTitle(log);
             const dateStr = new Date(log.updated_at).toISOString().slice(0, 10);
 
             const link = document.createElement("a");
@@ -212,7 +220,7 @@ export default function WorkLogPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
                         {logs
                             .filter(log => {
-                                const categoryName = CATEGORIES.find(c => c.id === log.category)?.name || "";
+                                const categoryName = getLogTitle(log);
                                 return categoryName.includes(searchQuery) || log.updated_at.includes(searchQuery);
                             })
                             .map((log) => {
@@ -253,7 +261,7 @@ export default function WorkLogPage() {
                                                 </div>
 
                                                 <div className="space-y-2">
-                                                    <h3 className="text-2xl font-black text-slate-900 tracking-tight break-keep">{category.name}</h3>
+                                                    <h3 className="text-2xl font-black text-slate-900 tracking-tight break-keep">{getLogTitle(log)}</h3>
                                                     <div className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-wider min-w-0">
                                                         <Calendar className="size-3.5 shrink-0" />
                                                         <span className="truncate">{formatDate(log.updated_at)}</span>
@@ -341,7 +349,7 @@ export default function WorkLogPage() {
                                     </div>
                                     <div>
                                         <h2 className="text-3xl font-black text-slate-900 tracking-tight">
-                                            {CATEGORIES.find(c => c.id === selectedLog.category)?.name} 기록
+                                            {getLogTitle(selectedLog)} 기록
                                         </h2>
                                         <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-1">
                                             {formatDate(selectedLog.updated_at)} • {selectedLog.data.studentCount} Students
@@ -422,4 +430,3 @@ export default function WorkLogPage() {
         </main>
     );
 }
-

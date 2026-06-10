@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
     Zap,
@@ -65,7 +65,6 @@ interface CreativeActivityWorkspaceProps {
     handleAllGenerate: () => void;
     handleSelectedGenerate: () => void;
     handleResetAll: () => void;
-    handleAutoGenerateEvents: () => void;
     toggleAllSelection: () => void;
     toggleStudentSelection: (id: number) => void;
     studentCount: number;
@@ -86,12 +85,14 @@ export const CreativeActivityWorkspace = ({
     studentCount,
     charLimit,
     isExpanded,
-    setIsExpanded,
-    handleAutoGenerateEvents
+    setIsExpanded
 }: CreativeActivityWorkspaceProps) => {
-    const [mounted, setMounted] = useState(false);
+    const mounted = useSyncExternalStore(
+        () => () => {},
+        () => true,
+        () => false
+    );
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
-    useEffect(() => setMounted(true), []);
 
     useEffect(() => {
         if (!isExpanded) return;
@@ -112,7 +113,7 @@ export const CreativeActivityWorkspace = ({
                 "p-10 border-0 bg-white shadow-2xl shadow-slate-200/50 space-y-8 transition-all duration-500 relative",
                 isExpanded ? "fixed inset-4 z-[9999] rounded-[3rem] border border-blue-100 shadow-primary/20 !transform-none overflow-y-auto overscroll-contain pointer-events-auto cursor-default" : "rounded-[3rem] overflow-hidden"
             )}>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
                     <div className="flex items-center gap-4">
                         <div className="size-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
                             <Zap className="size-7" />
@@ -125,14 +126,8 @@ export const CreativeActivityWorkspace = ({
                             <p className="text-sm text-slate-400 font-medium">참여행사를 기반으로 생활기록부 작성을 시작하세요.</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <Button
-                            variant="outline"
-                            onClick={handleAutoGenerateEvents}
-                            className="rounded-2xl h-11 px-6 font-bold border-amber-100 bg-amber-50 text-amber-600 gap-2 hover:bg-amber-100 transition-all font-black text-xs shrink-0"
-                        >
-                            행사 자동생성 <Sparkles className="size-4" />
-                        </Button>
+                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 w-full xl:w-auto">
+                        <AutoDistributeEvents students={students} setStudents={setStudents} />
                         <BulkEventAdd students={students} setStudents={setStudents} />
                         <Button
                             variant="outline"
@@ -154,13 +149,13 @@ export const CreativeActivityWorkspace = ({
                                 link.click();
                                 document.body.removeChild(link);
                             }}
-                            className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 text-emerald-600 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0"
+                            className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 text-emerald-600 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
                         >
                             내보내기 <Download className="size-4" />
                         </Button>
                         <Button
                             onClick={() => setIsExpanded(!isExpanded)}
-                            className="rounded-2xl h-11 px-5 border-slate-100 bg-slate-50 text-slate-500 hover:bg-slate-100 transition-all"
+                            className="rounded-2xl h-11 px-5 border-slate-100 bg-slate-50 text-slate-500 hover:bg-slate-100 transition-all w-full sm:w-auto"
                             variant="ghost"
                         >
                             {isExpanded ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
@@ -400,6 +395,219 @@ export const CreativeActivityWorkspace = ({
     );
 };
 
+type EventCountMode = "mixed" | "3" | "4";
+
+const parseEventInput = (input: string) => Array.from(new Set(
+    input
+        .split(/[,，\n]/)
+        .map(event => event.replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+));
+
+const getEventCountForStudent = (mode: EventCountMode, index: number) => {
+    if (mode === "3") return 3;
+    if (mode === "4") return 4;
+    return index % 2 === 0 ? 3 : 4;
+};
+
+const circularDistance = (from: number, to: number, size: number) => {
+    const direct = Math.abs(from - to);
+    return Math.min(direct, size - direct);
+};
+
+const pickDistributedEvents = (
+    events: string[],
+    studentIndex: number,
+    targetCount: number,
+    usage: Map<string, number>,
+    previousAssignment: string[]
+) => {
+    const selected: string[] = [];
+
+    while (selected.length < targetCount) {
+        const cursor = (studentIndex * targetCount + selected.length) % events.length;
+        const candidates = events.filter(event => !selected.includes(event));
+        if (candidates.length === 0) break;
+
+        const next = candidates.sort((a, b) => {
+            const usageDiff = (usage.get(a) || 0) - (usage.get(b) || 0);
+            if (usageDiff !== 0) return usageDiff;
+
+            const previousDiff = Number(previousAssignment.includes(a)) - Number(previousAssignment.includes(b));
+            if (previousDiff !== 0) return previousDiff;
+
+            const distanceDiff = circularDistance(events.indexOf(a), cursor, events.length)
+                - circularDistance(events.indexOf(b), cursor, events.length);
+            if (distanceDiff !== 0) return distanceDiff;
+
+            return a.localeCompare(b, "ko");
+        })[0];
+
+        selected.push(next);
+        usage.set(next, (usage.get(next) || 0) + 1);
+    }
+
+    return selected;
+};
+
+const AutoDistributeEvents = ({
+    students,
+    setStudents
+}: {
+    students: Student[],
+    setStudents: React.Dispatch<React.SetStateAction<Student[]>>
+}) => {
+    const [open, setOpen] = useState(false);
+    const [input, setInput] = useState("");
+    const [countMode, setCountMode] = useState<EventCountMode>("mixed");
+    const [replaceExisting, setReplaceExisting] = useState(true);
+    const selectedCount = students.filter(s => s.selected).length;
+    const parsedEvents = parseEventInput(input);
+
+    const handleDistribute = () => {
+        if (parsedEvents.length === 0 || selectedCount === 0) return;
+
+        setStudents(prev => {
+            const selectedStudents = prev
+                .filter(student => student.selected)
+                .sort((a, b) => a.id - b.id);
+            const usage = new Map<string, number>(parsedEvents.map(event => [event, 0]));
+
+            if (!replaceExisting) {
+                selectedStudents.forEach(student => {
+                    (student.participatedEvents || []).forEach(event => {
+                        if (usage.has(event)) usage.set(event, (usage.get(event) || 0) + 1);
+                    });
+                });
+            }
+
+            const assignments = new Map<number, string[]>();
+            let previousAssignment: string[] = [];
+
+            selectedStudents.forEach((student, index) => {
+                const targetCount = Math.min(parsedEvents.length, getEventCountForStudent(countMode, index));
+                const assignedEvents = pickDistributedEvents(parsedEvents, index, targetCount, usage, previousAssignment);
+                assignments.set(student.id, assignedEvents);
+                previousAssignment = assignedEvents;
+            });
+
+            return prev.map(student => {
+                if (!student.selected) return student;
+                const assignedEvents = assignments.get(student.id) || [];
+
+                if (replaceExisting) {
+                    return { ...student, participatedEvents: assignedEvents };
+                }
+
+                const merged = [...(student.participatedEvents || [])];
+                assignedEvents.forEach(event => {
+                    if (!merged.includes(event)) merged.push(event);
+                });
+                return { ...student, participatedEvents: merged };
+            });
+        });
+
+        setInput("");
+        setOpen(false);
+    };
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <Button
+                    variant="outline"
+                    className="rounded-2xl h-11 px-6 font-bold border-amber-100 bg-amber-50 text-amber-600 gap-2 hover:bg-amber-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
+                >
+                    행사 자동배정 <Sparkles className="size-4" />
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[420px] p-0 rounded-2xl border-slate-100 shadow-2xl overflow-hidden z-[10050]" align="end">
+                <div className="p-4 bg-slate-50 border-b border-slate-100">
+                    <div className="text-sm font-black text-slate-700">행사 자동배정</div>
+                    <p className="text-[11px] text-slate-400 font-medium mt-1 leading-relaxed">
+                        학교 행사명으로 선택 학생의 참여 행사를 채웁니다.
+                    </p>
+                </div>
+                <div className="p-4 space-y-4">
+                    <textarea
+                        autoFocus
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                                e.preventDefault();
+                                handleDistribute();
+                            }
+                        }}
+                        placeholder="예: 시업식, 학급자치회, 과학의 달, 운동회, 현장체험학습"
+                        className="w-full h-28 px-4 py-3 rounded-xl border border-slate-200 bg-white text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all resize-none leading-relaxed"
+                    />
+
+                    <div className="grid grid-cols-3 gap-2">
+                        {([
+                            { value: "mixed", label: "3~4개" },
+                            { value: "3", label: "3개" },
+                            { value: "4", label: "4개" }
+                        ] as const).map(option => (
+                            <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => setCountMode(option.value)}
+                                className={cn(
+                                    "h-10 rounded-xl border text-xs font-black transition-all",
+                                    countMode === option.value
+                                        ? "bg-amber-500 border-amber-500 text-white"
+                                        : "bg-white border-slate-200 text-slate-500 hover:border-amber-200 hover:text-amber-600"
+                                )}
+                            >
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 cursor-pointer">
+                        <span className="text-xs font-black text-slate-600">기존 행사 비우기</span>
+                        <input
+                            type="checkbox"
+                            checked={replaceExisting}
+                            onChange={(e) => setReplaceExisting(e.target.checked)}
+                            className="size-4 rounded border-slate-300 accent-amber-500"
+                        />
+                    </label>
+
+                    {parsedEvents.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
+                            {parsedEvents.map((event, index) => (
+                                <Badge key={`${event}-${index}`} variant="secondary" className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border-amber-100 font-bold text-[11px]">
+                                    {event}
+                                </Badge>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1">
+                        <div className="text-[11px] font-bold text-slate-400">
+                            <span className="text-amber-600">{selectedCount}명</span>
+                            <span className="mx-1">/</span>
+                            <span className="text-amber-600">{parsedEvents.length}개 행사</span>
+                        </div>
+                        <Button
+                            onClick={handleDistribute}
+                            disabled={parsedEvents.length === 0 || selectedCount === 0}
+                            className="rounded-xl h-9 px-5 font-black text-xs bg-amber-600 text-white hover:bg-amber-700 disabled:bg-slate-100 disabled:text-slate-300 transition-all"
+                        >
+                            배정하기
+                        </Button>
+                    </div>
+                    {selectedCount === 0 && (
+                        <p className="text-[11px] font-bold text-red-400">학생을 선택하세요.</p>
+                    )}
+                </div>
+            </PopoverContent>
+        </Popover>
+    );
+};
+
 const BulkEventAdd = ({
     students,
     setStudents
@@ -411,11 +619,7 @@ const BulkEventAdd = ({
     const [input, setInput] = useState("");
     const selectedCount = students.filter(s => s.selected).length;
 
-    // 쉼표(전각/반각) 기준으로 분리하고 앞뒤 공백을 제거해 사용자의 띄어쓰기 실수를 보완한다.
-    const parsedEvents = input
-        .split(/[,，]/)
-        .map(e => e.trim())
-        .filter(Boolean);
+    const parsedEvents = parseEventInput(input);
 
     const handleAdd = () => {
         if (parsedEvents.length === 0 || selectedCount === 0) return;
@@ -437,7 +641,7 @@ const BulkEventAdd = ({
             <PopoverTrigger asChild>
                 <Button
                     variant="outline"
-                    className="rounded-2xl h-11 px-6 font-bold border-blue-100 bg-blue-50 text-blue-600 gap-2 hover:bg-blue-100 transition-all font-black text-xs shrink-0"
+                    className="rounded-2xl h-11 px-6 font-bold border-blue-100 bg-blue-50 text-blue-600 gap-2 hover:bg-blue-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
                 >
                     행사 일괄추가 <ListPlus className="size-4" />
                 </Button>
@@ -446,7 +650,7 @@ const BulkEventAdd = ({
                 <div className="p-4 bg-slate-50 border-b border-slate-100">
                     <div className="text-sm font-black text-slate-700">행사 일괄추가</div>
                     <p className="text-[11px] text-slate-400 font-medium mt-1 leading-relaxed">
-                        쉼표(,)로 구분해 입력하세요. 띄어쓰기는 자동으로 정리됩니다.
+                        쉼표로 구분한 행사명을 선택 학생에게 추가합니다.
                     </p>
                 </div>
                 <div className="p-4 space-y-3">
@@ -541,7 +745,7 @@ const EventPicker = ({
                             }}
                             className="w-full text-left px-3 py-3 rounded-xl text-xs font-black bg-amber-500 text-white shadow-lg shadow-amber-200 mb-4 flex items-center justify-between group"
                         >
-                            <span>"{search}" 직접 추가하기</span>
+                            <span>{search} 직접 추가하기</span>
                             <Plus className="size-4" />
                         </button>
                     )}

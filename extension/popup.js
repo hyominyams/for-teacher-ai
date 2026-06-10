@@ -21,6 +21,8 @@ const accountBadge = document.getElementById("accountBadge");
 const connectWebApp = document.getElementById("connectWebApp");
 const logoutWebApp = document.getElementById("logoutWebApp");
 const category = document.getElementById("category");
+const subjectScopePanel = document.getElementById("subjectScopePanel");
+const subjectScope = document.getElementById("subjectScope");
 const loadWebData = document.getElementById("loadWebData");
 const resetData = document.getElementById("resetData");
 const webSourcePanel = document.getElementById("webSourcePanel");
@@ -32,6 +34,7 @@ const sourceModeInputs = [...document.querySelectorAll("input[name='sourceMode']
 let records = [];
 let webRecordsByCategory = {};
 let activeSource = "web";
+let activeSubjectScope = "default";
 
 init();
 
@@ -44,16 +47,18 @@ function on(element, eventName, handler) {
 }
 
 async function init() {
-  const saved = await chrome.storage.local.get([STORAGE_KEY, WEB_RECORDS_KEY, SESSION_KEY, "neisUploadSource", "neisUploadCategory", "neisUploadRecordLabel"]);
+  const saved = await chrome.storage.local.get([STORAGE_KEY, WEB_RECORDS_KEY, SESSION_KEY, "neisUploadSource", "neisUploadCategory", "neisUploadSubjectScope", "neisUploadRecordLabel"]);
   records = saved[STORAGE_KEY] || [];
   webRecordsByCategory = saved[WEB_RECORDS_KEY] || {};
   activeSource = saved.neisUploadSource || "web";
   if (saved.neisUploadCategory) category.value = saved.neisUploadCategory;
+  if (saved.neisUploadSubjectScope) activeSubjectScope = saved.neisUploadSubjectScope;
   if (activeSource === "web" && hasWebRecords()) {
     records = getWebRecordsForCategory();
   }
   renderAccount(saved[SESSION_KEY]);
   renderSource();
+  renderSubjectScope();
   renderRecords(activeSource === "web" ? getCategoryLabel() : saved.neisUploadRecordLabel);
 }
 
@@ -70,6 +75,15 @@ sourceModeInputs.forEach((input) => {
 
 on(category, "change", async () => {
   await chrome.storage.local.set({ neisUploadCategory: category.value });
+  renderSubjectScope();
+  if (activeSource === "web" && hasWebRecords()) {
+    await applyWebCategoryRecords();
+  }
+});
+
+on(subjectScope, "change", async () => {
+  activeSubjectScope = subjectScope.value || "default";
+  await chrome.storage.local.set({ neisUploadSubjectScope: activeSubjectScope });
   if (activeSource === "web" && hasWebRecords()) {
     await applyWebCategoryRecords();
   }
@@ -119,12 +133,7 @@ on(loadWebData, "click", async () => {
     setStatus("웹앱 저장 데이터를 불러오는 중입니다.");
     loadWebData.disabled = true;
     const logs = await fetchWorkLogs();
-    const nextRecordsByCategory = logs.reduce((result, log) => {
-      if (log?.category && log?.data) {
-        result[log.category] = workLogToRecords(log.category, log.data);
-      }
-      return result;
-    }, {});
+    const nextRecordsByCategory = buildWebRecordsByCategory(logs);
     if (Object.keys(nextRecordsByCategory).length) {
       webRecordsByCategory = nextRecordsByCategory;
       activeSource = "web";
@@ -133,9 +142,10 @@ on(loadWebData, "click", async () => {
         neisUploadSource: activeSource
       });
       renderSource();
+      renderSubjectScope();
       await applyWebCategoryRecords();
-      const totalCount = Object.values(webRecordsByCategory).reduce((sum, categoryRecords) => sum + categoryRecords.length, 0);
-      setStatus(`${Object.keys(webRecordsByCategory).length}媛??곸뿭, ${totalCount}媛???ぉ??遺덈윭?붿뒿?덈떎.`);
+      const totalCount = getTotalWebRecordCount(webRecordsByCategory);
+      setStatus(`${Object.keys(webRecordsByCategory).length}개 영역, ${totalCount}개 항목을 불러왔습니다.`);
       return;
     }
     const selectedLog = logs.find((log) => log.category === category.value);
@@ -155,7 +165,8 @@ on(resetData, "click", async () => {
   records = [];
   webRecordsByCategory = {};
   csvFile.value = "";
-  await chrome.storage.local.remove([STORAGE_KEY, WEB_RECORDS_KEY, "neisUploadRecordLabel"]);
+  await chrome.storage.local.remove([STORAGE_KEY, WEB_RECORDS_KEY, "neisUploadSubjectScope", "neisUploadRecordLabel"]);
+  renderSubjectScope();
   renderRecords();
   setStatus("불러온 데이터를 초기화했습니다. 다시 데이터 방식을 선택하세요.");
 });
@@ -184,16 +195,86 @@ async function applyWebCategoryRecords() {
   renderRecords(label);
 }
 
+function buildWebRecordsByCategory(logs) {
+  return logs.reduce((result, log) => {
+    if (!log?.category || !log?.data) return result;
+
+    if (log.category === "subject") {
+      const scopeKey = log.scope_key || "default";
+      const scopeLabel = log.scope_label || log.data?.globalConfig?.subjectName || "교과";
+      const subjectBucket = result.subject || { scopes: [] };
+      subjectBucket.scopes.push({
+        scopeKey,
+        scopeLabel,
+        updatedAt: log.updated_at,
+        records: workLogToRecords(log.category, log.data, scopeLabel)
+      });
+      result.subject = subjectBucket;
+      return result;
+    }
+
+    result[log.category] = workLogToRecords(log.category, log.data);
+    return result;
+  }, {});
+}
+
+function getTotalWebRecordCount(recordsByCategory) {
+  return Object.values(recordsByCategory).reduce((sum, categoryRecords) => {
+    if (Array.isArray(categoryRecords)) return sum + categoryRecords.length;
+    return sum + (categoryRecords.scopes || []).reduce((scopeSum, scope) => scopeSum + scope.records.length, 0);
+  }, 0);
+}
+
 function getWebRecordsForCategory() {
-  return webRecordsByCategory[category.value] || [];
+  if (category.value !== "subject") {
+    return webRecordsByCategory[category.value] || [];
+  }
+
+  const scopes = getSubjectScopes();
+  const selectedScope = scopes.find(scope => scope.scopeKey === activeSubjectScope) || scopes[0];
+  return selectedScope?.records || [];
 }
 
 function hasWebRecords() {
   return Object.keys(webRecordsByCategory).length > 0;
 }
 
+function getSubjectScopes() {
+  return webRecordsByCategory.subject?.scopes || [];
+}
+
+function renderSubjectScope() {
+  const showSubjectScope = activeSource === "web" && category.value === "subject";
+  subjectScopePanel.classList.toggle("hidden", !showSubjectScope);
+  if (!showSubjectScope) return;
+
+  const scopes = getSubjectScopes();
+  if (!scopes.length) {
+    subjectScope.innerHTML = `<option value="default">저장된 교과 없음</option>`;
+    subjectScope.disabled = true;
+    activeSubjectScope = "default";
+    return;
+  }
+
+  subjectScope.disabled = false;
+  if (!scopes.some(scope => scope.scopeKey === activeSubjectScope)) {
+    activeSubjectScope = scopes[0].scopeKey;
+    chrome.storage.local.set({ neisUploadSubjectScope: activeSubjectScope });
+  }
+
+  subjectScope.innerHTML = scopes.map(scope => (
+    `<option value="${escapeHTML(scope.scopeKey)}">${escapeHTML(scope.scopeLabel || "교과")}</option>`
+  )).join("");
+  subjectScope.value = activeSubjectScope;
+}
+
 function getCategoryLabel() {
-  return category.options[category.selectedIndex]?.text || category.value;
+  const baseLabel = category.options[category.selectedIndex]?.text || category.value;
+  if (category.value !== "subject") return baseLabel;
+
+  const scopes = getSubjectScopes();
+  const selectedScope = scopes.find(scope => scope.scopeKey === activeSubjectScope) || scopes[0];
+  return selectedScope?.scopeLabel ? `${baseLabel} - ${selectedScope.scopeLabel}` : baseLabel;
 }
 
 function renderAccount(session) {
@@ -211,6 +292,7 @@ function renderSource() {
   });
   webSourcePanel.classList.toggle("hidden", activeSource !== "web");
   csvSourcePanel.classList.toggle("hidden", activeSource !== "csv");
+  renderSubjectScope();
 }
 
 function renderRecords(label) {
@@ -310,13 +392,14 @@ async function fetchWorkLogs() {
   return body.logs || [];
 }
 
-function workLogToRecords(logCategory, data) {
+function workLogToRecords(logCategory, data, scopeLabel = "") {
   const students = data.students || [];
   return students
     .map((student, index) => ({
       id: student.id || String(index + 1),
       name: student.name || "",
       category: logCategory,
+      scopeLabel,
       text: student.aiResult || ""
     }))
     .filter((record) => record.text.trim().length > 0)
@@ -357,7 +440,7 @@ function getPayload() {
     records,
     selector: getSelectorForCategory(),
     delayMs: Math.max(0, Number(delay.value) || 300),
-    categoryLabel: category.options[category.selectedIndex]?.text || "ForTeacher AI"
+    categoryLabel: getCategoryLabel() || "ForTeacher AI"
   };
 }
 

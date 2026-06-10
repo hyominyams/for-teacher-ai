@@ -10,7 +10,6 @@ import {
     FileText,
     ArrowRight,
     Layout,
-    Sparkles,
     Activity,
     ChevronRight,
     Clock,
@@ -32,7 +31,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
-import { Student } from "@/types";
+import { Student, SubjectGlobalConfig } from "@/types";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
 import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
@@ -40,8 +39,13 @@ import { PlaceholderWorkspace } from "@/components/workspace/PlaceholderWorkspac
 import { NavbarMain } from "@/components/layout/NavbarMain";
 import { Footer } from "@/components/layout/Footer";
 import { studentKeywordPool, defaultKeywords } from "@/lib/constants/behavior-keywords";
-import { CREATIVE_CATEGORIES } from "@/lib/constants/creative-events";
-import { SubjectGlobalConfig } from "@/types";
+
+type WorkLogData = {
+    students: Student[];
+    studentCount: number;
+    charLimits: Record<string, number>;
+    globalConfig?: SubjectGlobalConfig;
+};
 
 const features = [
     {
@@ -74,6 +78,38 @@ const features = [
     }
 ];
 
+const DEFAULT_SCOPE_KEY = "default";
+
+interface SubjectWorkLogSummary {
+    scopeKey: string;
+    scopeLabel: string;
+    updatedAt?: string;
+}
+
+const getDefaultSubjectConfig = (): SubjectGlobalConfig => ({
+    schoolLevel: "elementary",
+    grade: "1",
+    subjectName: "",
+    assessments: []
+});
+
+const createInitialStudents = (count: number): Student[] => Array.from({ length: count }, (_, i) => ({
+    id: i + 1,
+    name: `${i + 1}번 학생`,
+    customKeywords: [],
+    selectedKeywords: [],
+    participatedEvents: [],
+    officerRole: "임원아님",
+    officerPeriod: "",
+    aiResult: "",
+    isGenerating: false,
+    isEditable: false,
+    selected: false,
+    subjectData: { assessments: [], individualNote: "" }
+}));
+
+const getSubjectScopeLabel = (config: SubjectGlobalConfig) => config.subjectName.trim() || "새 교과";
+
 export default function DashboardPage() {
     const router = useRouter();
     const [userName, setUserName] = useState<string | null>(null);
@@ -90,12 +126,10 @@ export default function DashboardPage() {
     const [newKeywordInput, setNewKeywordInput] = useState("");
     const [isExpanded, setIsExpanded] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
-    const [subjectConfig, setSubjectConfig] = useState<SubjectGlobalConfig>({
-        schoolLevel: "elementary",
-        grade: "1",
-        subjectName: "",
-        assessments: []
-    });
+    const [subjectConfig, setSubjectConfig] = useState<SubjectGlobalConfig>(getDefaultSubjectConfig);
+    const [subjectLogs, setSubjectLogs] = useState<SubjectWorkLogSummary[]>([]);
+    const [activeSubjectScopeKey, setActiveSubjectScopeKey] = useState(DEFAULT_SCOPE_KEY);
+    const [isWorkLogLoading, setIsWorkLogLoading] = useState(false);
 
     // User Session Profile + auth guard
     useEffect(() => {
@@ -141,59 +175,92 @@ export default function DashboardPage() {
     useEffect(() => {
         if (!userId) return;
 
-        // 지원하는 탭만 데이터를 가져옴
         const supportedTabs = ['behavior', 'creative', 'subject'];
         if (!supportedTabs.includes(activeTabId)) {
             return;
         }
 
         const loadWorkLog = async () => {
-            const { data, error } = await supabase
+            setIsWorkLogLoading(true);
+
+            if (activeTabId === 'subject') {
+                const { data } = await supabase
+                    .from('work_logs')
+                    .select('scope_key, scope_label, data, updated_at')
+                    .eq('user_id', userId)
+                    .eq('category', 'subject')
+                    .order('updated_at', { ascending: false });
+
+                const logs = data || [];
+                let nextSubjectLogs: SubjectWorkLogSummary[] = logs.map(log => ({
+                    scopeKey: log.scope_key || DEFAULT_SCOPE_KEY,
+                    scopeLabel: log.scope_label || log.data?.globalConfig?.subjectName || "교과",
+                    updatedAt: log.updated_at
+                }));
+
+                let selectedLog = logs.find(log => (log.scope_key || DEFAULT_SCOPE_KEY) === activeSubjectScopeKey);
+                if (!selectedLog && activeSubjectScopeKey !== DEFAULT_SCOPE_KEY) {
+                    nextSubjectLogs = [
+                        { scopeKey: activeSubjectScopeKey, scopeLabel: "새 교과" },
+                        ...nextSubjectLogs
+                    ];
+                }
+
+                setSubjectLogs(nextSubjectLogs);
+
+                selectedLog = selectedLog || (activeSubjectScopeKey === DEFAULT_SCOPE_KEY ? logs[0] : undefined);
+                if (selectedLog?.data) {
+                    const nextScopeKey = selectedLog.scope_key || DEFAULT_SCOPE_KEY;
+                    if (nextScopeKey !== activeSubjectScopeKey) {
+                        setActiveSubjectScopeKey(nextScopeKey);
+                    }
+                    setStudents(selectedLog.data.students || createInitialStudents(selectedLog.data.studentCount || studentCount));
+                    setStudentCount(selectedLog.data.studentCount || 7);
+                    if (selectedLog.data.charLimits) {
+                        setCharLimits(selectedLog.data.charLimits);
+                    } else if (selectedLog.data.charLimit) {
+                        setCharLimits(prev => ({ ...prev, subject: selectedLog.data.charLimit }));
+                    }
+                    setSubjectConfig(selectedLog.data.globalConfig || getDefaultSubjectConfig());
+                } else {
+                    setStudents(createInitialStudents(studentCount));
+                    setSubjectConfig(getDefaultSubjectConfig());
+                }
+
+                setIsWorkLogLoading(false);
+                return;
+            }
+
+            const { data } = await supabase
                 .from('work_logs')
                 .select('data')
                 .eq('user_id', userId)
                 .eq('category', activeTabId)
-                .maybeSingle(); // .single() 대신 .maybeSingle()을 사용하여 데이터가 없을 때 406 에러 방지
+                .eq('scope_key', DEFAULT_SCOPE_KEY)
+                .maybeSingle();
 
-            if (data && data.data) {
+            if (data?.data) {
                 setStudents(data.data.students || []);
                 setStudentCount(data.data.studentCount || 7);
                 if (data.data.charLimits) {
                     setCharLimits(data.data.charLimits);
                 } else if (data.data.charLimit) {
-                    // 호환성 유지
                     setCharLimits(prev => ({ ...prev, [activeTabId]: data.data.charLimit }));
                 }
-
-                if (activeTabId === 'subject' && data.data.globalConfig) {
-                    setSubjectConfig(data.data.globalConfig);
-                }
             } else {
-                // 초기화
-                const initialStudents = Array.from({ length: studentCount }, (_, i) => ({
-                    id: i + 1,
-                    name: `${i + 1}번 학생`,
-                    customKeywords: [],
-                    selectedKeywords: [],
-                    participatedEvents: [], // 창체활동 전용
-                    officerRole: "임원아님", // 창체활동 전용
-                    officerPeriod: "", // 창체활동 전용
-                    aiResult: "",
-                    isGenerating: false,
-                    isEditable: false,
-                    selected: false
-                }));
-                setStudents(initialStudents);
+                setStudents(createInitialStudents(studentCount));
             }
+
+            setIsWorkLogLoading(false);
         };
 
         loadWorkLog();
-    }, [userId, activeTabId]); // studentCount 제거하여 수동 변경 시 데이터 덮어쓰기 방지
+    }, [userId, activeTabId, activeSubjectScopeKey]); // studentCount 제거하여 수동 변경 시 데이터 덮어쓰기 방지
 
     const saveWorkLog = async (silent = false, overrideStudents?: Student[]) => {
-        if (!userId) return;
+        if (!userId) return false;
 
-        const workLogData: any = {
+        const workLogData: WorkLogData = {
             students: overrideStudents || students,
             studentCount,
             charLimits
@@ -203,37 +270,168 @@ export default function DashboardPage() {
             workLogData.globalConfig = subjectConfig;
         }
 
+        const scopeKey = activeTabId === 'subject' ? activeSubjectScopeKey : DEFAULT_SCOPE_KEY;
+        const scopeLabel = activeTabId === 'subject' ? getSubjectScopeLabel(subjectConfig) : null;
+        const savedAt = new Date().toISOString();
+
         const { error } = await supabase
             .from('work_logs')
             .upsert({
                 user_id: userId,
                 category: activeTabId,
+                scope_key: scopeKey,
+                scope_label: scopeLabel,
                 data: workLogData,
-                updated_at: new Date().toISOString()
+                schema_version: 2,
+                updated_at: savedAt
             }, {
-                onConflict: 'user_id, category'
+                onConflict: 'user_id, category, scope_key'
             });
 
         if (error) {
             // Silence common auth/session errors
-            if (error.code === 'PGRST116' || error.message?.includes('JWT')) return;
+            if (error.code === 'PGRST116' || error.message?.includes('JWT')) return false;
             console.error("Save Error:", error);
             if (!silent) alert("저장 중 오류가 발생했습니다.");
+            return false;
         } else {
+            if (activeTabId === 'subject') {
+                setSubjectLogs(prev => {
+                    const nextLog = {
+                        scopeKey,
+                        scopeLabel: scopeLabel || "교과",
+                        updatedAt: savedAt
+                    };
+                    const exists = prev.some(log => log.scopeKey === scopeKey);
+                    return exists
+                        ? prev.map(log => log.scopeKey === scopeKey ? nextLog : log)
+                        : [nextLog, ...prev];
+                });
+            }
             if (!silent) console.log("Auto-saved work log.");
+            return true;
         }
+    };
+
+    const hasCurrentSubjectWork = () => {
+        const hasSavedLog = subjectLogs.some(log => log.scopeKey === activeSubjectScopeKey);
+        const hasSubjectConfig = Boolean(subjectConfig.subjectName.trim()) || subjectConfig.assessments.length > 0;
+        const hasStudentSubjectData = students.some(student => (
+            Boolean(student.aiResult.trim()) ||
+            Boolean(student.subjectData?.individualNote?.trim()) ||
+            (student.subjectData?.assessments || []).some(assessment => Boolean(assessment.level))
+        ));
+
+        return hasSavedLog || hasSubjectConfig || hasStudentSubjectData;
+    };
+
+    const handleSubjectScopeChange = async (scopeKey: string) => {
+        if (scopeKey === activeSubjectScopeKey) return;
+
+        const saved = hasCurrentSubjectWork() ? await saveWorkLog(true) : true;
+        if (!saved && !confirm("현재 교과 저장에 실패했습니다. 저장하지 않고 이동하시겠습니까?")) {
+            return;
+        }
+
+        setActiveSubjectScopeKey(scopeKey);
+    };
+
+    const handleCreateSubjectLog = async () => {
+        if (!userId) return;
+
+        const currentSaved = hasCurrentSubjectWork() ? await saveWorkLog(true) : true;
+        if (!currentSaved && !confirm("현재 교과 저장에 실패했습니다. 새 교과로 이동하시겠습니까?")) {
+            return;
+        }
+
+        const scopeKey = crypto.randomUUID();
+        const defaultConfig = getDefaultSubjectConfig();
+        const initialStudents = createInitialStudents(studentCount);
+        const savedAt = new Date().toISOString();
+
+        setIsWorkLogLoading(true);
+
+        const { error } = await supabase
+            .from('work_logs')
+            .upsert({
+                user_id: userId,
+                category: 'subject',
+                scope_key: scopeKey,
+                scope_label: getSubjectScopeLabel(defaultConfig),
+                data: {
+                    students: initialStudents,
+                    studentCount,
+                    charLimits,
+                    globalConfig: defaultConfig
+                },
+                schema_version: 2,
+                updated_at: savedAt
+            }, {
+                onConflict: 'user_id, category, scope_key'
+            });
+
+        if (error) {
+            console.error("Create Subject Error:", error);
+            alert("새 교과 저장본을 만들지 못했습니다.");
+            setIsWorkLogLoading(false);
+            return;
+        }
+
+        setActiveSubjectScopeKey(scopeKey);
+        setSubjectConfig(defaultConfig);
+        setStudents(initialStudents);
+        setSubjectLogs(prev => [{ scopeKey, scopeLabel: "새 교과", updatedAt: savedAt }, ...prev]);
+        setIsWorkLogLoading(false);
+    };
+
+    const handleDeleteSubjectLog = async (scopeKey: string) => {
+        if (!userId) return;
+        const target = subjectLogs.find(log => log.scopeKey === scopeKey);
+        const label = target?.scopeLabel || "교과";
+        if (!confirm(`${label} 저장본을 삭제하시겠습니까?`)) return;
+
+        setIsWorkLogLoading(true);
+        const { error } = await supabase
+            .from('work_logs')
+            .delete()
+            .eq('user_id', userId)
+            .eq('category', 'subject')
+            .eq('scope_key', scopeKey);
+
+        if (error) {
+            console.error("Delete Error:", error);
+            alert("삭제 중 오류가 발생했습니다.");
+            setIsWorkLogLoading(false);
+            return;
+        }
+
+        const remainingLogs = subjectLogs.filter(log => log.scopeKey !== scopeKey);
+        setSubjectLogs(remainingLogs);
+
+        if (scopeKey === activeSubjectScopeKey) {
+            const nextLog = remainingLogs[0];
+            if (nextLog) {
+                setActiveSubjectScopeKey(nextLog.scopeKey);
+            } else {
+                setActiveSubjectScopeKey(DEFAULT_SCOPE_KEY);
+                setSubjectConfig(getDefaultSubjectConfig());
+                setStudents(createInitialStudents(studentCount));
+            }
+        }
+
+        setIsWorkLogLoading(false);
     };
 
     // Auto-save logic (Debounced)
     useEffect(() => {
-        if (!userId || !students.length) return;
+        if (!userId || !students.length || isWorkLogLoading) return;
 
         const timer = setTimeout(() => {
             saveWorkLog(true);
         }, 3000); // 3초 뒤 자동 저장
 
         return () => clearTimeout(timer);
-    }, [students, studentCount, charLimits, userId, activeTabId, subjectConfig]);
+    }, [students, studentCount, charLimits, userId, activeTabId, activeSubjectScopeKey, subjectConfig, isWorkLogLoading]);
 
     // 학생 수 변경 시 처리
     useEffect(() => {
@@ -476,9 +674,9 @@ export default function DashboardPage() {
                     isEditable: !!data.result
                 } : s));
                 return true;
-            } catch (error: any) {
+            } catch (error: unknown) {
                 console.error(`Error generating for student ${student.id}:`, error);
-                if (!firstError) firstError = error?.message || "네트워크 오류가 발생했습니다.";
+                if (!firstError) firstError = error instanceof Error ? error.message : "네트워크 오류가 발생했습니다.";
                 setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
                 return false;
             }
@@ -660,23 +858,6 @@ export default function DashboardPage() {
         }));
     };
 
-    const handleAutoGenerateEvents = () => {
-        if (!students.some(s => s.selected)) {
-            alert("선택된 학생이 없습니다.");
-            return;
-        }
-        const allEvents = CREATIVE_CATEGORIES.flatMap(cat => cat.events);
-        setStudents(prev => prev.map(student => {
-            if (!student.selected) return student;
-            const shuffled = [...allEvents].sort(() => 0.5 - Math.random());
-            const selected = shuffled.slice(0, 3);
-            return {
-                ...student,
-                participatedEvents: Array.from(new Set([...(student.participatedEvents || []), ...selected]))
-            };
-        }));
-    };
-
     const addCustomKeyword = (studentId: number) => {
         if (!newKeywordInput.trim()) return;
         setStudents(prev => prev.map(s => s.id === studentId ? {
@@ -735,7 +916,7 @@ export default function DashboardPage() {
                     const cols = parseCSVLine(line);
                     if (cols.length < 2) return null;
                     const studentNo = parseInt(cols[noIdx]) || (idx + 1);
-                    let rawKeywords = cols[keywordIdx] || "";
+                    const rawKeywords = cols[keywordIdx] || "";
                     const cleanKeywords: string[] = rawKeywords.replace(/[{}[\]]/g, "").split(/[|,]/).map(k => k.trim()).filter(k => k);
                     const resultText = cols[resultIdx] || "";
 
@@ -770,7 +951,7 @@ export default function DashboardPage() {
                     const cols = parseCSVLine(line);
                     if (cols.length < 2) return null;
                     const studentNo = parseInt(cols[noIdx]) || (idx + 1);
-                    let rawEvents = cols[eventIdx] || "";
+                    const rawEvents = cols[eventIdx] || "";
                     const cleanEvents: string[] = rawEvents.replace(/[{}[\]()]/g, "").split(/[|,]/).map(k => k.trim()).filter(k => k);
                     const resultText = cols[resultIdx] || "";
 
@@ -1057,6 +1238,11 @@ export default function DashboardPage() {
                                                 setStudents={setStudents}
                                                 globalConfig={subjectConfig}
                                                 setGlobalConfig={setSubjectConfig}
+                                                subjectLogs={subjectLogs}
+                                                activeSubjectScopeKey={activeSubjectScopeKey}
+                                                onSubjectScopeChange={handleSubjectScopeChange}
+                                                onCreateSubjectLog={handleCreateSubjectLog}
+                                                onDeleteSubjectLog={handleDeleteSubjectLog}
                                                 handleGenerate={handleGenerate}
                                                 handleAllGenerate={handleAllGenerate}
                                                 handleSelectedGenerate={handleSelectedGenerate}
@@ -1128,7 +1314,6 @@ export default function DashboardPage() {
                                                 handleAllGenerate={handleAllGenerate}
                                                 handleSelectedGenerate={handleSelectedGenerate}
                                                 handleResetAll={handleResetAll}
-                                                handleAutoGenerateEvents={handleAutoGenerateEvents}
                                                 toggleAllSelection={toggleAllSelection}
                                                 toggleStudentSelection={toggleStudentSelection}
                                                 studentCount={studentCount}

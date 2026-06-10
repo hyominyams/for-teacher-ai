@@ -54,7 +54,7 @@ export default function GuidebookPage() {
                             <h3 className="font-bold text-lg text-slate-900 dark:text-foreground">✨ AI 생성 팁</h3>
                             <p className="text-slate-500 dark:text-muted-foreground text-sm leading-relaxed">
                                 학생의 특성을 나타내는 키워드를 2개 이상 선택하면 더 자연스러운 문장이 생성됩니다.<br />
-                                '재생성' 버튼을 눌러 다양한 표현을 확인해 보세요.
+                                &apos;재생성&apos; 버튼을 눌러 다양한 표현을 확인해 보세요.
                             </p>
                         </div>
                     </div>

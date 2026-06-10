@@ -22,7 +22,7 @@ export interface Student {
         }>;
         individualNote: string;
     };
-    docsData?: any;
+    docsData?: unknown;
 }
 
 export interface SubjectAssessmentInfo {

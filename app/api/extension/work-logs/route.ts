@@ -35,7 +35,7 @@ export async function GET(req: Request) {
 
     const { data, error } = await supabase
         .from("work_logs")
-        .select("category,data,updated_at")
+        .select("category,scope_key,scope_label,data,updated_at")
         .order("updated_at", { ascending: false });
 
     if (error) {

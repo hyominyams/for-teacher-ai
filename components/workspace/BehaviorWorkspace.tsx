@@ -211,15 +211,32 @@ export const BehaviorWorkspace = ({
                                             <Button onClick={() => setIsAddingKeyword(null)} variant="ghost" className="size-9 rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 p-0"><X className="size-4" /></Button>
                                         </div>
                                     ) : (
-                                        <button
-                                            onClick={() => {
-                                                setIsAddingKeyword(student.id);
-                                                setNewKeywordInput("");
-                                            }}
-                                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-[11px] font-black text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500 hover:text-slate-500 dark:hover:text-slate-300 w-fit transition-all group/btn"
-                                        >
-                                            <Plus className="size-4 transition-transform group-hover/btn:rotate-90" /> 키워드 직접 추가
-                                        </button>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                onClick={() => {
+                                                    setIsAddingKeyword(student.id);
+                                                    setNewKeywordInput("");
+                                                }}
+                                                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-[11px] font-black text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500 hover:text-slate-500 dark:hover:text-slate-300 w-fit transition-all group/btn"
+                                            >
+                                                <Plus className="size-4 transition-transform group-hover/btn:rotate-90" /> 키워드 직접 추가
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setStudents(prev => prev.map(s => {
+                                                        if (s.id !== student.id) return s;
+                                                        return {
+                                                            ...s,
+                                                            customKeywords: s.customKeywords.filter(k => s.selectedKeywords.includes(k))
+                                                        };
+                                                    }));
+                                                }}
+                                                disabled={!student.customKeywords.some(k => !student.selectedKeywords.includes(k))}
+                                                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-slate-900 text-[11px] font-black text-slate-400 dark:text-slate-500 border-2 border-slate-100 dark:border-slate-800 hover:bg-red-50 hover:border-red-100 hover:text-red-500 dark:hover:bg-red-900/20 dark:hover:border-red-900/50 dark:hover:text-red-400 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-400 disabled:cursor-not-allowed w-fit transition-all"
+                                            >
+                                                <X className="size-4" /> 미선택 삭제
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
 

@@ -25,7 +25,7 @@ interface ScrollExpandMediaProps {
     children?: ReactNode;
 }
 
-const ScrollExpandMedia = ({
+const ScrollExpandMediaContent = ({
     mediaType = 'video',
     mediaSrc,
     posterSrc,
@@ -44,12 +44,6 @@ const ScrollExpandMedia = ({
     const [isMobileState, setIsMobileState] = useState<boolean>(false);
 
     const sectionRef = useRef<HTMLDivElement | null>(null);
-
-    useEffect(() => {
-        setScrollProgress(0);
-        setShowContent(false);
-        setMediaFullyExpanded(false);
-    }, [mediaType]);
 
     useEffect(() => {
         const handleWheel = (e: WheelEvent) => {
@@ -344,6 +338,18 @@ const ScrollExpandMedia = ({
                 </div>
             </section>
         </div>
+    );
+};
+
+const ScrollExpandMedia = (props: ScrollExpandMediaProps) => {
+    const mediaType = props.mediaType ?? 'video';
+
+    return (
+        <ScrollExpandMediaContent
+            key={mediaType}
+            {...props}
+            mediaType={mediaType}
+        />
     );
 };
 
