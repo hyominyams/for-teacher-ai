@@ -1413,12 +1413,18 @@ export default function DashboardPage() {
                                             </div>
 
                                             <Button
-                                                onClick={() => alert("추후 링크 삽입 예정")}
+                                                asChild
                                                 variant="outline"
                                                 className="w-full rounded-[1.25rem] h-16 border-2 border-cyan-500/40 hover:border-cyan-400 bg-transparent hover:bg-cyan-500/5 text-cyan-400 font-extrabold text-sm transition-all shadow-[0_0_20px_rgba(6,182,212,0.1)] active:scale-95 flex items-center justify-center gap-2 group/btn"
                                             >
-                                                다운로드하러가기
-                                                <ChevronRight className="size-4 group-hover/btn:translate-x-1 transition-transform" />
+                                                <a
+                                                    href="https://chromewebstore.google.com/detail/forteacher-ai-neis-upload/kccpnhgkaombpfajdjgonenibmglpcmp?hl=ko"
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                >
+                                                    다운로드하러가기
+                                                    <ChevronRight className="size-4 group-hover/btn:translate-x-1 transition-transform" />
+                                                </a>
                                             </Button>
                                         </div>
                                     </div>
