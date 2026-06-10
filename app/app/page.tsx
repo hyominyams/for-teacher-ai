@@ -826,6 +826,28 @@ export default function DashboardPage() {
         alert("초기화 및 저장이 완료되었습니다.");
     };
 
+    const handleResetBehaviorKeywords = async () => {
+        if (!confirm("모든 학생의 키워드를 초기화하시겠습니까? AI 결과는 유지됩니다.")) return;
+        const nextStudents = students.map(s => ({
+            ...s,
+            selectedKeywords: [],
+            customKeywords: []
+        }));
+        setStudents(nextStudents);
+        await saveWorkLog(false, nextStudents);
+        alert("키워드 초기화 및 저장이 완료되었습니다.");
+    };
+
+    const handleDeleteUnusedBehaviorKeywords = async () => {
+        const nextStudents = students.map(s => ({
+            ...s,
+            customKeywords: s.customKeywords.filter(k => s.selectedKeywords.includes(k))
+        }));
+        setStudents(nextStudents);
+        await saveWorkLog(false, nextStudents);
+        alert("미선택 키워드 삭제 및 저장이 완료되었습니다.");
+    };
+
     const handleResetSelection = () => {
         setStudents(prev => prev.map(s => ({ ...s, selected: false })));
     };
@@ -1164,6 +1186,8 @@ export default function DashboardPage() {
                                                 handleGenerate={handleGenerate}
                                                 handleReset={handleReset}
                                                 handleResetAll={handleResetAll}
+                                                handleResetKeywords={handleResetBehaviorKeywords}
+                                                handleDeleteUnusedKeywords={handleDeleteUnusedBehaviorKeywords}
                                                 handleSelectedGenerate={handleSelectedGenerate}
                                                 handleAllGenerate={handleAllGenerate}
                                                 toggleAllSelection={() => {

@@ -82,13 +82,13 @@ export function NavbarMain() {
     return (
         <header
             className={cn(
-                "fixed top-0 left-0 right-0 z-50 transition-all duration-300",
+                "fixed top-0 left-0 right-0 z-50 h-20 transition-colors duration-300",
                 isScrolled
-                    ? "bg-white/70 dark:bg-slate-950/90 backdrop-blur-2xl py-3 border-b border-black/5 dark:border-white/5 shadow-sm"
-                    : "bg-transparent py-6"
+                    ? "bg-white/70 dark:bg-slate-950/90 backdrop-blur-2xl border-b border-black/5 dark:border-white/5 shadow-sm"
+                    : "bg-transparent"
             )}
         >
-            <div className="container mx-auto px-6 md:px-12 flex items-center justify-between">
+            <div className="container mx-auto h-full px-6 md:px-12 flex items-center justify-between">
                 <Link href="/app" className="flex items-center gap-2 group tracking-tighter">
                     <span className="text-xl md:text-2xl font-black text-foreground group-hover:opacity-70 transition-all duration-300">
                         FOR TEACHER <span className="text-primary italic">AI</span>

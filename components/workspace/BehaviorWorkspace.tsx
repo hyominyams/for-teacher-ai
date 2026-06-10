@@ -12,6 +12,7 @@ import {
     ChevronUp,
     Sparkles,
     RotateCcw,
+    Trash2,
     UserCheck,
     Zap,
     CheckCircle2
@@ -19,6 +20,12 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Student } from "@/types";
 
 interface BehaviorWorkspaceProps {
@@ -31,6 +38,8 @@ interface BehaviorWorkspaceProps {
     handleGenerate: (id: number) => void;
     handleReset: (id: number) => void;
     handleResetAll: () => void;
+    handleResetKeywords: () => void;
+    handleDeleteUnusedKeywords: () => void;
     handleSelectedGenerate: () => void;
     handleAllGenerate: () => void;
     toggleAllSelection: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -53,6 +62,8 @@ export const BehaviorWorkspace = ({
     handleGenerate,
     handleReset,
     handleResetAll,
+    handleResetKeywords,
+    handleDeleteUnusedKeywords,
     handleSelectedGenerate,
     handleAllGenerate,
     toggleAllSelection,
@@ -221,21 +232,6 @@ export const BehaviorWorkspace = ({
                                             >
                                                 <Plus className="size-4 transition-transform group-hover/btn:rotate-90" /> 키워드 직접 추가
                                             </button>
-                                            <button
-                                                onClick={() => {
-                                                    setStudents(prev => prev.map(s => {
-                                                        if (s.id !== student.id) return s;
-                                                        return {
-                                                            ...s,
-                                                            customKeywords: s.customKeywords.filter(k => s.selectedKeywords.includes(k))
-                                                        };
-                                                    }));
-                                                }}
-                                                disabled={!student.customKeywords.some(k => !student.selectedKeywords.includes(k))}
-                                                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-slate-900 text-[11px] font-black text-slate-400 dark:text-slate-500 border-2 border-slate-100 dark:border-slate-800 hover:bg-red-50 hover:border-red-100 hover:text-red-500 dark:hover:bg-red-900/20 dark:hover:border-red-900/50 dark:hover:text-red-400 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-400 disabled:cursor-not-allowed w-fit transition-all"
-                                            >
-                                                <X className="size-4" /> 미선택 삭제
-                                            </button>
                                         </div>
                                     )}
                                 </div>
@@ -318,13 +314,36 @@ export const BehaviorWorkspace = ({
                     </div>
                 </div>
                 <div className="flex gap-4">
-                    <Button
-                        onClick={handleResetAll}
-                        variant="ghost"
-                        className="rounded-2xl bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-black h-16 px-10 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all"
-                    >
-                        전체 초기화
-                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                className="rounded-2xl bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-black h-16 px-10 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all gap-3"
+                            >
+                                <RotateCcw className="size-5" /> 초기화
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56 rounded-2xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-2xl z-[300]">
+                            <DropdownMenuItem
+                                onClick={handleResetAll}
+                                className="rounded-xl px-4 py-3 font-black text-slate-600 dark:text-slate-300 cursor-pointer focus:bg-slate-50 dark:focus:bg-slate-800"
+                            >
+                                <RotateCcw className="size-4 text-slate-400" /> 전체 초기화
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={handleResetKeywords}
+                                className="rounded-xl px-4 py-3 font-black text-slate-600 dark:text-slate-300 cursor-pointer focus:bg-blue-50 dark:focus:bg-blue-900/20 focus:text-blue-600 dark:focus:text-blue-300"
+                            >
+                                <X className="size-4 text-blue-400" /> 키워드 초기화
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={handleDeleteUnusedKeywords}
+                                className="rounded-xl px-4 py-3 font-black text-slate-600 dark:text-slate-300 cursor-pointer focus:bg-red-50 dark:focus:bg-red-900/20 focus:text-red-500 dark:focus:text-red-300"
+                            >
+                                <Trash2 className="size-4 text-red-400" /> 미선택 키워드만 삭제
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button
                         onClick={handleSelectedGenerate}
                         variant="outline"

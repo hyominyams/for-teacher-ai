@@ -303,38 +303,57 @@ export const SubjectWorkspace = ({
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-4 p-4 rounded-[2rem] bg-indigo-50/60 border border-indigo-100">
-                    <div className="grid grid-cols-1 sm:grid-cols-[120px_minmax(0,1fr)] gap-3 sm:items-center min-w-0">
-                        <Label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-2">교과 선택</Label>
-                        <Select value={activeSubjectScopeKey} onValueChange={onSubjectScopeChange}>
-                            <SelectTrigger className="h-12 rounded-xl bg-white border-indigo-100 font-black text-slate-700 shadow-sm focus:ring-indigo-200 min-w-0">
-                                <SelectValue placeholder="교과 선택" />
-                            </SelectTrigger>
-                            <SelectContent className="rounded-xl border-indigo-100 shadow-2xl z-[10000]">
-                                {subjectSelectItems.map(log => (
-                                    <SelectItem key={log.scopeKey} value={log.scopeKey} className="font-bold">
-                                        {log.scopeLabel || "교과"}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                <div className="rounded-[2rem] bg-indigo-50/60 border border-indigo-100 p-5 space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,1fr)_auto] gap-4 lg:items-end">
+                        <div className="space-y-2 min-w-0">
+                            <Label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-1">현재 교과</Label>
+                            <Input
+                                value={globalConfig.subjectName}
+                                onChange={(e) => setGlobalConfig(p => ({ ...p, subjectName: e.target.value }))}
+                                placeholder="교과명을 입력하세요"
+                                className="h-14 rounded-2xl bg-white border-indigo-100 px-5 text-lg font-black text-slate-800 placeholder:text-slate-300 shadow-sm focus-visible:ring-indigo-200 focus-visible:border-indigo-200"
+                            />
+                        </div>
+                        <div className="grid grid-cols-[1fr_48px] sm:flex sm:items-center gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={onCreateSubjectLog}
+                                className="h-12 rounded-xl px-5 border-indigo-100 bg-white text-indigo-600 hover:bg-indigo-100 font-black text-xs gap-2"
+                            >
+                                새 교과 <Plus className="size-4" />
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => onDeleteSubjectLog(activeSubjectScopeKey)}
+                                disabled={subjectLogs.length === 0}
+                                title="교과 삭제"
+                                className="h-12 rounded-xl px-4 border-slate-200 bg-white text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 font-black text-xs gap-2 disabled:opacity-40"
+                            >
+                                <Trash2 className="size-4" />
+                                <span className="hidden sm:inline">삭제</span>
+                            </Button>
+                        </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                        <Button
-                            variant="outline"
-                            onClick={onCreateSubjectLog}
-                            className="h-12 rounded-xl px-5 border-indigo-100 bg-white text-indigo-600 hover:bg-indigo-100 font-black text-xs gap-2"
-                        >
-                            새 교과 <Plus className="size-4" />
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={() => onDeleteSubjectLog(activeSubjectScopeKey)}
-                            disabled={subjectLogs.length === 0}
-                            className="h-12 rounded-xl px-5 border-slate-200 bg-white text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 font-black text-xs gap-2 disabled:opacity-40"
-                        >
-                            삭제 <Trash2 className="size-4" />
-                        </Button>
+
+                    <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                        {subjectSelectItems.map(log => {
+                            const isActive = log.scopeKey === activeSubjectScopeKey;
+                            return (
+                                <button
+                                    key={log.scopeKey}
+                                    onClick={() => onSubjectScopeChange(log.scopeKey)}
+                                    className={cn(
+                                        "h-10 max-w-[220px] shrink-0 rounded-xl border px-4 text-xs font-black transition-all truncate",
+                                        isActive
+                                            ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200"
+                                            : "bg-white border-indigo-100 text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
+                                    )}
+                                    title={log.scopeLabel || "교과"}
+                                >
+                                    {log.scopeLabel || "교과"}
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
 
