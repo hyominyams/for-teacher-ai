@@ -79,11 +79,18 @@ const features = [
 ];
 
 const DEFAULT_SCOPE_KEY = "default";
+const DEFAULT_STUDENT_COUNTS: Record<string, number> = {
+    behavior: 7,
+    subject: 7,
+    creative: 7,
+    docs: 7
+};
 
 interface SubjectWorkLogSummary {
     scopeKey: string;
     scopeLabel: string;
     updatedAt?: string;
+    createdAt?: string;
 }
 
 const getDefaultSubjectConfig = (): SubjectGlobalConfig => ({
@@ -108,13 +115,25 @@ const createInitialStudents = (count: number): Student[] => Array.from({ length:
     subjectData: { assessments: [], individualNote: "" }
 }));
 
+const resizeStudentsToCount = (sourceStudents: Student[] | undefined, count: number): Student[] => {
+    const students = sourceStudents || [];
+    if (students.length === count) return students;
+    if (students.length > count) return students.slice(0, count);
+
+    return [
+        ...students,
+        ...createInitialStudents(count).slice(students.length)
+    ];
+};
+
 const getSubjectScopeLabel = (config: SubjectGlobalConfig) => config.subjectName.trim() || "새 교과";
 
 export default function DashboardPage() {
     const router = useRouter();
     const [userName, setUserName] = useState<string | null>(null);
     const [activeTabId, setActiveTabId] = useState(features[0].id);
-    const [studentCount, setStudentCount] = useState(7);
+    const [studentCounts, setStudentCounts] = useState<Record<string, number>>(DEFAULT_STUDENT_COUNTS);
+    const [loadedStudentCountCategories, setLoadedStudentCountCategories] = useState<Record<string, boolean>>({});
     const [charLimits, setCharLimits] = useState<Record<string, number>>({
         behavior: 300,
         subject: 300,
@@ -130,6 +149,11 @@ export default function DashboardPage() {
     const [subjectLogs, setSubjectLogs] = useState<SubjectWorkLogSummary[]>([]);
     const [activeSubjectScopeKey, setActiveSubjectScopeKey] = useState(DEFAULT_SCOPE_KEY);
     const [isWorkLogLoading, setIsWorkLogLoading] = useState(false);
+    const studentCount = studentCounts[activeTabId] || DEFAULT_STUDENT_COUNTS[activeTabId] || 7;
+    const setStudentCount = (count: number) => {
+        setLoadedStudentCountCategories(prev => ({ ...prev, [activeTabId]: true }));
+        setStudentCounts(prev => ({ ...prev, [activeTabId]: count }));
+    };
 
     // User Session Profile + auth guard
     useEffect(() => {
@@ -186,16 +210,17 @@ export default function DashboardPage() {
             if (activeTabId === 'subject') {
                 const { data } = await supabase
                     .from('work_logs')
-                    .select('scope_key, scope_label, data, updated_at')
+                    .select('scope_key, scope_label, data, created_at, updated_at')
                     .eq('user_id', userId)
                     .eq('category', 'subject')
-                    .order('updated_at', { ascending: false });
+                    .order('created_at', { ascending: false });
 
                 const logs = data || [];
                 let nextSubjectLogs: SubjectWorkLogSummary[] = logs.map(log => ({
                     scopeKey: log.scope_key || DEFAULT_SCOPE_KEY,
                     scopeLabel: log.scope_label || log.data?.globalConfig?.subjectName || "교과",
-                    updatedAt: log.updated_at
+                    updatedAt: log.updated_at,
+                    createdAt: log.created_at
                 }));
 
                 let selectedLog = logs.find(log => (log.scope_key || DEFAULT_SCOPE_KEY) === activeSubjectScopeKey);
@@ -209,13 +234,21 @@ export default function DashboardPage() {
                 setSubjectLogs(nextSubjectLogs);
 
                 selectedLog = selectedLog || (activeSubjectScopeKey === DEFAULT_SCOPE_KEY ? logs[0] : undefined);
+                const subjectCountAlreadyLoaded = Boolean(loadedStudentCountCategories.subject);
+                const nextSubjectCount = subjectCountAlreadyLoaded
+                    ? studentCounts.subject
+                    : (selectedLog?.data?.studentCount || logs[0]?.data?.studentCount || DEFAULT_STUDENT_COUNTS.subject);
+                if (!subjectCountAlreadyLoaded) {
+                    setLoadedStudentCountCategories(prev => ({ ...prev, subject: true }));
+                    setStudentCounts(prev => ({ ...prev, subject: nextSubjectCount }));
+                }
+
                 if (selectedLog?.data) {
                     const nextScopeKey = selectedLog.scope_key || DEFAULT_SCOPE_KEY;
                     if (nextScopeKey !== activeSubjectScopeKey) {
                         setActiveSubjectScopeKey(nextScopeKey);
                     }
-                    setStudents(selectedLog.data.students || createInitialStudents(selectedLog.data.studentCount || studentCount));
-                    setStudentCount(selectedLog.data.studentCount || 7);
+                    setStudents(resizeStudentsToCount(selectedLog.data.students, nextSubjectCount));
                     if (selectedLog.data.charLimits) {
                         setCharLimits(selectedLog.data.charLimits);
                     } else if (selectedLog.data.charLimit) {
@@ -223,7 +256,7 @@ export default function DashboardPage() {
                     }
                     setSubjectConfig(selectedLog.data.globalConfig || getDefaultSubjectConfig());
                 } else {
-                    setStudents(createInitialStudents(studentCount));
+                    setStudents(createInitialStudents(nextSubjectCount));
                     setSubjectConfig(getDefaultSubjectConfig());
                 }
 
@@ -240,15 +273,19 @@ export default function DashboardPage() {
                 .maybeSingle();
 
             if (data?.data) {
-                setStudents(data.data.students || []);
-                setStudentCount(data.data.studentCount || 7);
+                const nextCount = data.data.studentCount || studentCounts[activeTabId] || DEFAULT_STUDENT_COUNTS[activeTabId] || 7;
+                setLoadedStudentCountCategories(prev => ({ ...prev, [activeTabId]: true }));
+                setStudentCounts(prev => ({ ...prev, [activeTabId]: nextCount }));
+                setStudents(resizeStudentsToCount(data.data.students, nextCount));
                 if (data.data.charLimits) {
                     setCharLimits(data.data.charLimits);
                 } else if (data.data.charLimit) {
                     setCharLimits(prev => ({ ...prev, [activeTabId]: data.data.charLimit }));
                 }
             } else {
-                setStudents(createInitialStudents(studentCount));
+                const nextCount = studentCounts[activeTabId] || DEFAULT_STUDENT_COUNTS[activeTabId] || 7;
+                setLoadedStudentCountCategories(prev => ({ ...prev, [activeTabId]: true }));
+                setStudents(createInitialStudents(nextCount));
             }
 
             setIsWorkLogLoading(false);
@@ -297,13 +334,14 @@ export default function DashboardPage() {
         } else {
             if (activeTabId === 'subject') {
                 setSubjectLogs(prev => {
+                    const currentLog = prev.find(log => log.scopeKey === scopeKey);
                     const nextLog = {
                         scopeKey,
                         scopeLabel: scopeLabel || "교과",
-                        updatedAt: savedAt
+                        updatedAt: savedAt,
+                        createdAt: currentLog?.createdAt || savedAt
                     };
-                    const exists = prev.some(log => log.scopeKey === scopeKey);
-                    return exists
+                    return currentLog
                         ? prev.map(log => log.scopeKey === scopeKey ? nextLog : log)
                         : [nextLog, ...prev];
                 });
@@ -380,7 +418,7 @@ export default function DashboardPage() {
         setActiveSubjectScopeKey(scopeKey);
         setSubjectConfig(defaultConfig);
         setStudents(initialStudents);
-        setSubjectLogs(prev => [{ scopeKey, scopeLabel: "새 교과", updatedAt: savedAt }, ...prev]);
+        setSubjectLogs(prev => [{ scopeKey, scopeLabel: "새 교과", updatedAt: savedAt, createdAt: savedAt }, ...prev]);
         setIsWorkLogLoading(false);
     };
 
@@ -422,6 +460,58 @@ export default function DashboardPage() {
         setIsWorkLogLoading(false);
     };
 
+    const syncSubjectStudentCountAcrossLogs = async (count: number, currentStudents: Student[]) => {
+        if (!userId || activeTabId !== 'subject') return;
+
+        const { data, error } = await supabase
+            .from('work_logs')
+            .select('scope_key, scope_label, data, schema_version')
+            .eq('user_id', userId)
+            .eq('category', 'subject');
+
+        if (error || !data?.length) {
+            if (error) console.error("Subject Count Sync Error:", error);
+            return;
+        }
+
+        const syncedAt = new Date().toISOString();
+        const updates = data.map(log => {
+            const scopeKey = log.scope_key || DEFAULT_SCOPE_KEY;
+            const baseData = log.data || {};
+            const baseStudents = scopeKey === activeSubjectScopeKey
+                ? currentStudents
+                : baseData.students;
+
+            return {
+                user_id: userId,
+                category: 'subject',
+                scope_key: scopeKey,
+                scope_label: log.scope_label,
+                data: {
+                    ...baseData,
+                    students: resizeStudentsToCount(baseStudents, count),
+                    studentCount: count,
+                    charLimits: baseData.charLimits || charLimits,
+                    globalConfig: scopeKey === activeSubjectScopeKey
+                        ? subjectConfig
+                        : baseData.globalConfig
+                },
+                schema_version: log.schema_version || 2,
+                updated_at: syncedAt
+            };
+        });
+
+        const { error: upsertError } = await supabase
+            .from('work_logs')
+            .upsert(updates, {
+                onConflict: 'user_id, category, scope_key'
+            });
+
+        if (upsertError) {
+            console.error("Subject Count Sync Save Error:", upsertError);
+        }
+    };
+
     // Auto-save logic (Debounced)
     useEffect(() => {
         if (!userId || !students.length || isWorkLogLoading) return;
@@ -436,29 +526,27 @@ export default function DashboardPage() {
     // 학생 수 변경 시 처리
     useEffect(() => {
         setStudents(prev => {
-            if (prev.length === studentCount) return prev;
-            if (prev.length < studentCount) {
-                // 추가
-                const toAdd = Array.from({ length: studentCount - prev.length }, (_, i) => ({
-                    id: prev.length + i + 1,
-                    name: `${prev.length + i + 1}번 학생`,
-                    customKeywords: [],
-                    selectedKeywords: [],
-                    participatedEvents: [],
-                    officerRole: "임원아님",
-                    officerPeriod: "",
-                    aiResult: "",
-                    isGenerating: false,
-                    isEditable: false,
-                    selected: true
-                }));
-                return [...prev, ...toAdd];
-            } else {
-                // 제거
-                return prev.slice(0, studentCount);
-            }
+            return resizeStudentsToCount(prev, studentCount);
         });
     }, [studentCount]);
+
+    useEffect(() => {
+        if (
+            !userId ||
+            activeTabId !== 'subject' ||
+            isWorkLogLoading ||
+            !subjectLogs.length ||
+            students.length !== studentCount
+        ) {
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            syncSubjectStudentCountAcrossLogs(studentCount, students);
+        }, 1200);
+
+        return () => clearTimeout(timer);
+    }, [userId, activeTabId, studentCount, students.length, isWorkLogLoading, subjectLogs.length]);
 
     const activeTab = features.find(f => f.id === activeTabId) || features[0];
     const FeatureIcon = activeTab.icon;

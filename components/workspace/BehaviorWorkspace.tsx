@@ -28,6 +28,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Student } from "@/types";
 
+const KEYWORD_PREVIEW_LIMIT = 10;
+
 interface BehaviorWorkspaceProps {
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
@@ -76,6 +78,20 @@ export const BehaviorWorkspace = ({
     defaultKeywords,
 }: BehaviorWorkspaceProps) => {
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
+    const [expandedKeywordRows, setExpandedKeywordRows] = useState<Set<number>>(new Set());
+
+    const toggleKeywordRow = (studentId: number) => {
+        setExpandedKeywordRows(prev => {
+            const next = new Set(prev);
+            if (next.has(studentId)) {
+                next.delete(studentId);
+            } else {
+                next.add(studentId);
+            }
+            return next;
+        });
+    };
+
     return (
         <Card className={cn(
             "p-10 border-0 bg-white dark:bg-slate-900 shadow-2xl shadow-slate-200/50 dark:shadow-none space-y-8 overflow-hidden transition-all duration-500 dark:border dark:border-slate-800",
@@ -164,6 +180,10 @@ export const BehaviorWorkspace = ({
                     <div className="p-6 pt-4 space-y-3">
                         {students.map((student) => {
                             const isRowOpen = expandedRowId === student.id;
+                            const allKeywords = Array.from(new Set([...defaultKeywords, ...student.customKeywords]));
+                            const isKeywordRowOpen = expandedKeywordRows.has(student.id);
+                            const visibleKeywords = isKeywordRowOpen ? allKeywords : allKeywords.slice(0, KEYWORD_PREVIEW_LIMIT);
+                            const hiddenKeywordCount = allKeywords.length - visibleKeywords.length;
                             return (
                             <div
                                 key={student.id}
@@ -186,7 +206,7 @@ export const BehaviorWorkspace = ({
 
                                 <div className="flex flex-col gap-4 pt-1">
                                     <div className="flex gap-2 flex-wrap">
-                                        {[...defaultKeywords, ...student.customKeywords].map(k => (
+                                        {visibleKeywords.map(k => (
                                             <button
                                                 key={k}
                                                 onClick={() => {
@@ -206,6 +226,26 @@ export const BehaviorWorkspace = ({
                                                 {k}
                                             </button>
                                         ))}
+                                        {hiddenKeywordCount > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleKeywordRow(student.id)}
+                                                className="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-slate-200 bg-slate-50 px-3 text-[11px] font-black text-slate-500 transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-blue-800 dark:hover:bg-blue-900/20 dark:hover:text-blue-300"
+                                            >
+                                                더보기 {hiddenKeywordCount}
+                                                <ChevronDown className="size-3.5" />
+                                            </button>
+                                        )}
+                                        {isKeywordRowOpen && allKeywords.length > KEYWORD_PREVIEW_LIMIT && (
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleKeywordRow(student.id)}
+                                                className="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-blue-100 bg-blue-50 px-3 text-[11px] font-black text-blue-600 transition-all hover:bg-blue-100 dark:border-blue-900/50 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40"
+                                            >
+                                                접기
+                                                <ChevronUp className="size-3.5" />
+                                            </button>
+                                        )}
                                     </div>
 
                                     {isAddingKeyword === student.id ? (

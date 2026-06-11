@@ -104,6 +104,7 @@ export const SubjectWorkspace = ({
 }: SubjectWorkspaceProps) => {
     const [isBulkOpen, setIsBulkOpen] = useState(false);
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
+    const [activeInputTab, setActiveInputTab] = useState("global");
 
     const mounted = useSyncExternalStore(
         () => () => {},
@@ -198,9 +199,10 @@ export const SubjectWorkspace = ({
         <Wrapper isExpanded={isExpanded} mounted={mounted}>
             <Card className={cn(
                 "p-10 border-0 bg-white shadow-2xl shadow-slate-200/50 space-y-8 transition-all duration-500",
-                isExpanded ? "fixed inset-4 z-[9999] rounded-[3rem] border border-indigo-100 shadow-primary/20 !transform-none overflow-hidden flex flex-col pointer-events-auto cursor-default" : "rounded-[3rem] overflow-hidden"
+                isExpanded ? "fixed inset-4 z-[9999] rounded-[2rem] border border-indigo-100 shadow-primary/20 !transform-none overflow-hidden flex flex-col pointer-events-auto cursor-default p-6 space-y-0 gap-4" : "rounded-[3rem] overflow-hidden"
             )}>
                 {/* Header Section */}
+                {!isExpanded && (
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
                     <div className="flex items-center gap-4">
                         <div className="size-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
@@ -302,7 +304,25 @@ export const SubjectWorkspace = ({
                         )}
                     </div>
                 </div>
+                )}
 
+                {isExpanded && (
+                    <div className="flex items-center justify-between gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/70 px-5 py-4 shrink-0">
+                        <div className="min-w-0">
+                            <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">학생별 개별 입력</div>
+                            <div className="truncate text-lg font-black text-slate-900">{currentSubjectLabel}</div>
+                        </div>
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsExpanded(false)}
+                            className="h-11 rounded-xl border-indigo-100 bg-white px-5 text-xs font-black text-indigo-600 hover:bg-indigo-100 gap-2 shrink-0"
+                        >
+                            <Minimize2 className="size-4" /> 돌아가기
+                        </Button>
+                    </div>
+                )}
+
+                {!isExpanded && (
                 <div className="rounded-[2rem] bg-indigo-50/60 border border-indigo-100 p-5 space-y-4">
                     <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,1fr)_auto] gap-4 lg:items-end">
                         <div className="space-y-2 min-w-0">
@@ -356,12 +376,16 @@ export const SubjectWorkspace = ({
                         })}
                     </div>
                 </div>
+                )}
 
-                <Tabs defaultValue="global" className={cn(
+                <Tabs value={isExpanded ? "individual" : activeInputTab} onValueChange={setActiveInputTab} className={cn(
                     "space-y-8",
-                    isExpanded && "flex flex-col flex-1 min-h-0"
+                    isExpanded && "flex flex-col flex-1 min-h-0 space-y-0"
                 )}>
-                    <TabsList className="grid grid-cols-2 w-full bg-slate-50 p-1.5 rounded-2xl border border-slate-100 h-auto">
+                    <TabsList className={cn(
+                        "grid grid-cols-2 w-full bg-slate-50 p-1.5 rounded-2xl border border-slate-100 h-auto",
+                        isExpanded && "hidden"
+                    )}>
                         <TabsTrigger value="global" className="rounded-xl px-3 sm:px-8 font-black text-[12px] sm:text-[13px] tracking-tight data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all h-11">
                             <Settings2 className="size-4 mr-2" /> 전체 정보 설정
                         </TabsTrigger>

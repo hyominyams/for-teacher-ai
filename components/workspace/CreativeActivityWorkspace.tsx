@@ -39,6 +39,8 @@ import {
 import { Student } from "@/types";
 import { CREATIVE_CATEGORIES, OFFICER_ROLES } from "@/lib/constants/creative-events";
 
+const EVENT_PREVIEW_LIMIT = 4;
+
 interface WrapperProps {
     children: React.ReactNode;
     isExpanded: boolean;
@@ -93,6 +95,19 @@ export const CreativeActivityWorkspace = ({
         () => false
     );
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
+    const [expandedEventRows, setExpandedEventRows] = useState<Set<number>>(new Set());
+
+    const toggleEventRow = (studentId: number) => {
+        setExpandedEventRows(prev => {
+            const next = new Set(prev);
+            if (next.has(studentId)) {
+                next.delete(studentId);
+            } else {
+                next.add(studentId);
+            }
+            return next;
+        });
+    };
 
     useEffect(() => {
         if (!isExpanded) return;
@@ -200,6 +215,10 @@ export const CreativeActivityWorkspace = ({
                         <div className="p-6 pt-4 space-y-3">
                             {students.map((student) => {
                                 const isRowOpen = expandedRowId === student.id;
+                                const participatedEvents = student.participatedEvents || [];
+                                const isEventRowOpen = expandedEventRows.has(student.id);
+                                const visibleEvents = isEventRowOpen ? participatedEvents : participatedEvents.slice(0, EVENT_PREVIEW_LIMIT);
+                                const hiddenEventCount = participatedEvents.length - visibleEvents.length;
                                 return (
                                 <div key={student.id} className={cn(
                                     "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_120px_130px_minmax(280px,2fr)_120px] gap-6 px-8 rounded-[2rem] border transition-all items-start group/row",
@@ -219,7 +238,7 @@ export const CreativeActivityWorkspace = ({
 
                                     <div className="flex flex-wrap gap-2 pt-1">
                                         <AnimatePresence mode="popLayout">
-                                            {student.participatedEvents?.map((ev) => (
+                                            {visibleEvents.map((ev) => (
                                                 <motion.div
                                                     initial={{ scale: 0.8, opacity: 0 }}
                                                     animate={{ scale: 1, opacity: 1 }}
@@ -242,9 +261,29 @@ export const CreativeActivityWorkspace = ({
                                                 </motion.div>
                                             ))}
                                         </AnimatePresence>
+                                        {hiddenEventCount > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleEventRow(student.id)}
+                                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[11px] font-black text-slate-500 transition-all hover:border-amber-200 hover:bg-amber-50 hover:text-amber-600"
+                                            >
+                                                더보기 {hiddenEventCount}
+                                                <ChevronDown className="size-3.5" />
+                                            </button>
+                                        )}
+                                        {isEventRowOpen && participatedEvents.length > EVENT_PREVIEW_LIMIT && (
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleEventRow(student.id)}
+                                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-100 bg-amber-50 px-2.5 text-[11px] font-black text-amber-700 transition-all hover:bg-amber-100"
+                                            >
+                                                접기
+                                                <ChevronUp className="size-3.5" />
+                                            </button>
+                                        )}
                                         <EventPicker
                                             studentId={student.id}
-                                            selectedEvents={student.participatedEvents || []}
+                                            selectedEvents={participatedEvents}
                                             setStudents={setStudents}
                                         />
                                     </div>
