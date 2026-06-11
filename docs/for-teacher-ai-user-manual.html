@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>For Teacher AI 사용자 매뉴얼</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f9fc;
+      --panel: #ffffff;
+      --text: #0f172a;
+      --muted: #526174;
+      --line: #dbe3ef;
+      --blue: #2563eb;
+      --green: #0f9f6e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", sans-serif;
+      line-height: 1.65;
+    }
+    main {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 56px 0 80px;
+    }
+    header {
+      display: grid;
+      gap: 20px;
+      padding: 36px 0 28px;
+      border-bottom: 1px solid var(--line);
+    }
+    .eyebrow {
+      width: fit-content;
+      border: 1px solid #bfdbfe;
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--blue);
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(36px, 7vw, 64px);
+      line-height: 1.05;
+      letter-spacing: 0;
+      word-break: keep-all;
+    }
+    h1 span { display: block; }
+    h2 {
+      margin: 0;
+      font-size: clamp(26px, 4vw, 38px);
+      line-height: 1.2;
+      letter-spacing: 0;
+      word-break: keep-all;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      font-weight: 600;
+      word-break: keep-all;
+      overflow-wrap: break-word;
+    }
+    .lead { max-width: 760px; font-size: 18px; }
+    .quick {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin: 34px 0 56px;
+    }
+    .quick div, .step {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      padding: 18px;
+    }
+    .quick strong {
+      display: block;
+      color: var(--blue);
+      margin-bottom: 8px;
+    }
+    article {
+      padding: 34px 0 46px;
+      border-bottom: 1px solid var(--line);
+    }
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+    .tag {
+      border-radius: 999px;
+      background: #ecfdf5;
+      color: var(--green);
+      padding: 7px 12px;
+      font-size: 13px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    figure {
+      margin: 20px 0;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      overflow: hidden;
+      background: var(--panel);
+    }
+    img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    figcaption {
+      padding: 12px 16px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+      border-top: 1px solid var(--line);
+      word-break: keep-all;
+    }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .step b {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    @media (max-width: 860px) {
+      .quick, .steps { grid-template-columns: 1fr; }
+      .section-head { align-items: start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="eyebrow">사용자 매뉴얼</span>
+      <h1><span>For Teacher AI</span><span>사용 가이드</span></h1>
+      <p class="lead">로그인, 행동특성 및 종합의견, 학기말 종합의견, 창의적 체험활동, 작업 로그, CSV 다운로드, 크롬 확장 프로그램까지 한 번에 확인하세요.</p>
+    </header>
+
+    <section class="quick" aria-label="빠른 시작">
+      <div><strong>1. 로그인</strong><p>체험 계정 또는 본인 계정으로 시작합니다.</p></div>
+      <div><strong>2. 영역 선택</strong><p>행동특성, 교과, 창체 중 작성할 영역을 엽니다.</p></div>
+      <div><strong>3. 학생별 입력</strong><p>키워드, 평가, 행사, 특이사항을 입력합니다.</p></div>
+      <div><strong>4. 생성과 편집</strong><p>문장을 생성하고 필요한 표현을 수정합니다.</p></div>
+      <div><strong>5. 기록 확인</strong><p>작업로그에서 저장본과 CSV를 확인합니다.</p></div>
+    </section>
+
+    <article>
+      <div class="section-head"><h2>로그인</h2></div>
+      <figure>
+        <img src="manual-assets/00-login.png" alt="로그인 화면">
+        <figcaption>Google 로그인, 체험 계정, 이메일 로그인을 선택합니다.</figcaption>
+      </figure>
+      <div class="steps">
+        <div class="step"><b>체험 계정</b><p>서비스 흐름을 바로 확인할 때 사용합니다.</p></div>
+        <div class="step"><b>이메일 로그인</b><p>가입한 이메일과 비밀번호로 접속합니다.</p></div>
+        <div class="step"><b>로그아웃</b><p>공용 기기에서는 작업 후 로그아웃합니다.</p></div>
+      </div>
+    </article>
+
+    <article>
+      <div class="section-head"><h2>행동특성 및 종합의견</h2></div>
+      <figure>
+        <img src="manual-assets/06-behavior-workspace.png" alt="행동특성 워크스페이스">
+        <figcaption>키워드를 선택하고 학생별 결과를 편집합니다.</figcaption>
+      </figure>
+      <div class="steps">
+        <div class="step"><b>키워드 선택</b><p>학생별로 최소 2개 이상의 키워드를 선택합니다.</p></div>
+        <div class="step"><b>문장 생성</b><p>생성 또는 전체 생성으로 결과 문장을 만듭니다.</p></div>
+        <div class="step"><b>직접 편집</b><p>펼쳐서 편집에서 문장을 바로 수정합니다.</p></div>
+      </div>
+    </article>
+
+    <article>
+      <div class="section-head"><h2>학기말 종합의견(교과)</h2></div>
+      <figure>
+        <img src="manual-assets/05-subject-workspace.png" alt="교과 워크스페이스">
+        <figcaption>교과 저장본, 평가 정보, 학생별 입력 탭을 사용합니다.</figcaption>
+      </figure>
+      <div class="steps">
+        <div class="step"><b>교과 선택</b><p>국어, 수학, 사회처럼 교과별 저장본을 전환합니다.</p></div>
+        <div class="step"><b>평가 정보</b><p>학교급, 학년, 성취기준, 평가기준을 입력합니다.</p></div>
+        <div class="step"><b>학생별 입력</b><p>성취수준과 특이사항을 넣고 문장을 생성합니다.</p></div>
+      </div>
+    </article>
+
+    <article>
+      <div class="section-head"><h2>창의적 체험활동</h2></div>
+      <figure>
+        <img src="manual-assets/02-creative-detail.png" alt="창의적 체험활동 워크스페이스">
+        <figcaption>학생별 참여 행사와 임원 정보를 입력합니다.</figcaption>
+      </figure>
+      <div class="steps">
+        <div class="step"><b>행사 선택</b><p>학생이 참여한 행사를 여러 개 선택합니다.</p></div>
+        <div class="step"><b>일괄 입력</b><p>행사 자동배정과 행사 일괄추가로 반복 입력을 줄입니다.</p></div>
+        <div class="step"><b>임원 정보</b><p>필요한 학생에게 임원 여부와 기간을 입력합니다.</p></div>
+      </div>
+    </article>
+
+    <article>
+      <div class="section-head"><h2>작업 로그와 CSV</h2><span class="tag">CSV 다운로드 확인</span></div>
+      <figure>
+        <img src="manual-assets/03-work-logs.png" alt="작업 로그 화면">
+        <figcaption>Ready to Export 상태에서 CSV를 다운로드합니다.</figcaption>
+      </figure>
+      <figure>
+        <img src="manual-assets/04-work-log-preview.png" alt="작업 로그 미리보기">
+        <figcaption>미리보기에서 학생별 결과를 확인하고 전체 내보내기를 실행합니다.</figcaption>
+      </figure>
+      <div class="steps">
+        <div class="step"><b>저장본 확인</b><p>영역별 저장본과 최근 수정 시간을 확인합니다.</p></div>
+        <div class="step"><b>CSV 다운로드</b><p>내보내기 버튼으로 다운로드 폴더에 파일을 저장합니다.</p></div>
+        <div class="step"><b>결과 검토</b><p>미리보기에서 문장과 학생 번호를 확인합니다.</p></div>
+      </div>
+    </article>
+
+    <article>
+      <div class="section-head"><h2>크롬 확장 프로그램</h2></div>
+      <figure>
+        <img src="manual-assets/07-extension-download.png" alt="크롬 확장 프로그램 다운로드 영역">
+        <figcaption>오른쪽 나이스 붙여넣기 영역에서 다운로드하러가기를 선택합니다.</figcaption>
+      </figure>
+      <div class="steps">
+        <div class="step"><b>다운로드</b><p>크롬 웹스토어 페이지에서 확장 프로그램을 받습니다.</p></div>
+        <div class="step"><b>계정 연결</b><p>확장 프로그램에서 웹앱 계정을 연결합니다.</p></div>
+        <div class="step"><b>저장 데이터 불러오기</b><p>웹앱 저장 데이터를 불러와 나이스 입력에 사용합니다.</p></div>
+      </div>
+    </article>
+  </main>
+</body>
+</html>
