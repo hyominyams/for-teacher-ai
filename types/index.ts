@@ -40,6 +40,20 @@ export interface SubjectGlobalConfig {
     assessments: SubjectAssessmentInfo[];
 }
 
+export interface ParsedSubjectPlanAssessment {
+    area: string;
+    standard: string;
+    criteria: string;
+    competency: string;
+}
+
+export interface ParsedSubjectPlanSubject {
+    subjectName: string;
+    schoolLevel: string;
+    grade: string;
+    assessments: ParsedSubjectPlanAssessment[];
+}
+
 export type FeatureCategory = "behavior" | "subject" | "creative" | "docs";
 
 export interface DashboardState {

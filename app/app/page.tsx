@@ -25,13 +25,16 @@ import {
     Maximize2,
     Minimize2,
     Download,
-    Upload
+    Upload,
+    FileSearch,
+    Loader2,
+    Check
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
-import { Student, SubjectGlobalConfig } from "@/types";
+import type { ParsedSubjectPlanSubject, Student, SubjectGlobalConfig } from "@/types";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
 import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
@@ -45,6 +48,11 @@ type WorkLogData = {
     studentCount: number;
     charLimits: Record<string, number>;
     globalConfig?: SubjectGlobalConfig;
+};
+
+type SubjectPlanImportResult = {
+    subjects: ParsedSubjectPlanSubject[];
+    warnings: string[];
 };
 
 const features = [
@@ -149,6 +157,9 @@ export default function DashboardPage() {
     const [subjectLogs, setSubjectLogs] = useState<SubjectWorkLogSummary[]>([]);
     const [activeSubjectScopeKey, setActiveSubjectScopeKey] = useState(DEFAULT_SCOPE_KEY);
     const [isWorkLogLoading, setIsWorkLogLoading] = useState(false);
+    const [isSubjectPlanImporting, setIsSubjectPlanImporting] = useState(false);
+    const [subjectPlanImport, setSubjectPlanImport] = useState<SubjectPlanImportResult | null>(null);
+    const [selectedSubjectPlanIndexes, setSelectedSubjectPlanIndexes] = useState<number[]>([]);
     const studentCount = studentCounts[activeTabId] || DEFAULT_STUDENT_COUNTS[activeTabId] || 7;
     const setStudentCount = (count: number) => {
         setLoadedStudentCountCategories(prev => ({ ...prev, [activeTabId]: true }));
@@ -1158,6 +1169,154 @@ export default function DashboardPage() {
         e.target.value = "";
     };
 
+    const handleSubjectPlanUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (!file) return;
+
+        setIsSubjectPlanImporting(true);
+        setSubjectPlanImport(null);
+        setSelectedSubjectPlanIndexes([]);
+
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("schoolLevel", subjectConfig.schoolLevel);
+            formData.append("grade", subjectConfig.grade);
+            formData.append("subjectName", subjectConfig.subjectName);
+
+            const response = await fetch("/api/subject-plan/parse", {
+                method: "POST",
+                body: formData,
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "평가계획을 읽을 수 없습니다.");
+            }
+
+            const subjects = (data.subjects || []) as ParsedSubjectPlanSubject[];
+            if (!subjects.length) {
+                throw new Error("평가 영역, 성취기준, 평가기준을 찾지 못했습니다.");
+            }
+
+            setSubjectPlanImport({
+                subjects,
+                warnings: Array.isArray(data.warnings) ? data.warnings : [],
+            });
+            setSelectedSubjectPlanIndexes(subjects.map((_, index) => index));
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : "평가계획을 읽을 수 없습니다.";
+            alert(message);
+        } finally {
+            setIsSubjectPlanImporting(false);
+        }
+    };
+
+    const toggleSubjectPlanSelection = (index: number) => {
+        setSelectedSubjectPlanIndexes(prev => (
+            prev.includes(index)
+                ? prev.filter(item => item !== index)
+                : [...prev, index].sort((a, b) => a - b)
+        ));
+    };
+
+    const applySubjectPlanImport = async () => {
+        if (!userId || !subjectPlanImport) return;
+        if (!selectedSubjectPlanIndexes.length) {
+            alert("적용할 교과를 선택해주세요.");
+            return;
+        }
+
+        const currentSaved = hasCurrentSubjectWork() ? await saveWorkLog(true) : true;
+        if (!currentSaved && !confirm("현재 교과 저장에 실패했습니다. 평가계획을 적용하시겠습니까?")) {
+            return;
+        }
+
+        const savedAt = new Date().toISOString();
+        const labelTime = new Date().toLocaleString("ko-KR", {
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        }).replace(/\s/g, "");
+
+        const selectedSubjects = selectedSubjectPlanIndexes
+            .map(index => subjectPlanImport.subjects[index])
+            .filter(Boolean);
+
+        const importedLogs = selectedSubjects.map((subject) => {
+            const scopeKey = crypto.randomUUID();
+            const globalConfig: SubjectGlobalConfig = {
+                schoolLevel: subject.schoolLevel || subjectConfig.schoolLevel || "elementary",
+                grade: subject.grade || subjectConfig.grade || "1",
+                subjectName: subject.subjectName || "가져온 교과",
+                assessments: subject.assessments.map((assessment) => ({
+                    id: crypto.randomUUID(),
+                    area: assessment.area,
+                    standard: assessment.standard,
+                    criteria: assessment.criteria,
+                    competency: assessment.competency,
+                })),
+            };
+            const nextStudents = createInitialStudents(studentCount);
+            const scopeLabel = `${getSubjectScopeLabel(globalConfig)} ${labelTime}`;
+
+            return {
+                scopeKey,
+                scopeLabel,
+                globalConfig,
+                students: nextStudents,
+                row: {
+                    user_id: userId,
+                    category: "subject",
+                    scope_key: scopeKey,
+                    scope_label: scopeLabel,
+                    data: {
+                        students: nextStudents,
+                        studentCount,
+                        charLimits,
+                        globalConfig,
+                    },
+                    schema_version: 2,
+                    updated_at: savedAt,
+                },
+            };
+        });
+
+        setIsWorkLogLoading(true);
+        const { error } = await supabase
+            .from("work_logs")
+            .upsert(importedLogs.map(log => log.row), {
+                onConflict: "user_id, category, scope_key",
+            });
+
+        if (error) {
+            console.error("Subject Plan Import Save Error:", error);
+            alert("평가계획을 적용하지 못했습니다.");
+            setIsWorkLogLoading(false);
+            return;
+        }
+
+        const firstLog = importedLogs[0];
+        setSubjectLogs(prev => [
+            ...importedLogs.map(log => ({
+                scopeKey: log.scopeKey,
+                scopeLabel: log.scopeLabel,
+                updatedAt: savedAt,
+                createdAt: savedAt,
+            })),
+            ...prev,
+        ]);
+        setActiveSubjectScopeKey(firstLog.scopeKey);
+        setSubjectConfig(firstLog.globalConfig);
+        setStudents(firstLog.students);
+        setSubjectPlanImport(null);
+        setSelectedSubjectPlanIndexes([]);
+        setIsWorkLogLoading(false);
+    };
+
     // --- UI Rendering ---
     return (
         <div className="min-h-screen bg-[#FAFBFF] dark:bg-background transition-colors duration-300">
@@ -1296,7 +1455,7 @@ export default function DashboardPage() {
                                             <Card className="p-0 border-0 bg-white dark:bg-card dark:border dark:border-border shadow-2xl shadow-slate-200/40 dark:shadow-none rounded-[3.5rem] overflow-hidden">
                                                 <div className="grid grid-cols-1 md:grid-cols-2">
                                                     <div className="p-10 border-r border-slate-100 dark:border-border space-y-8 bg-slate-50/30 dark:bg-slate-900/20">
-                                                        <div className="flex items-center justify-between">
+                                                        <div className="flex items-center justify-between gap-3 flex-wrap">
                                                             <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
                                                                 <Target className="size-5 text-indigo-500 shrink-0" /> 워크스페이스 설정
                                                             </div>
@@ -1307,12 +1466,35 @@ export default function DashboardPage() {
                                                                 className="hidden"
                                                                 onChange={handleFileUpload}
                                                             />
+                                                            <input
+                                                                type="file"
+                                                                id="subject-plan-upload"
+                                                                accept=".hwp,.hwpx,.pdf"
+                                                                className="hidden"
+                                                                onChange={handleSubjectPlanUpload}
+                                                            />
+                                                            <Button
+                                                                variant="outline"
+                                                                disabled={isSubjectPlanImporting}
+                                                                onClick={() => document.getElementById('subject-plan-upload')?.click()}
+                                                                className="rounded-xl h-10 px-5 font-black bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 border-indigo-100 dark:border-slate-700 gap-2 hover:bg-indigo-100 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
+                                                            >
+                                                                {isSubjectPlanImporting ? (
+                                                                    <>
+                                                                        읽는 중 <Loader2 className="size-3.5 animate-spin" />
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        평가계획 불러오기 <FileSearch className="size-3.5" />
+                                                                    </>
+                                                                )}
+                                                            </Button>
                                                             <Button
                                                                 variant="outline"
                                                                 onClick={() => document.getElementById('csv-upload-subject')?.click()}
                                                                 className="rounded-xl h-10 px-5 font-black bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
                                                             >
-                                                                양식 업로드 <Upload className="size-3.5" />
+                                                                CSV 가져오기 <Upload className="size-3.5" />
                                                             </Button>
                                                         </div>
                                                         <div className="flex flex-col items-center justify-center h-24">
@@ -1523,6 +1705,124 @@ export default function DashboardPage() {
                 </div>
             </main>
 
+            {subjectPlanImport && (
+                <div className="fixed inset-0 z-[10000] bg-slate-950/50 px-4 py-6 flex items-center justify-center">
+                    <div className="w-full max-w-5xl max-h-[88vh] overflow-hidden rounded-[2rem] bg-white shadow-2xl border border-slate-200 flex flex-col">
+                        <div className="px-8 py-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <div className="text-[11px] font-black text-indigo-500 tracking-widest uppercase">평가계획 불러오기</div>
+                                <h3 className="text-2xl font-black text-slate-900">가져온 교과</h3>
+                                <p className="text-sm font-medium text-slate-500">
+                                    적용할 교과를 선택하세요.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSubjectPlanImport(null);
+                                    setSelectedSubjectPlanIndexes([]);
+                                }}
+                                className="size-11 rounded-xl bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 flex items-center justify-center transition-colors"
+                                title="닫기"
+                            >
+                                <X className="size-5" />
+                            </button>
+                        </div>
+
+                        {subjectPlanImport.warnings.length > 0 && (
+                            <div className="mx-8 mt-5 rounded-2xl border border-amber-100 bg-amber-50 px-5 py-4 text-xs font-bold leading-6 text-amber-700">
+                                {subjectPlanImport.warnings.slice(0, 3).map((warning, index) => (
+                                    <div key={`${warning}-${index}`}>{warning}</div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-4">
+                            {subjectPlanImport.subjects.map((subject, index) => {
+                                const selected = selectedSubjectPlanIndexes.includes(index);
+                                return (
+                                    <button
+                                        type="button"
+                                        key={`${subject.subjectName}-${index}`}
+                                        onClick={() => toggleSubjectPlanSelection(index)}
+                                        className={cn(
+                                            "w-full text-left rounded-2xl border p-5 transition-all",
+                                            selected
+                                                ? "border-indigo-200 bg-indigo-50 shadow-sm"
+                                                : "border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50"
+                                        )}
+                                    >
+                                        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                                            <div className="min-w-0 space-y-3">
+                                                <div className="flex items-center gap-3">
+                                                    <span className={cn(
+                                                        "size-7 rounded-lg border flex items-center justify-center shrink-0",
+                                                        selected ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-200 text-transparent"
+                                                    )}>
+                                                        <Check className="size-4" />
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <div className="font-black text-slate-900 text-lg truncate">{subject.subjectName || "가져온 교과"}</div>
+                                                        <div className="text-xs font-bold text-slate-400">
+                                                            {subject.grade || "1"}학년 · 평가 {subject.assessments.length}개
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    {subject.assessments.slice(0, 3).map((assessment, assessmentIndex) => (
+                                                        <div
+                                                            key={`${assessment.area}-${assessmentIndex}`}
+                                                            className="rounded-xl bg-white/80 border border-slate-100 px-4 py-3"
+                                                        >
+                                                            <div className="text-xs font-black text-indigo-600 truncate">{assessment.area || `평가 ${assessmentIndex + 1}`}</div>
+                                                            <div className="mt-1 text-xs font-medium text-slate-600 line-clamp-2">
+                                                                {assessment.standard || assessment.criteria}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            {subject.assessments.length > 3 && (
+                                                <div className="shrink-0 rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-500">
+                                                    +{subject.assessments.length - 3}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="px-8 py-6 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="text-sm font-black text-slate-500">
+                                {selectedSubjectPlanIndexes.length}개 교과 선택
+                            </div>
+                            <div className="flex gap-3">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                        setSubjectPlanImport(null);
+                                        setSelectedSubjectPlanIndexes([]);
+                                    }}
+                                    className="h-12 rounded-xl px-6 font-black border-slate-200 bg-white text-slate-500"
+                                >
+                                    건너뛰기
+                                </Button>
+                                <Button
+                                    type="button"
+                                    disabled={isWorkLogLoading || selectedSubjectPlanIndexes.length === 0}
+                                    onClick={applySubjectPlanImport}
+                                    className="h-12 rounded-xl px-8 font-black bg-indigo-600 text-white hover:bg-indigo-700 gap-2"
+                                >
+                                    {isWorkLogLoading ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                                    적용
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style jsx global>{`
                 .custom-scrollbar::-webkit-scrollbar { width: 6px; }

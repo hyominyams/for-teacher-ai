@@ -194,6 +194,8 @@ export const SubjectWorkspace = ({
     const subjectSelectItems = subjectLogs.some(log => log.scopeKey === activeSubjectScopeKey)
         ? subjectLogs.map(log => log.scopeKey === activeSubjectScopeKey ? { ...log, scopeLabel: currentSubjectLabel } : log)
         : [{ scopeKey: activeSubjectScopeKey, scopeLabel: currentSubjectLabel }, ...subjectLogs];
+    const selectedStudentCount = students.filter(s => s.selected).length;
+    const canBulkApplyLevel = selectedStudentCount > 0 && globalConfig.assessments.length > 0;
 
     return (
         <Wrapper isExpanded={isExpanded} mounted={mounted}>
@@ -222,16 +224,17 @@ export const SubjectWorkspace = ({
                             <PopoverTrigger asChild>
                                 <Button
                                     variant="outline"
-                                    disabled={students.filter(s => s.selected).length === 0}
+                                    disabled={!canBulkApplyLevel}
+                                    title={globalConfig.assessments.length === 0 ? "평가정보를 먼저 추가하세요" : "학생을 선택하세요"}
                                     className="rounded-2xl h-11 px-6 font-bold border-indigo-100 bg-indigo-50 text-indigo-600 gap-2 hover:bg-indigo-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
                                 >
-                                    선택 일괄 적용 <ChevronDown className="size-4 opacity-50" />
+                                    일괄 입력 <ChevronDown className="size-4 opacity-50" />
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-40 p-2 rounded-2xl shadow-xl border-indigo-100 z-[10000]" align="end">
                                 <div className="grid gap-1">
                                     <div className="px-2 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 mb-1">
-                                        평가 등급 선택
+                                        {selectedStudentCount}명 선택
                                     </div>
                                     {(["상", "중", "하"] as const).map((level) => (
                                         <button
@@ -718,7 +721,7 @@ export const SubjectWorkspace = ({
                             <div className="flex items-center gap-4">
                                 <div className="px-8 py-4 bg-white rounded-[1.5rem] text-sm font-black text-slate-600 border border-slate-200 shadow-sm flex items-center gap-3">
                                     <div className="size-2.5 rounded-full bg-indigo-500 animate-pulse" />
-                                    {students.filter(s => s.selected).length} Students Focused
+                                    선택 학생 {selectedStudentCount}명
                                 </div>
 
                             </div>
