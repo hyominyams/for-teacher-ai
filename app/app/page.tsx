@@ -34,6 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -1228,6 +1229,50 @@ export default function DashboardPage() {
         ));
     };
 
+    const updateSubjectPlanSubject = (
+        subjectIndex: number,
+        field: keyof Pick<ParsedSubjectPlanSubject, "subjectName" | "grade">,
+        value: string
+    ) => {
+        setSubjectPlanImport(prev => {
+            if (!prev) return prev;
+
+            return {
+                ...prev,
+                subjects: prev.subjects.map((subject, index) => (
+                    index === subjectIndex ? { ...subject, [field]: value } : subject
+                )),
+            };
+        });
+    };
+
+    const updateSubjectPlanAssessment = (
+        subjectIndex: number,
+        assessmentIndex: number,
+        field: "area" | "standard" | "criteria",
+        value: string
+    ) => {
+        setSubjectPlanImport(prev => {
+            if (!prev) return prev;
+
+            return {
+                ...prev,
+                subjects: prev.subjects.map((subject, index) => {
+                    if (index !== subjectIndex) return subject;
+
+                    return {
+                        ...subject,
+                        assessments: subject.assessments.map((assessment, itemIndex) => (
+                            itemIndex === assessmentIndex
+                                ? { ...assessment, [field]: value }
+                                : assessment
+                        )),
+                    };
+                }),
+            };
+        });
+    };
+
     const applySubjectPlanImport = async () => {
         if (!userId || !subjectPlanImport) return;
         if (!selectedSubjectPlanIndexes.length) {
@@ -1241,14 +1286,6 @@ export default function DashboardPage() {
         }
 
         const savedAt = new Date().toISOString();
-        const labelTime = new Date().toLocaleString("ko-KR", {
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-        }).replace(/\s/g, "");
-
         const selectedSubjects = selectedSubjectPlanIndexes
             .map(index => subjectPlanImport.subjects[index])
             .filter(Boolean);
@@ -1268,7 +1305,7 @@ export default function DashboardPage() {
                 })),
             };
             const nextStudents = createInitialStudents(studentCount);
-            const scopeLabel = `${getSubjectScopeLabel(globalConfig)} ${labelTime}`;
+            const scopeLabel = getSubjectScopeLabel(globalConfig);
 
             return {
                 scopeKey,
@@ -1758,10 +1795,8 @@ export default function DashboardPage() {
                             {subjectPlanImport.subjects.map((subject, index) => {
                                 const selected = selectedSubjectPlanIndexes.includes(index);
                                 return (
-                                    <button
-                                        type="button"
+                                    <div
                                         key={`${subject.subjectName}-${index}`}
-                                        onClick={() => toggleSubjectPlanSelection(index)}
                                         className={cn(
                                             "w-full text-left rounded-2xl border p-5 transition-all",
                                             selected
@@ -1769,43 +1804,90 @@ export default function DashboardPage() {
                                                 : "border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50"
                                         )}
                                     >
-                                        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                                            <div className="min-w-0 space-y-3">
-                                                <div className="flex items-center gap-3">
-                                                    <span className={cn(
-                                                        "size-7 rounded-lg border flex items-center justify-center shrink-0",
-                                                        selected ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-200 text-transparent"
-                                                    )}>
-                                                        <Check className="size-4" />
-                                                    </span>
-                                                    <div className="min-w-0">
-                                                        <div className="font-black text-slate-900 text-lg truncate">{subject.subjectName || "가져온 교과"}</div>
-                                                        <div className="text-xs font-bold text-slate-400">
-                                                            {subject.grade || "1"}학년 · 평가 {subject.assessments.length}개
+                                        <div className="space-y-4">
+                                            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                                                <div className="min-w-0 flex-1 space-y-4">
+                                                    <div className="flex items-start gap-3">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleSubjectPlanSelection(index)}
+                                                            className={cn(
+                                                                "size-7 rounded-lg border flex items-center justify-center shrink-0",
+                                                                selected ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-200 text-transparent"
+                                                            )}
+                                                            aria-label={selected ? "선택 해제" : "선택"}
+                                                        >
+                                                            <Check className="size-4" />
+                                                        </button>
+                                                        <div className="min-w-0 flex-1 grid grid-cols-1 md:grid-cols-[1fr_7rem] gap-3">
+                                                            <label className="space-y-1">
+                                                                <span className="text-[11px] font-black text-slate-400">교과명</span>
+                                                                <Input
+                                                                    value={subject.subjectName || ""}
+                                                                    onChange={(event) => updateSubjectPlanSubject(index, "subjectName", event.target.value)}
+                                                                    placeholder="교과명"
+                                                                    className="h-11 bg-white border-slate-200 text-base font-black text-slate-900"
+                                                                />
+                                                            </label>
+                                                            <label className="space-y-1">
+                                                                <span className="text-[11px] font-black text-slate-400">학년</span>
+                                                                <Input
+                                                                    value={subject.grade || ""}
+                                                                    onChange={(event) => updateSubjectPlanSubject(index, "grade", event.target.value)}
+                                                                    placeholder="학년"
+                                                                    className="h-11 bg-white border-slate-200 text-base font-black text-slate-900"
+                                                                />
+                                                            </label>
+                                                            <div className="md:col-span-2 text-xs font-bold text-slate-400">
+                                                                평가 {subject.assessments.length}개
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="grid gap-2">
-                                                    {subject.assessments.slice(0, 3).map((assessment, assessmentIndex) => (
-                                                        <div
-                                                            key={`${assessment.area}-${assessmentIndex}`}
-                                                            className="rounded-xl bg-white/80 border border-slate-100 px-4 py-3"
-                                                        >
-                                                            <div className="text-xs font-black text-indigo-600 truncate">{assessment.area || `평가 ${assessmentIndex + 1}`}</div>
-                                                            <div className="mt-1 text-xs font-medium text-slate-600 line-clamp-2">
-                                                                {assessment.standard || assessment.criteria}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                            <div className="shrink-0 rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-500">
+                                                {selected ? "선택됨" : "제외됨"}
                                             </div>
-                                            {subject.assessments.length > 3 && (
-                                                <div className="shrink-0 rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-500">
-                                                    +{subject.assessments.length - 3}
-                                                </div>
-                                            )}
                                         </div>
-                                    </button>
+                                            <div className="grid gap-3">
+                                                {subject.assessments.map((assessment, assessmentIndex) => (
+                                                    <div
+                                                        key={`${assessment.area}-${assessmentIndex}`}
+                                                        className="rounded-xl bg-white/85 border border-slate-100 p-4 space-y-3"
+                                                    >
+                                                        <label className="space-y-1 block">
+                                                            <span className="text-[11px] font-black text-indigo-600">영역</span>
+                                                            <Input
+                                                                value={assessment.area || ""}
+                                                                onChange={(event) => updateSubjectPlanAssessment(index, assessmentIndex, "area", event.target.value)}
+                                                                placeholder={`평가 ${assessmentIndex + 1}`}
+                                                                className="h-10 bg-white border-slate-200 text-sm font-black text-indigo-700"
+                                                            />
+                                                        </label>
+                                                        <label className="space-y-1 block">
+                                                            <span className="text-[11px] font-black text-slate-400">성취기준</span>
+                                                            <textarea
+                                                                value={assessment.standard || ""}
+                                                                onChange={(event) => updateSubjectPlanAssessment(index, assessmentIndex, "standard", event.target.value)}
+                                                                placeholder="성취기준"
+                                                                rows={2}
+                                                                className="w-full min-h-20 resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium leading-6 text-slate-700 outline-none transition-all focus-visible:border-indigo-300 focus-visible:ring-4 focus-visible:ring-indigo-100"
+                                                            />
+                                                        </label>
+                                                        <label className="space-y-1 block">
+                                                            <span className="text-[11px] font-black text-slate-400">평가기준</span>
+                                                            <textarea
+                                                                value={assessment.criteria || ""}
+                                                                onChange={(event) => updateSubjectPlanAssessment(index, assessmentIndex, "criteria", event.target.value)}
+                                                                placeholder="평가기준"
+                                                                rows={2}
+                                                                className="w-full min-h-20 resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium leading-6 text-slate-700 outline-none transition-all focus-visible:border-indigo-300 focus-visible:ring-4 focus-visible:ring-indigo-100"
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
                                 );
                             })}
                         </div>
