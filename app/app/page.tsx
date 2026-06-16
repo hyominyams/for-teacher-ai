@@ -12,6 +12,7 @@ import {
     Layout,
     Activity,
     ChevronRight,
+    ChevronDown,
     Clock,
     Target,
     Brain,
@@ -33,6 +34,12 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabase";
 import type { ParsedSubjectPlanSubject, Student, SubjectGlobalConfig } from "@/types";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
@@ -1473,29 +1480,39 @@ export default function DashboardPage() {
                                                                 className="hidden"
                                                                 onChange={handleSubjectPlanUpload}
                                                             />
-                                                            <Button
-                                                                variant="outline"
-                                                                disabled={isSubjectPlanImporting}
-                                                                onClick={() => document.getElementById('subject-plan-upload')?.click()}
-                                                                className="rounded-xl h-10 px-5 font-black bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 border-indigo-100 dark:border-slate-700 gap-2 hover:bg-indigo-100 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
-                                                            >
-                                                                {isSubjectPlanImporting ? (
-                                                                    <>
-                                                                        읽는 중 <Loader2 className="size-3.5 animate-spin" />
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        평가계획 불러오기 <FileSearch className="size-3.5" />
-                                                                    </>
-                                                                )}
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => document.getElementById('csv-upload-subject')?.click()}
-                                                                className="rounded-xl h-10 px-5 font-black bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
-                                                            >
-                                                                CSV 가져오기 <Upload className="size-3.5" />
-                                                            </Button>
+                                                            <DropdownMenu>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        disabled={isSubjectPlanImporting}
+                                                                        className="rounded-xl h-10 px-5 font-black bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 border-indigo-100 dark:border-slate-700 gap-2 hover:bg-indigo-100 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
+                                                                    >
+                                                                        {isSubjectPlanImporting ? (
+                                                                            <>
+                                                                                읽는 중 <Loader2 className="size-3.5 animate-spin" />
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                불러오기 <ChevronDown className="size-3.5" />
+                                                                            </>
+                                                                        )}
+                                                                    </Button>
+                                                                </DropdownMenuTrigger>
+                                                                <DropdownMenuContent align="end" className="w-40 rounded-2xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-2xl z-[300]">
+                                                                    <DropdownMenuItem
+                                                                        onClick={() => document.getElementById('csv-upload-subject')?.click()}
+                                                                        className="rounded-xl px-3 py-2 text-xs font-bold cursor-pointer gap-2"
+                                                                    >
+                                                                        <Upload className="size-3.5" /> CSV
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuItem
+                                                                        onClick={() => document.getElementById('subject-plan-upload')?.click()}
+                                                                        className="rounded-xl px-3 py-2 text-xs font-bold cursor-pointer gap-2"
+                                                                    >
+                                                                        <FileSearch className="size-3.5" /> 평가계획
+                                                                    </DropdownMenuItem>
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
                                                         </div>
                                                         <div className="flex flex-col items-center justify-center h-24">
                                                             <span className="text-6xl font-black text-slate-900 dark:text-foreground tracking-tighter">{studentCount}</span>
