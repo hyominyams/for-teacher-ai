@@ -434,7 +434,7 @@ export const CreativeActivityWorkspace = ({
     );
 };
 
-type EventCountMode = "mixed" | "3" | "4";
+type EventCountMode = "3" | "4" | "custom";
 
 const parseEventInput = (input: string) => Array.from(new Set(
     input
@@ -443,10 +443,10 @@ const parseEventInput = (input: string) => Array.from(new Set(
         .filter(Boolean)
 ));
 
-const getEventCountForStudent = (mode: EventCountMode, index: number) => {
+const getEventCountForStudent = (mode: EventCountMode, customCount: number) => {
     if (mode === "3") return 3;
     if (mode === "4") return 4;
-    return index % 2 === 0 ? 3 : 4;
+    return customCount;
 };
 
 const circularDistance = (from: number, to: number, size: number) => {
@@ -498,12 +498,14 @@ const AutoDistributeEvents = ({
 }) => {
     const [open, setOpen] = useState(false);
     const [input, setInput] = useState("");
-    const [countMode, setCountMode] = useState<EventCountMode>("mixed");
+    const [countMode, setCountMode] = useState<EventCountMode>("3");
+    const [customCount, setCustomCount] = useState("5");
     const [randomCount, setRandomCount] = useState("3");
     const [isRandomLoading, setIsRandomLoading] = useState(false);
     const [replaceExisting, setReplaceExisting] = useState(true);
     const selectedCount = students.filter(s => s.selected).length;
     const parsedEvents = parseEventInput(input);
+    const normalizedCustomCount = Math.min(Math.max(Number(customCount) || 1, 1), 20);
 
     const handleRandomAdd = async () => {
         setIsRandomLoading(true);
@@ -552,7 +554,7 @@ const AutoDistributeEvents = ({
             let previousAssignment: string[] = [];
 
             selectedStudents.forEach((student, index) => {
-                const targetCount = Math.min(parsedEvents.length, getEventCountForStudent(countMode, index));
+                const targetCount = Math.min(parsedEvents.length, getEventCountForStudent(countMode, normalizedCustomCount));
                 const assignedEvents = pickDistributedEvents(parsedEvents, index, targetCount, usage, previousAssignment);
                 assignments.set(student.id, assignedEvents);
                 previousAssignment = assignedEvents;
@@ -612,9 +614,9 @@ const AutoDistributeEvents = ({
 
                     <div className="grid grid-cols-3 gap-2">
                         {([
-                            { value: "mixed", label: "3~4개" },
                             { value: "3", label: "3개" },
-                            { value: "4", label: "4개" }
+                            { value: "4", label: "4개" },
+                            { value: "custom", label: "직접 입력" }
                         ] as const).map(option => (
                             <button
                                 key={option.value}
@@ -631,6 +633,19 @@ const AutoDistributeEvents = ({
                             </button>
                         ))}
                     </div>
+                    {countMode === "custom" && (
+                        <label className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/50 px-4 py-3">
+                            <span className="text-xs font-black text-amber-700">학생당 배정 개수</span>
+                            <input
+                                type="number"
+                                min={1}
+                                max={20}
+                                value={customCount}
+                                onChange={(event) => setCustomCount(event.target.value)}
+                                className="h-9 w-24 rounded-lg border border-amber-100 bg-white px-3 text-right text-xs font-black text-amber-700 outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
+                            />
+                        </label>
+                    )}
 
                     <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 cursor-pointer">
                         <span className="text-xs font-black text-slate-600">기존 행사 비우기</span>
