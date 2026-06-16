@@ -499,9 +499,37 @@ const AutoDistributeEvents = ({
     const [open, setOpen] = useState(false);
     const [input, setInput] = useState("");
     const [countMode, setCountMode] = useState<EventCountMode>("mixed");
+    const [randomCount, setRandomCount] = useState("3");
+    const [isRandomLoading, setIsRandomLoading] = useState(false);
     const [replaceExisting, setReplaceExisting] = useState(true);
     const selectedCount = students.filter(s => s.selected).length;
     const parsedEvents = parseEventInput(input);
+
+    const handleRandomAdd = async () => {
+        setIsRandomLoading(true);
+        try {
+            const response = await fetch(`/api/creative-events/random?count=${randomCount}&exclude=${encodeURIComponent(parsedEvents.join(","))}`);
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "행사를 불러오지 못했습니다.");
+            }
+
+            const nextEvents = Array.isArray(data.events) ? data.events : [];
+            const merged = [...parsedEvents];
+            nextEvents.forEach((event) => {
+                if (typeof event === "string" && event.trim() && !merged.includes(event.trim())) {
+                    merged.push(event.trim());
+                }
+            });
+            setInput(merged.join(", "));
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : "행사를 불러오지 못했습니다.";
+            alert(message);
+        } finally {
+            setIsRandomLoading(false);
+        }
+    };
 
     const handleDistribute = () => {
         if (parsedEvents.length === 0 || selectedCount === 0) return;
@@ -624,19 +652,42 @@ const AutoDistributeEvents = ({
                         </div>
                     )}
 
-                    <div className="flex items-center justify-between pt-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
                         <div className="text-[11px] font-bold text-slate-400">
                             <span className="text-amber-600">{selectedCount}명</span>
                             <span className="mx-1">/</span>
                             <span className="text-amber-600">{parsedEvents.length}개 행사</span>
                         </div>
-                        <Button
-                            onClick={handleDistribute}
-                            disabled={parsedEvents.length === 0 || selectedCount === 0}
-                            className="rounded-xl h-9 px-5 font-black text-xs bg-amber-600 text-white hover:bg-amber-700 disabled:bg-slate-100 disabled:text-slate-300 transition-all"
-                        >
-                            배정하기
-                        </Button>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                            <Select value={randomCount} onValueChange={setRandomCount}>
+                                <SelectTrigger className="h-9 w-20 rounded-xl border-amber-100 bg-white text-xs font-black text-amber-700">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="z-[10080]">
+                                    {Array.from({ length: 20 }, (_, index) => index + 1).map(count => (
+                                        <SelectItem key={count} value={String(count)}>
+                                            {count}개
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={handleRandomAdd}
+                                disabled={isRandomLoading}
+                                className="rounded-xl h-9 px-4 font-black text-xs border-amber-100 bg-white text-amber-700 hover:bg-amber-50 gap-2"
+                            >
+                                행사랜덤추가 <Sparkles className={cn("size-3.5", isRandomLoading && "animate-spin")} />
+                            </Button>
+                            <Button
+                                onClick={handleDistribute}
+                                disabled={parsedEvents.length === 0 || selectedCount === 0}
+                                className="rounded-xl h-9 px-5 font-black text-xs bg-amber-600 text-white hover:bg-amber-700 disabled:bg-slate-100 disabled:text-slate-300 transition-all"
+                            >
+                                배정하기
+                            </Button>
+                        </div>
                     </div>
                     {selectedCount === 0 && (
                         <p className="text-[11px] font-bold text-red-400">학생을 선택하세요.</p>
