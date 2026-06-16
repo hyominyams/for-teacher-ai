@@ -515,7 +515,7 @@ const AutoDistributeEvents = ({
                 throw new Error(data.error || "행사를 불러오지 못했습니다.");
             }
 
-            const nextEvents = Array.isArray(data.events) ? data.events : [];
+            const nextEvents: unknown[] = Array.isArray(data.events) ? data.events : [];
             const merged = [...parsedEvents];
             nextEvents.forEach((event) => {
                 if (typeof event === "string" && event.trim() && !merged.includes(event.trim())) {
