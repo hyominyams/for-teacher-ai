@@ -10,7 +10,6 @@ import {
     KeyRound,
     LayoutDashboard,
     ListChecks,
-    Puzzle,
     Sparkles,
     Users,
 } from "lucide-react";
@@ -73,17 +72,6 @@ const sections = [
             "미리보기에서 학생별 결과 문장을 확인하고 Excel로 전체 내보내기를 실행합니다.",
         ],
     },
-    {
-        id: "extension",
-        title: "크롬 확장 프로그램",
-        icon: Puzzle,
-        image: "/manual-assets/07-extension-download.png",
-        steps: [
-            "대시보드 오른쪽의 나이스 붙여넣기 영역으로 이동합니다.",
-            "다운로드하러가기 버튼으로 크롬 웹스토어 페이지를 엽니다.",
-            "확장 프로그램에서 웹앱 계정을 연결한 뒤 저장 데이터를 불러옵니다.",
-        ],
-    },
 ];
 
 const quickStart = [
@@ -110,7 +98,7 @@ export default function GuidebookPage() {
                                     <span className="block">사용 가이드</span>
                                 </h1>
                                 <p className="max-w-3xl text-lg font-medium leading-8 text-slate-600 [word-break:keep-all]">
-                                    로그인부터 생활기록부 문장 작성, 작업 로그 확인, CSV 다운로드, 나이스 입력용 크롬 확장 프로그램까지 한 번에 확인하세요.
+                                    로그인부터 생활기록부 문장 작성, 작업 로그 확인, CSV 다운로드까지 한 번에 확인하세요.
                                 </p>
                             </div>
                             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
