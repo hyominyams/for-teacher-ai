@@ -222,8 +222,9 @@ export const SubjectWorkspace = ({
     // Adjusted ratios: AI Result gets more space (2.5fr) vs Note (1fr)
     const gridTemplateCols = `40px 70px ${assessmentCols} minmax(180px, 1fr) minmax(280px, 2.5fr) 140px`;
     const currentSubjectLabel = globalConfig.subjectName.trim() || "새 교과";
-    const rawSubjectSelectItems = subjectLogs.some(log => log.scopeKey === activeSubjectScopeKey)
-        ? subjectLogs.map(log => log.scopeKey === activeSubjectScopeKey ? { ...log, scopeLabel: currentSubjectLabel } : log)
+    const activeSubjectLogExists = subjectLogs.some(log => log.scopeKey === activeSubjectScopeKey);
+    const rawSubjectSelectItems = activeSubjectLogExists
+        ? subjectLogs
         : [{ scopeKey: activeSubjectScopeKey, scopeLabel: currentSubjectLabel }, ...subjectLogs];
     const subjectLabelCounts = rawSubjectSelectItems.reduce<Record<string, number>>((counts, log) => {
         const label = getDisplaySubjectLabel(log.scopeLabel);
@@ -326,8 +327,8 @@ export const SubjectWorkspace = ({
 
                 {!isExpanded && (
                 <div className="rounded-[2rem] bg-indigo-50/60 border border-indigo-100 p-5 space-y-4">
-                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,560px)_1fr] gap-4 lg:items-end">
-                        <div className="space-y-2 min-w-0 max-w-[560px]">
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,680px)_1fr] gap-4 lg:items-end">
+                        <div className="space-y-2 min-w-0 max-w-[680px]">
                             <Label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-1">현재 교과</Label>
                             <Input
                                 value={globalConfig.subjectName}
