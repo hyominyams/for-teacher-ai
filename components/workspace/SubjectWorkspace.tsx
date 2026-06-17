@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useSyncExternalStore } from "react";
+import React, { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import {
     Zap,
     Maximize2,
@@ -16,7 +16,8 @@ import {
     Download,
     Target,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    GripVertical
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -75,6 +76,7 @@ interface SubjectWorkspaceProps {
     onCreateSubjectLog: () => void;
     onDeleteSubjectLog: (scopeKey: string) => void;
     onDeleteAllSubjectLogs: () => void;
+    onReorderSubjectLogs: (fromScopeKey: string, toScopeKey: string) => void;
     handleGenerate: (id: number) => void;
     handleAllGenerate: () => void;
     handleSelectedGenerate: () => void;
@@ -152,6 +154,7 @@ export const SubjectWorkspace = ({
     onCreateSubjectLog,
     onDeleteSubjectLog,
     onDeleteAllSubjectLogs,
+    onReorderSubjectLogs,
     handleGenerate,
     handleAllGenerate,
     handleSelectedGenerate,
@@ -164,6 +167,9 @@ export const SubjectWorkspace = ({
     const [bulkAssessmentId, setBulkAssessmentId] = useState<string | null>(null);
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
     const [activeInputTab, setActiveInputTab] = useState("global");
+    const [draggedSubjectScopeKey, setDraggedSubjectScopeKey] = useState<string | null>(null);
+    const [dragOverSubjectScopeKey, setDragOverSubjectScopeKey] = useState<string | null>(null);
+    const suppressSubjectClickRef = useRef(false);
 
     const mounted = useSyncExternalStore(
         () => () => {},
@@ -315,6 +321,42 @@ export const SubjectWorkspace = ({
     });
     const selectedStudentCount = students.filter(s => s.selected).length;
 
+    const handleSubjectDragStart = (event: React.DragEvent<HTMLButtonElement>, scopeKey: string) => {
+        setDraggedSubjectScopeKey(scopeKey);
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", scopeKey);
+    };
+
+    const handleSubjectDragOver = (event: React.DragEvent<HTMLButtonElement>, scopeKey: string) => {
+        if (!draggedSubjectScopeKey || draggedSubjectScopeKey === scopeKey) return;
+
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDragOverSubjectScopeKey(scopeKey);
+    };
+
+    const resetSubjectDragState = () => {
+        setDraggedSubjectScopeKey(null);
+        setDragOverSubjectScopeKey(null);
+    };
+
+    const suppressNextSubjectClick = () => {
+        suppressSubjectClickRef.current = true;
+        window.setTimeout(() => {
+            suppressSubjectClickRef.current = false;
+        }, 0);
+    };
+
+    const handleSubjectDrop = (event: React.DragEvent<HTMLButtonElement>, scopeKey: string) => {
+        event.preventDefault();
+        const fromScopeKey = draggedSubjectScopeKey || event.dataTransfer.getData("text/plain");
+        if (fromScopeKey && fromScopeKey !== scopeKey) {
+            onReorderSubjectLogs(fromScopeKey, scopeKey);
+            suppressNextSubjectClick();
+        }
+        resetSubjectDragState();
+    };
+
     return (
         <Wrapper isExpanded={isExpanded} mounted={mounted}>
             <Card className={cn(
@@ -441,19 +483,42 @@ export const SubjectWorkspace = ({
                     <div className="flex flex-nowrap gap-2 overflow-x-auto overflow-y-hidden custom-scrollbar pb-1 pr-1">
                         {subjectSelectItems.map(log => {
                             const isActive = log.scopeKey === activeSubjectScopeKey;
+                            const isRealSubjectLog = subjectLogs.some(subjectLog => subjectLog.scopeKey === log.scopeKey);
+                            const isDragging = draggedSubjectScopeKey === log.scopeKey;
+                            const isDragOver = dragOverSubjectScopeKey === log.scopeKey;
                             return (
                                 <button
                                     key={log.scopeKey}
-                                    onClick={() => onSubjectScopeChange(log.scopeKey)}
+                                    draggable={isRealSubjectLog}
+                                    onDragStart={(event) => handleSubjectDragStart(event, log.scopeKey)}
+                                    onDragOver={(event) => handleSubjectDragOver(event, log.scopeKey)}
+                                    onDragLeave={() => {
+                                        if (isDragOver) setDragOverSubjectScopeKey(null);
+                                    }}
+                                    onDrop={(event) => handleSubjectDrop(event, log.scopeKey)}
+                                    onDragEnd={() => {
+                                        if (draggedSubjectScopeKey) suppressNextSubjectClick();
+                                        resetSubjectDragState();
+                                    }}
+                                    onClick={() => {
+                                        if (suppressSubjectClickRef.current) return;
+                                        onSubjectScopeChange(log.scopeKey);
+                                    }}
                                     className={cn(
-                                        "h-10 min-w-16 max-w-[160px] shrink-0 rounded-xl border px-4 text-xs font-black transition-all truncate",
+                                        "h-10 min-w-16 max-w-[160px] shrink-0 rounded-xl border px-3 text-xs font-black transition-all",
+                                        isRealSubjectLog ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                                         isActive
                                             ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200"
-                                            : "bg-white border-indigo-100 text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
+                                            : "bg-white border-indigo-100 text-slate-500 hover:border-indigo-200 hover:text-indigo-600",
+                                        isDragging && "opacity-50",
+                                        isDragOver && "ring-4 ring-indigo-100 border-indigo-300"
                                     )}
-                                    title={log.scopeLabel || "교과"}
+                                    title={`${log.scopeLabel || "교과"}${isRealSubjectLog ? " - 드래그해서 순서 변경" : ""}`}
                                 >
-                                    {log.shortLabel}
+                                    <span className="flex min-w-0 items-center gap-1.5">
+                                        <GripVertical className="size-3 shrink-0 opacity-45" />
+                                        <span className="truncate">{log.shortLabel}</span>
+                                    </span>
                                 </button>
                             );
                         })}

@@ -101,6 +101,7 @@ const DEFAULT_STUDENT_COUNTS: Record<string, number> = {
     creative: 7,
     docs: 7
 };
+const SUBJECT_ORDER_STORAGE_PREFIX = "for-teacher-ai:subject-order:";
 
 interface SubjectWorkLogSummary {
     scopeKey: string;
@@ -143,6 +144,43 @@ const resizeStudentsToCount = (sourceStudents: Student[] | undefined, count: num
 };
 
 const getSubjectScopeLabel = (config: SubjectGlobalConfig) => config.subjectName.trim() || "새 교과";
+
+const getSubjectOrderStorageKey = (userId: string) => `${SUBJECT_ORDER_STORAGE_PREFIX}${userId}`;
+
+const readSubjectOrder = (userId: string): string[] => {
+    if (typeof window === "undefined") return [];
+
+    try {
+        const rawValue = window.localStorage.getItem(getSubjectOrderStorageKey(userId));
+        const parsed = rawValue ? JSON.parse(rawValue) : [];
+        return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+    } catch {
+        return [];
+    }
+};
+
+const writeSubjectOrder = (userId: string, logs: SubjectWorkLogSummary[]) => {
+    if (typeof window === "undefined") return;
+
+    window.localStorage.setItem(
+        getSubjectOrderStorageKey(userId),
+        JSON.stringify(logs.map(log => log.scopeKey))
+    );
+};
+
+const applySubjectOrder = (logs: SubjectWorkLogSummary[], orderedScopeKeys: string[]) => {
+    if (!orderedScopeKeys.length) return logs;
+
+    const orderIndex = new Map(orderedScopeKeys.map((scopeKey, index) => [scopeKey, index]));
+    return [...logs].sort((a, b) => {
+        const aIndex = orderIndex.get(a.scopeKey);
+        const bIndex = orderIndex.get(b.scopeKey);
+        if (aIndex !== undefined && bIndex !== undefined) return aIndex - bIndex;
+        if (aIndex !== undefined) return -1;
+        if (bIndex !== undefined) return 1;
+        return 0;
+    });
+};
 
 const ACHIEVEMENT_LEVELS: AchievementLevel[] = ["상", "중", "하"];
 
@@ -296,6 +334,7 @@ export default function DashboardPage() {
                     updatedAt: log.updated_at,
                     createdAt: log.created_at
                 }));
+                nextSubjectLogs = applySubjectOrder(nextSubjectLogs, readSubjectOrder(userId));
 
                 let selectedLog = logs.find(log => (log.scope_key || DEFAULT_SCOPE_KEY) === activeSubjectScopeKey);
                 if (!selectedLog && activeSubjectScopeKey !== DEFAULT_SCOPE_KEY) {
@@ -307,7 +346,12 @@ export default function DashboardPage() {
 
                 setSubjectLogs(nextSubjectLogs);
 
-                selectedLog = selectedLog || (activeSubjectScopeKey === DEFAULT_SCOPE_KEY ? logs[0] : undefined);
+                const firstOrderedScopeKey = nextSubjectLogs[0]?.scopeKey;
+                selectedLog = selectedLog || (
+                    activeSubjectScopeKey === DEFAULT_SCOPE_KEY && firstOrderedScopeKey
+                        ? logs.find(log => (log.scope_key || DEFAULT_SCOPE_KEY) === firstOrderedScopeKey)
+                        : undefined
+                );
                 const subjectCountAlreadyLoaded = Boolean(loadedStudentCountCategories.subject);
                 const nextSubjectCount = subjectCountAlreadyLoaded
                     ? studentCounts.subject
@@ -415,9 +459,11 @@ export default function DashboardPage() {
                         updatedAt: savedAt,
                         createdAt: currentLog?.createdAt || savedAt
                     };
-                    return currentLog
+                    const nextLogs = currentLog
                         ? prev.map(log => log.scopeKey === scopeKey ? nextLog : log)
                         : [nextLog, ...prev];
+                    writeSubjectOrder(userId, nextLogs);
+                    return nextLogs;
                 });
             }
             if (!silent) console.log("Auto-saved work log.");
@@ -492,7 +538,11 @@ export default function DashboardPage() {
         setActiveSubjectScopeKey(scopeKey);
         setSubjectConfig(defaultConfig);
         setStudents(initialStudents);
-        setSubjectLogs(prev => [{ scopeKey, scopeLabel: "새 교과", updatedAt: savedAt, createdAt: savedAt }, ...prev]);
+        setSubjectLogs(prev => {
+            const nextLogs = [{ scopeKey, scopeLabel: "새 교과", updatedAt: savedAt, createdAt: savedAt }, ...prev];
+            writeSubjectOrder(userId, nextLogs);
+            return nextLogs;
+        });
         setIsWorkLogLoading(false);
     };
 
@@ -519,6 +569,7 @@ export default function DashboardPage() {
 
         const remainingLogs = subjectLogs.filter(log => log.scopeKey !== scopeKey);
         setSubjectLogs(remainingLogs);
+        writeSubjectOrder(userId, remainingLogs);
 
         if (scopeKey === activeSubjectScopeKey) {
             const nextLog = remainingLogs[0];
@@ -554,10 +605,27 @@ export default function DashboardPage() {
         }
 
         setSubjectLogs([]);
+        writeSubjectOrder(userId, []);
         setActiveSubjectScopeKey(DEFAULT_SCOPE_KEY);
         setSubjectConfig(getDefaultSubjectConfig());
         setStudents(createInitialStudents(studentCount));
         setIsWorkLogLoading(false);
+    };
+
+    const handleReorderSubjectLogs = (fromScopeKey: string, toScopeKey: string) => {
+        if (!userId || fromScopeKey === toScopeKey) return;
+
+        setSubjectLogs(prev => {
+            const fromIndex = prev.findIndex(log => log.scopeKey === fromScopeKey);
+            const toIndex = prev.findIndex(log => log.scopeKey === toScopeKey);
+            if (fromIndex === -1 || toIndex === -1) return prev;
+
+            const nextLogs = [...prev];
+            const [movedLog] = nextLogs.splice(fromIndex, 1);
+            nextLogs.splice(toIndex, 0, movedLog);
+            writeSubjectOrder(userId, nextLogs);
+            return nextLogs;
+        });
     };
 
     const syncSubjectStudentCountAcrossLogs = async (count: number, currentStudents: Student[]) => {
@@ -1461,15 +1529,19 @@ export default function DashboardPage() {
         }
 
         const firstLog = importedLogs[0];
-        setSubjectLogs(prev => [
-            ...importedLogs.map(log => ({
-                scopeKey: log.scopeKey,
-                scopeLabel: log.scopeLabel,
-                updatedAt: savedAt,
-                createdAt: savedAt,
-            })),
-            ...prev,
-        ]);
+        setSubjectLogs(prev => {
+            const nextLogs = [
+                ...importedLogs.map(log => ({
+                    scopeKey: log.scopeKey,
+                    scopeLabel: log.scopeLabel,
+                    updatedAt: savedAt,
+                    createdAt: savedAt,
+                })),
+                ...prev,
+            ];
+            writeSubjectOrder(userId, nextLogs);
+            return nextLogs;
+        });
         setActiveSubjectScopeKey(firstLog.scopeKey);
         setSubjectConfig(firstLog.globalConfig);
         setStudents(firstLog.students);
@@ -1709,6 +1781,7 @@ export default function DashboardPage() {
                                                 onCreateSubjectLog={handleCreateSubjectLog}
                                                 onDeleteSubjectLog={handleDeleteSubjectLog}
                                                 onDeleteAllSubjectLogs={handleDeleteAllSubjectLogs}
+                                                onReorderSubjectLogs={handleReorderSubjectLogs}
                                                 handleGenerate={handleGenerate}
                                                 handleAllGenerate={handleAllGenerate}
                                                 handleSelectedGenerate={handleSelectedGenerate}
