@@ -129,7 +129,7 @@ export const SubjectWorkspace = ({
     isExpanded,
     setIsExpanded
 }: SubjectWorkspaceProps) => {
-    const [isBulkOpen, setIsBulkOpen] = useState(false);
+    const [bulkAssessmentId, setBulkAssessmentId] = useState<string | null>(null);
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
     const [activeInputTab, setActiveInputTab] = useState("global");
 
@@ -195,6 +195,29 @@ export const SubjectWorkspace = ({
         }));
     };
 
+    const applyBulkAssessmentLevel = (assessmentId: string, level: "상" | "중" | "하" | "") => {
+        if (selectedStudentCount === 0) return;
+
+        setStudents(prev => prev.map(student => {
+            if (!student.selected) return student;
+
+            const currentSubjectData = student.subjectData || { assessments: [], individualNote: "" };
+            const existingAssessments = currentSubjectData.assessments || [];
+            const updatedAssessments = existingAssessments.find(a => a.assessmentId === assessmentId)
+                ? existingAssessments.map(a => a.assessmentId === assessmentId ? { ...a, level } : a)
+                : [...existingAssessments, { assessmentId, level }];
+
+            return {
+                ...student,
+                subjectData: {
+                    ...currentSubjectData,
+                    assessments: updatedAssessments
+                }
+            };
+        }));
+        setBulkAssessmentId(null);
+    };
+
     const handleNoteChange = (studentId: number, note: string) => {
         setStudents(prev => prev.map(s => {
             if (s.id !== studentId) return s;
@@ -251,7 +274,6 @@ export const SubjectWorkspace = ({
             };
         });
     const selectedStudentCount = students.filter(s => s.selected).length;
-    const canBulkApplyLevel = selectedStudentCount > 0 && globalConfig.assessments.length > 0;
 
     return (
         <Wrapper isExpanded={isExpanded} mounted={mounted}>
@@ -275,54 +297,6 @@ export const SubjectWorkspace = ({
                         </div>
                     </div>
                     <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 w-full xl:w-auto">
-                        {/* Bulk Level Input */}
-                        <Popover open={isBulkOpen} onOpenChange={setIsBulkOpen}>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    disabled={!canBulkApplyLevel}
-                                    title={globalConfig.assessments.length === 0 ? "평가정보를 먼저 추가하세요" : "학생을 선택하세요"}
-                                    className="rounded-2xl h-11 px-6 font-bold border-indigo-100 bg-indigo-50 text-indigo-600 gap-2 hover:bg-indigo-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
-                                >
-                                    일괄 입력 <ChevronDown className="size-4 opacity-50" />
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-40 p-2 rounded-2xl shadow-xl border-indigo-100 z-[10000]" align="end">
-                                <div className="grid gap-1">
-                                    <div className="px-2 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 mb-1">
-                                        {selectedStudentCount}명 선택
-                                    </div>
-                                    {(["상", "중", "하"] as const).map((level) => (
-                                        <button
-                                            key={level}
-                                            onClick={() => {
-                                                setStudents(prev => prev.map(student => {
-                                                    if (!student.selected) return student;
-
-                                                    const newAssessments = globalConfig.assessments.map(a => ({
-                                                        assessmentId: a.id,
-                                                        level: level
-                                                    }));
-
-                                                    return {
-                                                        ...student,
-                                                        subjectData: {
-                                                            ...(student.subjectData || { assessments: [], individualNote: "" }),
-                                                            assessments: newAssessments
-                                                        }
-                                                    };
-                                                }));
-                                                setIsBulkOpen(false);
-                                            }}
-                                            className="flex items-center w-full px-4 py-2.5 text-sm font-bold text-slate-600 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors text-left"
-                                        >
-                                            {level}
-                                        </button>
-                                    ))}
-                                </div>
-                            </PopoverContent>
-                        </Popover>
-
                         <Button
                             variant="outline"
                             className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 text-emerald-600 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
@@ -636,10 +610,53 @@ export const SubjectWorkspace = ({
                                         </div>
                                         <div className="text-center">번호</div>
                                         {globalConfig.assessments.map((a, i) => (
-                                            <div key={a.id} className="text-indigo-600 bg-indigo-100/30 py-2 rounded-xl text-center px-4">
-                                                평가 {i + 1}
-                                                <div className="text-[8px] opacity-40 truncate">{a.area || "영역"}</div>
-                                            </div>
+                                            <Popover
+                                                key={a.id}
+                                                open={bulkAssessmentId === a.id}
+                                                onOpenChange={(open) => setBulkAssessmentId(open ? a.id : null)}
+                                            >
+                                                <PopoverTrigger asChild>
+                                                    <button
+                                                        type="button"
+                                                        title={`${a.area || `평가 ${i + 1}`} 일괄 입력`}
+                                                        className="min-w-0 rounded-xl bg-indigo-100/30 px-3 py-2 text-center text-indigo-600 transition-colors hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+                                                    >
+                                                        <span className="flex min-w-0 items-center justify-center gap-1 whitespace-nowrap">
+                                                            <span className="truncate">평가 {i + 1}</span>
+                                                            <ChevronDown className="size-3 shrink-0 opacity-60" />
+                                                        </span>
+                                                        <span className="mt-0.5 block truncate text-[8px] leading-3 opacity-45">
+                                                            {a.area || "영역"}
+                                                        </span>
+                                                    </button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-44 rounded-2xl border-indigo-100 p-2 shadow-xl z-[10000]" align="center">
+                                                    <div className="grid gap-1">
+                                                        <div className="border-b border-slate-100 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                            {selectedStudentCount > 0 ? `${selectedStudentCount}명 선택` : "학생을 선택하세요"}
+                                                        </div>
+                                                        {(["상", "중", "하"] as const).map((level) => (
+                                                            <button
+                                                                key={level}
+                                                                type="button"
+                                                                disabled={selectedStudentCount === 0}
+                                                                onClick={() => applyBulkAssessmentLevel(a.id, level)}
+                                                                className="flex h-9 w-full items-center rounded-xl px-3 text-left text-sm font-black text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                                                            >
+                                                                {level} 입력
+                                                            </button>
+                                                        ))}
+                                                        <button
+                                                            type="button"
+                                                            disabled={selectedStudentCount === 0}
+                                                            onClick={() => applyBulkAssessmentLevel(a.id, "")}
+                                                            className="flex h-9 w-full items-center rounded-xl px-3 text-left text-sm font-black text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                                                        >
+                                                            비우기
+                                                        </button>
+                                                    </div>
+                                                </PopoverContent>
+                                            </Popover>
                                         ))}
                                         <div className="pl-4">개별 특이사항 (선택)</div>
                                         <div className="pl-5">AI 결과 및 편집</div>
