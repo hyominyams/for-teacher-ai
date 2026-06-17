@@ -42,7 +42,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabase";
-import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectGlobalConfig } from "@/types";
+import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
 import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
@@ -193,18 +193,22 @@ const splitCriteriaLevelsFromText = (criteria: string): CriteriaLevels => {
     const text = criteria.trim();
     if (!text) return levels;
 
-    ACHIEVEMENT_LEVELS.forEach((level, index) => {
-        const nextLevel = ACHIEVEMENT_LEVELS[index + 1];
-        const pattern = nextLevel
-            ? new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*?)(?=\\n\\s*${nextLevel}\\s*[):：:\\-])`)
-            : new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*)`);
-        const match = text.match(pattern);
-        if (match?.[1]?.trim()) {
-            levels[level] = match[1].trim();
-        }
-    });
+    const markers = Array.from(text.matchAll(/(?:^|\n)\s*([상중하])\s*[):：:\-]\s*/g))
+        .map((match) => ({
+            level: match[1] as AchievementLevel,
+            contentStart: (match.index || 0) + match[0].length,
+            markerStart: match.index || 0,
+        }));
 
-    if (ACHIEVEMENT_LEVELS.every((level) => levels[level])) return levels;
+    if (markers.length > 0) {
+        markers.forEach((marker, index) => {
+            const nextMarker = markers[index + 1];
+            levels[marker.level] = text
+                .slice(marker.contentStart, nextMarker ? nextMarker.markerStart : text.length)
+                .trim();
+        });
+        return levels;
+    }
 
     const lines = text
         .split(/\n+/)
@@ -219,8 +223,10 @@ const splitCriteriaLevelsFromText = (criteria: string): CriteriaLevels => {
     return levels;
 };
 
-const getCriteriaLevels = (assessment: Pick<ParsedSubjectPlanSubject["assessments"][number], "criteria" | "criteriaLevels">): CriteriaLevels => {
-    const parsedLevels = splitCriteriaLevelsFromText(assessment.criteria || "");
+const getCriteriaLevels = (
+    assessment: Pick<ParsedSubjectPlanSubject["assessments"][number] | SubjectAssessmentInfo, "criteria" | "criteriaLevels">
+): CriteriaLevels => {
+    const parsedLevels = assessment.criteriaLevels ? {} : splitCriteriaLevelsFromText(assessment.criteria || "");
     return ACHIEVEMENT_LEVELS.reduce<CriteriaLevels>((acc, level) => {
         acc[level] = assessment.criteriaLevels?.[level] || parsedLevels[level] || "";
         return acc;
@@ -1264,11 +1270,12 @@ export default function DashboardPage() {
                 // 기존 config의 assessment 정보를 유지하려면 별도 로직이 필요하나,
                 // 여기서는 "양식 업로드" 개념이므로 파일 내용에 맞춰 재구성합니다.
                 // 단, 평가 문구(성취기준 등)는 CSV에 없으므로 빈 값으로 생성됩니다.
-                const newAssessments = assessmentCols.map((col, i) => ({
+                const newAssessments = assessmentCols.map((col) => ({
                     id: crypto.randomUUID(),
                     area: col, // 임시로 컬럼명을 영역명으로
                     standard: "",
                     criteria: "",
+                    criteriaLevels: {},
                     competency: ""
                 }));
 
@@ -1486,6 +1493,7 @@ export default function DashboardPage() {
                     area: assessment.area,
                     standard: assessment.standard,
                     criteria: formatCriteriaFromLevels(getCriteriaLevels(assessment)) || assessment.criteria,
+                    criteriaLevels: getCriteriaLevels(assessment),
                     competency: assessment.competency,
                 })),
             };

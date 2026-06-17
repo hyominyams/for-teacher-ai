@@ -30,6 +30,7 @@ export interface SubjectAssessmentInfo {
     area: string; // 영역(대단원)
     standard: string; // 성취기준
     criteria: string; // 평가기준
+    criteriaLevels?: CriteriaLevels; // 상/중/하 평가기준
     competency: string; // 관련역량
 }
 

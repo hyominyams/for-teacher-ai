@@ -82,18 +82,22 @@ const splitCriteriaLevelsFromText = (criteria: string): CriteriaLevels => {
     const text = criteria.trim();
     if (!text) return levels;
 
-    LEVELS.forEach((level, index) => {
-        const nextLevel = LEVELS[index + 1];
-        const pattern = nextLevel
-            ? new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*?)(?=\\n\\s*${nextLevel}\\s*[):：:\\-])`)
-            : new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*)`);
-        const match = text.match(pattern);
-        if (match?.[1]?.trim()) {
-            levels[level] = match[1].trim();
-        }
-    });
+    const markers = Array.from(text.matchAll(/(?:^|\n)\s*([상중하])\s*[):：:\-]\s*/g))
+        .map((match) => ({
+            level: match[1] as AchievementLevel,
+            contentStart: (match.index || 0) + match[0].length,
+            markerStart: match.index || 0,
+        }));
 
-    if (LEVELS.every((level) => levels[level])) return levels;
+    if (markers.length > 0) {
+        markers.forEach((marker, index) => {
+            const nextMarker = markers[index + 1];
+            levels[marker.level] = text
+                .slice(marker.contentStart, nextMarker ? nextMarker.markerStart : text.length)
+                .trim();
+        });
+        return levels;
+    }
 
     const candidateLines = text
         .split(/\n+/)

@@ -103,18 +103,23 @@ const splitCriteriaLevelsFromText = (criteria: string): CriteriaLevels => {
     const text = criteria.trim();
     if (!text) return levels;
 
-    ACHIEVEMENT_LEVELS.forEach((level, index) => {
-        const nextLevel = ACHIEVEMENT_LEVELS[index + 1];
-        const pattern = nextLevel
-            ? new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*?)(?=\\n\\s*${nextLevel}\\s*[):：:\\-])`)
-            : new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*)`);
-        const match = text.match(pattern);
-        if (match?.[1]?.trim()) {
-            levels[level] = match[1].trim();
-        }
-    });
+    const markers = Array.from(text.matchAll(/(?:^|\n)\s*([상중하])\s*[):：:\-]\s*/g))
+        .map((match) => ({
+            level: match[1] as AchievementLevel,
+            contentStart: (match.index || 0) + match[0].length,
+            markerStart: match.index || 0,
+        }));
 
-    if (ACHIEVEMENT_LEVELS.every((level) => levels[level])) return levels;
+    if (markers.length > 0) {
+        markers.forEach((marker, index) => {
+            const nextMarker = markers[index + 1];
+            const value = text
+                .slice(marker.contentStart, nextMarker ? nextMarker.markerStart : text.length)
+                .trim();
+            levels[marker.level] = value;
+        });
+        return levels;
+    }
 
     const lines = text
         .split(/\n+/)
@@ -127,11 +132,12 @@ const splitCriteriaLevelsFromText = (criteria: string): CriteriaLevels => {
         return levels;
     }
 
-    ACHIEVEMENT_LEVELS.forEach((level) => {
-        levels[level] = text;
-    });
     return levels;
 };
+
+const getAssessmentCriteriaLevels = (assessment: SubjectAssessmentInfo): CriteriaLevels => (
+    assessment.criteriaLevels ?? splitCriteriaLevelsFromText(assessment.criteria)
+);
 
 const formatCriteriaFromLevels = (levels: CriteriaLevels) => (
     ACHIEVEMENT_LEVELS
@@ -195,7 +201,7 @@ export const SubjectWorkspace = ({
             ...prev,
             assessments: [
                 ...prev.assessments,
-                { id: newId, area: "", standard: "", criteria: "", competency: "" }
+                { id: newId, area: "", standard: "", criteria: "", criteriaLevels: {}, competency: "" }
             ]
         }));
     };
@@ -221,12 +227,13 @@ export const SubjectWorkspace = ({
                 if (assessment.id !== id) return assessment;
 
                 const nextLevels = {
-                    ...splitCriteriaLevelsFromText(assessment.criteria),
+                    ...getAssessmentCriteriaLevels(assessment),
                     [level]: value,
                 };
 
                 return {
                     ...assessment,
+                    criteriaLevels: nextLevels,
                     criteria: formatCriteriaFromLevels(nextLevels),
                 };
             })
@@ -676,7 +683,7 @@ export const SubjectWorkspace = ({
                                                 </Label>
                                                 <div className="grid gap-3 lg:grid-cols-3">
                                                     {ACHIEVEMENT_LEVELS.map((level) => {
-                                                        const criteriaLevels = splitCriteriaLevelsFromText(assessment.criteria);
+                                                        const criteriaLevels = getAssessmentCriteriaLevels(assessment);
 
                                                         return (
                                                             <label key={level} className="block space-y-2">
