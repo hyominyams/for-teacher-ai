@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createPortal } from "react-dom";
-import { Student, SubjectGlobalConfig, SubjectAssessmentInfo } from "@/types";
+import { AchievementLevel, CriteriaLevels, Student, SubjectGlobalConfig, SubjectAssessmentInfo } from "@/types";
 
 interface WrapperProps {
     children: React.ReactNode;
@@ -89,6 +89,57 @@ const getDisplaySubjectLabel = (label: string) => {
     const normalized = (label || "교과").trim();
     return normalized.replace(/\s+\d{2}\.\d{2}\.\d{2}:\d{2}$/, "").trim() || "교과";
 };
+
+const ACHIEVEMENT_LEVELS: AchievementLevel[] = ["상", "중", "하"];
+
+const stripLevelPrefix = (value: string, level: AchievementLevel) => (
+    value.replace(new RegExp(`^\\s*${level}\\s*[):：:\\-]\\s*`), "").trim()
+);
+
+const splitCriteriaLevelsFromText = (criteria: string): CriteriaLevels => {
+    const levels: CriteriaLevels = {};
+    const text = criteria.trim();
+    if (!text) return levels;
+
+    ACHIEVEMENT_LEVELS.forEach((level, index) => {
+        const nextLevel = ACHIEVEMENT_LEVELS[index + 1];
+        const pattern = nextLevel
+            ? new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*?)(?=\\n\\s*${nextLevel}\\s*[):：:\\-])`)
+            : new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*)`);
+        const match = text.match(pattern);
+        if (match?.[1]?.trim()) {
+            levels[level] = match[1].trim();
+        }
+    });
+
+    if (ACHIEVEMENT_LEVELS.every((level) => levels[level])) return levels;
+
+    const lines = text
+        .split(/\n+/)
+        .map((line) => line.replace(/^\s*[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    if (lines.length === 3) {
+        ACHIEVEMENT_LEVELS.forEach((level, index) => {
+            levels[level] = stripLevelPrefix(lines[index], level);
+        });
+        return levels;
+    }
+
+    ACHIEVEMENT_LEVELS.forEach((level) => {
+        levels[level] = text;
+    });
+    return levels;
+};
+
+const formatCriteriaFromLevels = (levels: CriteriaLevels) => (
+    ACHIEVEMENT_LEVELS
+        .map((level) => {
+            const value = levels[level]?.trim();
+            return value ? `${level}: ${value}` : "";
+        })
+        .filter(Boolean)
+        .join("\n")
+);
 
 export const SubjectWorkspace = ({
     students,
@@ -154,6 +205,25 @@ export const SubjectWorkspace = ({
         setGlobalConfig(prev => ({
             ...prev,
             assessments: prev.assessments.map(a => a.id === id ? { ...a, [field]: value } : a)
+        }));
+    };
+
+    const updateAssessmentCriteriaLevel = (id: string, level: AchievementLevel, value: string) => {
+        setGlobalConfig(prev => ({
+            ...prev,
+            assessments: prev.assessments.map(assessment => {
+                if (assessment.id !== id) return assessment;
+
+                const nextLevels = {
+                    ...splitCriteriaLevelsFromText(assessment.criteria),
+                    [level]: value,
+                };
+
+                return {
+                    ...assessment,
+                    criteria: formatCriteriaFromLevels(nextLevels),
+                };
+            })
         }));
     };
 
@@ -539,12 +609,30 @@ export const SubjectWorkspace = ({
                                                 <Label className="text-[11px] font-black text-slate-900 uppercase tracking-[0.05em] ml-1 flex items-center gap-2">
                                                     <span className="size-1.5 rounded-full bg-emerald-400"></span> 평가기준 (Criteria)
                                                 </Label>
-                                                <textarea
-                                                    value={assessment.criteria}
-                                                    onChange={(e) => updateAssessment(assessment.id, "criteria", e.target.value)}
-                                                    placeholder="예: 문단별 중심 문장을 찾고, 이를 연결하여 글 전체의 중심 생각을 파악할 수 있다."
-                                                    className="w-full min-h-[100px] p-6 rounded-[1.5rem] border-2 border-slate-100 bg-slate-50/50 text-sm font-medium leading-relaxed resize-none outline-none focus:bg-white focus:border-emerald-200 focus:ring-0 transition-all placeholder:text-slate-300 text-slate-700"
-                                                />
+                                                <div className="grid gap-3 lg:grid-cols-3">
+                                                    {ACHIEVEMENT_LEVELS.map((level) => {
+                                                        const criteriaLevels = splitCriteriaLevelsFromText(assessment.criteria);
+
+                                                        return (
+                                                            <label key={level} className="block space-y-2">
+                                                                <span className={cn(
+                                                                    "inline-flex h-7 min-w-9 items-center justify-center rounded-xl px-3 text-[11px] font-black",
+                                                                    level === "상" && "bg-indigo-50 text-indigo-600",
+                                                                    level === "중" && "bg-slate-100 text-slate-600",
+                                                                    level === "하" && "bg-amber-50 text-amber-700"
+                                                                )}>
+                                                                    {level}
+                                                                </span>
+                                                                <textarea
+                                                                    value={criteriaLevels[level] || ""}
+                                                                    onChange={(e) => updateAssessmentCriteriaLevel(assessment.id, level, e.target.value)}
+                                                                    placeholder={`${level} 수준 평가기준`}
+                                                                    className="w-full min-h-[132px] resize-y rounded-[1.5rem] border-2 border-slate-100 bg-slate-50/50 px-5 py-4 text-sm font-medium leading-relaxed text-slate-700 outline-none transition-all placeholder:text-slate-300 focus:bg-white focus:border-emerald-200 focus:ring-0"
+                                                                />
+                                                            </label>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
                                         </div>
                                     </Card>
