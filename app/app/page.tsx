@@ -42,7 +42,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabase";
-import type { ParsedSubjectPlanSubject, Student, SubjectGlobalConfig } from "@/types";
+import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectGlobalConfig } from "@/types";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
 import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
@@ -143,6 +143,61 @@ const resizeStudentsToCount = (sourceStudents: Student[] | undefined, count: num
 };
 
 const getSubjectScopeLabel = (config: SubjectGlobalConfig) => config.subjectName.trim() || "새 교과";
+
+const ACHIEVEMENT_LEVELS: AchievementLevel[] = ["상", "중", "하"];
+
+const stripLevelPrefix = (value: string, level: AchievementLevel) => (
+    value.replace(new RegExp(`^\\s*${level}\\s*[):：:\\-]\\s*`), "").trim()
+);
+
+const splitCriteriaLevelsFromText = (criteria: string): CriteriaLevels => {
+    const levels: CriteriaLevels = {};
+    const text = criteria.trim();
+    if (!text) return levels;
+
+    ACHIEVEMENT_LEVELS.forEach((level, index) => {
+        const nextLevel = ACHIEVEMENT_LEVELS[index + 1];
+        const pattern = nextLevel
+            ? new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*?)(?=\\n\\s*${nextLevel}\\s*[):：:\\-])`)
+            : new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*)`);
+        const match = text.match(pattern);
+        if (match?.[1]?.trim()) {
+            levels[level] = match[1].trim();
+        }
+    });
+
+    if (ACHIEVEMENT_LEVELS.every((level) => levels[level])) return levels;
+
+    const lines = text
+        .split(/\n+/)
+        .map((line) => line.replace(/^\s*[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    if (lines.length === 3) {
+        ACHIEVEMENT_LEVELS.forEach((level, index) => {
+            levels[level] = stripLevelPrefix(lines[index], level);
+        });
+    }
+
+    return levels;
+};
+
+const getCriteriaLevels = (assessment: Pick<ParsedSubjectPlanSubject["assessments"][number], "criteria" | "criteriaLevels">): CriteriaLevels => {
+    const parsedLevels = splitCriteriaLevelsFromText(assessment.criteria || "");
+    return ACHIEVEMENT_LEVELS.reduce<CriteriaLevels>((acc, level) => {
+        acc[level] = assessment.criteriaLevels?.[level] || parsedLevels[level] || "";
+        return acc;
+    }, {});
+};
+
+const formatCriteriaFromLevels = (levels: CriteriaLevels) => (
+    ACHIEVEMENT_LEVELS
+        .map((level) => {
+            const value = levels[level]?.trim();
+            return value ? `${level}: ${value}` : "";
+        })
+        .filter(Boolean)
+        .join("\n")
+);
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -476,6 +531,32 @@ export default function DashboardPage() {
             }
         }
 
+        setIsWorkLogLoading(false);
+    };
+
+    const handleDeleteAllSubjectLogs = async () => {
+        if (!userId) return;
+        if (!subjectLogs.length && !hasCurrentSubjectWork()) return;
+        if (!confirm("모든 교과 저장본을 삭제하시겠습니까?")) return;
+
+        setIsWorkLogLoading(true);
+        const { error } = await supabase
+            .from('work_logs')
+            .delete()
+            .eq('user_id', userId)
+            .eq('category', 'subject');
+
+        if (error) {
+            console.error("Delete All Subjects Error:", error);
+            alert("전체삭제 중 오류가 발생했습니다.");
+            setIsWorkLogLoading(false);
+            return;
+        }
+
+        setSubjectLogs([]);
+        setActiveSubjectScopeKey(DEFAULT_SCOPE_KEY);
+        setSubjectConfig(getDefaultSubjectConfig());
+        setStudents(createInitialStudents(studentCount));
         setIsWorkLogLoading(false);
     };
 
@@ -1273,6 +1354,42 @@ export default function DashboardPage() {
         });
     };
 
+    const updateSubjectPlanCriteriaLevel = (
+        subjectIndex: number,
+        assessmentIndex: number,
+        level: AchievementLevel,
+        value: string
+    ) => {
+        setSubjectPlanImport(prev => {
+            if (!prev) return prev;
+
+            return {
+                ...prev,
+                subjects: prev.subjects.map((subject, index) => {
+                    if (index !== subjectIndex) return subject;
+
+                    return {
+                        ...subject,
+                        assessments: subject.assessments.map((assessment, itemIndex) => {
+                            if (itemIndex !== assessmentIndex) return assessment;
+
+                            const nextLevels = {
+                                ...getCriteriaLevels(assessment),
+                                [level]: value,
+                            };
+
+                            return {
+                                ...assessment,
+                                criteriaLevels: nextLevels,
+                                criteria: formatCriteriaFromLevels(nextLevels) || assessment.criteria,
+                            };
+                        }),
+                    };
+                }),
+            };
+        });
+    };
+
     const applySubjectPlanImport = async () => {
         if (!userId || !subjectPlanImport) return;
         if (!selectedSubjectPlanIndexes.length) {
@@ -1300,7 +1417,7 @@ export default function DashboardPage() {
                     id: crypto.randomUUID(),
                     area: assessment.area,
                     standard: assessment.standard,
-                    criteria: assessment.criteria,
+                    criteria: formatCriteriaFromLevels(getCriteriaLevels(assessment)) || assessment.criteria,
                     competency: assessment.competency,
                 })),
             };
@@ -1591,6 +1708,7 @@ export default function DashboardPage() {
                                                 onSubjectScopeChange={handleSubjectScopeChange}
                                                 onCreateSubjectLog={handleCreateSubjectLog}
                                                 onDeleteSubjectLog={handleDeleteSubjectLog}
+                                                onDeleteAllSubjectLogs={handleDeleteAllSubjectLogs}
                                                 handleGenerate={handleGenerate}
                                                 handleAllGenerate={handleAllGenerate}
                                                 handleSelectedGenerate={handleSelectedGenerate}
@@ -1849,11 +1967,14 @@ export default function DashboardPage() {
                                             </div>
                                         </div>
                                             <div className="grid gap-3">
-                                                {subject.assessments.map((assessment, assessmentIndex) => (
-                                                    <div
-                                                        key={`${assessment.area}-${assessmentIndex}`}
-                                                        className="rounded-xl bg-white/85 border border-slate-100 p-4 space-y-3"
-                                                    >
+                                                {subject.assessments.map((assessment, assessmentIndex) => {
+                                                    const criteriaLevels = getCriteriaLevels(assessment);
+
+                                                    return (
+                                                        <div
+                                                            key={`${assessment.area}-${assessmentIndex}`}
+                                                            className="rounded-xl bg-white/85 border border-slate-100 p-4 space-y-3"
+                                                        >
                                                         <label className="space-y-1 block">
                                                             <span className="text-[11px] font-black text-indigo-600">영역</span>
                                                             <Input
@@ -1873,18 +1994,33 @@ export default function DashboardPage() {
                                                                 className="w-full min-h-20 resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium leading-6 text-slate-700 outline-none transition-all focus-visible:border-indigo-300 focus-visible:ring-4 focus-visible:ring-indigo-100"
                                                             />
                                                         </label>
-                                                        <label className="space-y-1 block">
+                                                        <div className="space-y-2">
                                                             <span className="text-[11px] font-black text-slate-400">평가기준</span>
-                                                            <textarea
-                                                                value={assessment.criteria || ""}
-                                                                onChange={(event) => updateSubjectPlanAssessment(index, assessmentIndex, "criteria", event.target.value)}
-                                                                placeholder="평가기준"
-                                                                rows={2}
-                                                                className="w-full min-h-20 resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium leading-6 text-slate-700 outline-none transition-all focus-visible:border-indigo-300 focus-visible:ring-4 focus-visible:ring-indigo-100"
-                                                            />
-                                                        </label>
+                                                            <div className="grid gap-2 md:grid-cols-3">
+                                                                {ACHIEVEMENT_LEVELS.map((level) => (
+                                                                    <label key={level} className="block space-y-1">
+                                                                        <span className={cn(
+                                                                            "inline-flex h-6 min-w-8 items-center justify-center rounded-lg px-2 text-[11px] font-black",
+                                                                            level === "상" && "bg-indigo-50 text-indigo-600",
+                                                                            level === "중" && "bg-slate-100 text-slate-600",
+                                                                            level === "하" && "bg-amber-50 text-amber-700"
+                                                                        )}>
+                                                                            {level}
+                                                                        </span>
+                                                                        <textarea
+                                                                            value={criteriaLevels[level] || ""}
+                                                                            onChange={(event) => updateSubjectPlanCriteriaLevel(index, assessmentIndex, level, event.target.value)}
+                                                                            placeholder={`${level} 수준 평가기준`}
+                                                                            rows={3}
+                                                                            className="w-full min-h-24 resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium leading-6 text-slate-700 outline-none transition-all focus-visible:border-indigo-300 focus-visible:ring-4 focus-visible:ring-indigo-100"
+                                                                        />
+                                                                    </label>
+                                                                ))}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     </div>

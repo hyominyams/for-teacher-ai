@@ -40,10 +40,15 @@ export interface SubjectGlobalConfig {
     assessments: SubjectAssessmentInfo[];
 }
 
+export type AchievementLevel = "상" | "중" | "하";
+
+export type CriteriaLevels = Partial<Record<AchievementLevel, string>>;
+
 export interface ParsedSubjectPlanAssessment {
     area: string;
     standard: string;
     criteria: string;
+    criteriaLevels?: CriteriaLevels;
     competency: string;
 }
 

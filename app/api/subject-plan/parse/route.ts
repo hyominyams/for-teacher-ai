@@ -1,7 +1,7 @@
 import { OpenAI } from "openai";
 import { NextResponse } from "next/server";
 import { parse } from "kordoc";
-import type { ParsedSubjectPlanSubject } from "@/types";
+import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject } from "@/types";
 
 export const runtime = "nodejs";
 
@@ -34,9 +34,19 @@ const subjectPlanSchema = {
                                 area: { type: "string" },
                                 standard: { type: "string" },
                                 criteria: { type: "string" },
+                                criteriaLevels: {
+                                    type: "object",
+                                    additionalProperties: false,
+                                    properties: {
+                                        상: { type: "string" },
+                                        중: { type: "string" },
+                                        하: { type: "string" },
+                                    },
+                                    required: ["상", "중", "하"],
+                                },
                                 competency: { type: "string" },
                             },
-                            required: ["area", "standard", "criteria", "competency"],
+                            required: ["area", "standard", "criteria", "criteriaLevels", "competency"],
                         },
                     },
                 },
@@ -61,6 +71,59 @@ const cleanText = (value: unknown, fallback = "") => (
     typeof value === "string" && value.trim() ? value.trim() : fallback
 );
 
+const LEVELS: AchievementLevel[] = ["상", "중", "하"];
+
+const stripLevelPrefix = (value: string, level: AchievementLevel) => (
+    value.replace(new RegExp(`^\\s*${level}\\s*[):：:\\-]\\s*`), "").trim()
+);
+
+const splitCriteriaLevelsFromText = (criteria: string): CriteriaLevels => {
+    const levels: CriteriaLevels = {};
+    const text = criteria.trim();
+    if (!text) return levels;
+
+    LEVELS.forEach((level, index) => {
+        const nextLevel = LEVELS[index + 1];
+        const pattern = nextLevel
+            ? new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*?)(?=\\n\\s*${nextLevel}\\s*[):：:\\-])`)
+            : new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*)`);
+        const match = text.match(pattern);
+        if (match?.[1]?.trim()) {
+            levels[level] = match[1].trim();
+        }
+    });
+
+    if (LEVELS.every((level) => levels[level])) return levels;
+
+    const candidateLines = text
+        .split(/\n+/)
+        .map((line) => line.replace(/^\s*[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    if (candidateLines.length === 3) {
+        LEVELS.forEach((level, index) => {
+            levels[level] = stripLevelPrefix(candidateLines[index], level);
+        });
+    }
+
+    return levels;
+};
+
+const normalizeCriteriaLevels = (value: unknown, criteria: string): CriteriaLevels => {
+    const explicitLevels = value && typeof value === "object"
+        ? LEVELS.reduce<CriteriaLevels>((acc, level) => {
+            const rawValue = (value as Record<string, unknown>)[level];
+            acc[level] = cleanText(rawValue);
+            return acc;
+        }, {})
+        : {};
+    const parsedLevels = splitCriteriaLevelsFromText(criteria);
+
+    return LEVELS.reduce<CriteriaLevels>((acc, level) => {
+        acc[level] = explicitLevels[level] || parsedLevels[level] || "";
+        return acc;
+    }, {});
+};
+
 const normalizeSubjects = (
     extraction: SubjectPlanExtraction,
     hints: { schoolLevel: string; grade: string; subjectName: string }
@@ -75,6 +138,7 @@ const normalizeSubjects = (
                     area: cleanText(assessment.area, "평가"),
                     standard: cleanText(assessment.standard),
                     criteria: cleanText(assessment.criteria),
+                    criteriaLevels: normalizeCriteriaLevels(assessment.criteriaLevels, cleanText(assessment.criteria)),
                     competency: cleanText(assessment.competency),
                 }))
                 .filter((assessment) => assessment.standard || assessment.criteria);
@@ -91,7 +155,9 @@ const buildPrompt = (markdown: string, hints: { schoolLevel: string; grade: stri
 규칙:
 - 여러 교과가 있으면 subjects 배열에 모두 포함합니다.
 - 학생별 상/중/하 성취도나 점수는 추출하지 않습니다.
-- 평가기준이 상/중/하로 나뉘어 있으면 한 문자열 안에 줄바꿈으로 유지합니다.
+- 평가기준이 상/중/하로 나뉘어 있으면 criteria에는 한 문자열 안에 줄바꿈으로 유지하고, criteriaLevels.상/중/하에 각각 분리합니다.
+- 평가기준이 3개 문장이나 3개 행으로 제시되어 있고 수준명이 생략되어 있으면 위에서부터 상, 중, 하로 판단해 criteriaLevels에 넣습니다.
+- 수준별 평가기준이 아니면 criteriaLevels.상/중/하에는 빈 문자열을 넣습니다.
 - 교과명, 학교급, 학년이 문서에 없으면 힌트 값을 사용합니다.
 - 확실하지 않은 핵심역량은 빈 문자열로 둡니다.
 - 성취기준 또는 평가기준이 없는 평가는 제외합니다.

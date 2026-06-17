@@ -16,6 +16,21 @@ type StudentAssessment = {
     level?: string;
 };
 
+const ACHIEVEMENT_LEVELS = ["상", "중", "하"] as const;
+
+const getCriteriaForLevel = (criteria: string, level: string) => {
+    if (!ACHIEVEMENT_LEVELS.some((item) => item === level)) return criteria;
+
+    const levelIndex = ACHIEVEMENT_LEVELS.findIndex((item) => item === level);
+    const nextLevel = ACHIEVEMENT_LEVELS[levelIndex + 1];
+    const pattern = nextLevel
+        ? new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*?)(?=\\n\\s*${nextLevel}\\s*[):：:\\-])`)
+        : new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*)`);
+    const match = criteria.match(pattern);
+
+    return match?.[1]?.trim() || criteria;
+};
+
 const getErrorMessage = (error: unknown) => {
     if (error instanceof Error) {
         return error.message;
@@ -67,10 +82,11 @@ export async function POST(req: Request) {
                 const assessmentsText = ((assessments || []) as SubjectAssessment[]).map((a) => {
                     const studentLevel = ((studentAssessments || []) as StudentAssessment[]).find((sa) => sa.assessmentId === a.id)?.level || "미선택";
                     if (studentLevel === "" || studentLevel === "none") return null;
+                    const criteria = getCriteriaForLevel(a.criteria, studentLevel);
 
                     return `- 영역: ${a.area}
   - 성취기준: ${a.standard}
-  - 평가기준: ${a.criteria}
+  - 평가기준: ${criteria}
   - 핵심역량: ${a.competency}
   - 성취도: ${studentLevel}`;
                 }).filter(Boolean).join("\n\n");

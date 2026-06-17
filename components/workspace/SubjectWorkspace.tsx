@@ -74,6 +74,7 @@ interface SubjectWorkspaceProps {
     onSubjectScopeChange: (scopeKey: string) => void;
     onCreateSubjectLog: () => void;
     onDeleteSubjectLog: (scopeKey: string) => void;
+    onDeleteAllSubjectLogs: () => void;
     handleGenerate: (id: number) => void;
     handleAllGenerate: () => void;
     handleSelectedGenerate: () => void;
@@ -118,6 +119,7 @@ export const SubjectWorkspace = ({
     onSubjectScopeChange,
     onCreateSubjectLog,
     onDeleteSubjectLog,
+    onDeleteAllSubjectLogs,
     handleGenerate,
     handleAllGenerate,
     handleSelectedGenerate,
@@ -381,8 +383,8 @@ export const SubjectWorkspace = ({
 
                 {!isExpanded && (
                 <div className="rounded-[2rem] bg-indigo-50/60 border border-indigo-100 p-5 space-y-4">
-                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,1fr)_auto] gap-4 lg:items-end">
-                        <div className="space-y-2 min-w-0">
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(220px,420px)_auto] gap-4 lg:items-end">
+                        <div className="space-y-2 min-w-0 max-w-[420px]">
                             <Label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-1">현재 교과</Label>
                             <Input
                                 value={globalConfig.subjectName}
@@ -391,11 +393,11 @@ export const SubjectWorkspace = ({
                                 className="h-14 rounded-2xl bg-white border-indigo-100 px-5 text-lg font-black text-slate-800 placeholder:text-slate-300 shadow-sm focus-visible:ring-indigo-200 focus-visible:border-indigo-200"
                             />
                         </div>
-                        <div className="grid grid-cols-[1fr_48px] sm:flex sm:items-center gap-2">
+                        <div className="grid grid-cols-3 sm:flex sm:items-center gap-2">
                             <Button
                                 variant="outline"
                                 onClick={onCreateSubjectLog}
-                                className="h-12 rounded-xl px-5 border-indigo-100 bg-white text-indigo-600 hover:bg-indigo-100 font-black text-xs gap-2"
+                                className="h-12 rounded-xl px-3 sm:px-5 border-indigo-100 bg-white text-indigo-600 hover:bg-indigo-100 font-black text-xs gap-2"
                             >
                                 새 교과 <Plus className="size-4" />
                             </Button>
@@ -404,10 +406,20 @@ export const SubjectWorkspace = ({
                                 onClick={() => onDeleteSubjectLog(activeSubjectScopeKey)}
                                 disabled={subjectLogs.length === 0}
                                 title="교과 삭제"
-                                className="h-12 rounded-xl px-4 border-slate-200 bg-white text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 font-black text-xs gap-2 disabled:opacity-40"
+                                className="h-12 rounded-xl px-3 sm:px-4 border-slate-200 bg-white text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 font-black text-xs gap-2 disabled:opacity-40"
                             >
                                 <Trash2 className="size-4" />
-                                <span className="hidden sm:inline">삭제</span>
+                                삭제
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={onDeleteAllSubjectLogs}
+                                disabled={subjectLogs.length === 0 && globalConfig.assessments.length === 0 && !globalConfig.subjectName.trim()}
+                                title="전체삭제"
+                                className="h-12 rounded-xl px-3 sm:px-4 border-red-100 bg-white text-red-400 hover:bg-red-50 hover:text-red-600 hover:border-red-200 font-black text-xs gap-2 disabled:opacity-40"
+                            >
+                                <Trash2 className="size-4" />
+                                전체삭제
                             </Button>
                         </div>
                     </div>
