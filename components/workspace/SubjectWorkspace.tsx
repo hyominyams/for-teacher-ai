@@ -383,8 +383,8 @@ export const SubjectWorkspace = ({
 
                 {!isExpanded && (
                 <div className="rounded-[2rem] bg-indigo-50/60 border border-indigo-100 p-5 space-y-4">
-                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(220px,420px)_auto] gap-4 lg:items-end">
-                        <div className="space-y-2 min-w-0 max-w-[420px]">
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,560px)_1fr] gap-4 lg:items-end">
+                        <div className="space-y-2 min-w-0 max-w-[560px]">
                             <Label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-1">현재 교과</Label>
                             <Input
                                 value={globalConfig.subjectName}
@@ -393,7 +393,7 @@ export const SubjectWorkspace = ({
                                 className="h-14 rounded-2xl bg-white border-indigo-100 px-5 text-lg font-black text-slate-800 placeholder:text-slate-300 shadow-sm focus-visible:ring-indigo-200 focus-visible:border-indigo-200"
                             />
                         </div>
-                        <div className="grid grid-cols-3 sm:flex sm:items-center gap-2">
+                        <div className="grid grid-cols-3 sm:flex sm:items-center sm:justify-end gap-2">
                             <Button
                                 variant="outline"
                                 onClick={onCreateSubjectLog}
