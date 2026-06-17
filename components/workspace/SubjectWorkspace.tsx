@@ -827,7 +827,7 @@ export const SubjectWorkspace = ({
                                                             <SelectTrigger className="h-11 rounded-xl bg-slate-50 border-none shadow-inner font-bold text-xs">
                                                                 <SelectValue placeholder="평가" />
                                                             </SelectTrigger>
-                                                            <SelectContent className="rounded-xl border-slate-100 shadow-2xl z-[400]">
+                                                            <SelectContent className="z-[10080] rounded-xl border-slate-100 shadow-2xl">
                                                                 <SelectItem value="none" className="font-bold text-slate-300">미선택</SelectItem>
                                                                 <SelectItem value="상" className="font-bold text-indigo-600">상</SelectItem>
                                                                 <SelectItem value="중" className="font-bold text-slate-600">중</SelectItem>
