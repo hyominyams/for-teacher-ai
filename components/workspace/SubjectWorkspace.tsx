@@ -85,28 +85,9 @@ interface SubjectWorkspaceProps {
     setIsExpanded: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
-const SUBJECT_SORT_ORDER = [
-    "국어",
-    "수학",
-    "사회",
-    "과학",
-    "영어",
-    "도덕",
-    "실과",
-    "체육",
-    "음악",
-    "미술",
-];
-
 const getDisplaySubjectLabel = (label: string) => {
     const normalized = (label || "교과").trim();
     return normalized.replace(/\s+\d{2}\.\d{2}\.\d{2}:\d{2}$/, "").trim() || "교과";
-};
-
-const getSubjectSortIndex = (label: string) => {
-    const displayLabel = getDisplaySubjectLabel(label);
-    const index = SUBJECT_SORT_ORDER.findIndex(subject => displayLabel.startsWith(subject));
-    return index === -1 ? SUBJECT_SORT_ORDER.length : index;
 };
 
 export const SubjectWorkspace = ({
@@ -250,29 +231,17 @@ export const SubjectWorkspace = ({
         return counts;
     }, {});
     const subjectLabelSeen: Record<string, number> = {};
-    const subjectSelectItems = [...rawSubjectSelectItems]
-        .sort((a, b) => {
-            const sortIndexDiff = getSubjectSortIndex(a.scopeLabel) - getSubjectSortIndex(b.scopeLabel);
-            if (sortIndexDiff !== 0) return sortIndexDiff;
-
-            const labelDiff = getDisplaySubjectLabel(a.scopeLabel).localeCompare(getDisplaySubjectLabel(b.scopeLabel), "ko");
-            if (labelDiff !== 0) return labelDiff;
-
-            const aCreatedAt = a.createdAt || a.updatedAt || "";
-            const bCreatedAt = b.createdAt || b.updatedAt || "";
-            return aCreatedAt.localeCompare(bCreatedAt);
-        })
-        .map(log => {
-            const displayLabel = getDisplaySubjectLabel(log.scopeLabel);
-            subjectLabelSeen[displayLabel] = (subjectLabelSeen[displayLabel] || 0) + 1;
-            return {
-                ...log,
-                displayLabel,
-                shortLabel: subjectLabelCounts[displayLabel] > 1
-                    ? `${displayLabel} #${subjectLabelSeen[displayLabel]}`
-                    : displayLabel,
-            };
-        });
+    const subjectSelectItems = rawSubjectSelectItems.map(log => {
+        const displayLabel = getDisplaySubjectLabel(log.scopeLabel);
+        subjectLabelSeen[displayLabel] = (subjectLabelSeen[displayLabel] || 0) + 1;
+        return {
+            ...log,
+            displayLabel,
+            shortLabel: subjectLabelCounts[displayLabel] > 1
+                ? `${displayLabel} #${subjectLabelSeen[displayLabel]}`
+                : displayLabel,
+        };
+    });
     const selectedStudentCount = students.filter(s => s.selected).length;
 
     return (
@@ -398,7 +367,7 @@ export const SubjectWorkspace = ({
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto custom-scrollbar pr-1">
+                    <div className="flex flex-nowrap gap-2 overflow-x-auto overflow-y-hidden custom-scrollbar pb-1 pr-1">
                         {subjectSelectItems.map(log => {
                             const isActive = log.scopeKey === activeSubjectScopeKey;
                             return (
@@ -406,7 +375,7 @@ export const SubjectWorkspace = ({
                                     key={log.scopeKey}
                                     onClick={() => onSubjectScopeChange(log.scopeKey)}
                                     className={cn(
-                                        "h-10 min-w-16 max-w-[160px] rounded-xl border px-4 text-xs font-black transition-all truncate",
+                                        "h-10 min-w-16 max-w-[160px] shrink-0 rounded-xl border px-4 text-xs font-black transition-all truncate",
                                         isActive
                                             ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200"
                                             : "bg-white border-indigo-100 text-slate-500 hover:border-indigo-200 hover:text-indigo-600"
