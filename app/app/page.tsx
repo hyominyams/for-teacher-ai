@@ -390,6 +390,11 @@ function DashboardPage() {
         return response;
     };
 
+    const categoryFromUrl = params.get("category");
+    useEffect(() => {
+        if (!requestedLogId && isWorkCategory(categoryFromUrl)) setActiveTabId(categoryFromUrl);
+    }, [requestedLogId, categoryFromUrl]);
+
     // User Session Profile + auth guard
     useEffect(() => {
         let mounted = true;
