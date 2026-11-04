@@ -14,6 +14,12 @@ test("legacy subject data becomes a stable complete editor configuration", () =>
     assert.equal(result.globalConfig.schoolLevel, "elementary");
     assert.equal(workFingerprint(result, "제목"), workFingerprint(normalizeWorkData(result, "subject"), "제목"));
 });
+test("JSONB object-key ordering never marks an unchanged record as dirty", () => {
+    const value = normalizeWorkData(raw, "subject");
+    const reorder = v => Array.isArray(v) ? v.map(reorder) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).reverse().map(([k, item]) => [k, reorder(item)])) : v;
+    assert.equal(workFingerprint(value, "제목"), workFingerprint(reorder(value), "제목"));
+    assert.notEqual(workFingerprint(value, "제목"), workFingerprint({ ...value, students: [...value.students].reverse() }, "제목"));
+});
 test("invalid IDs, duplicate student numbers and unknown categories are rejected", () => {
     assert.ok(isUuid(id)); assert.ok(!isUuid("../other"));
     assert.throws(() => parseSavedLogInput({ id, title: "제목", category: "other", data: raw }));

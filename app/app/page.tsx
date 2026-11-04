@@ -45,7 +45,7 @@ import { supabase } from "@/lib/supabase";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
 import { WorkLogSessionBar } from "@/components/workspace/WorkLogSessionBar";
 import { getSavedWorkLog, workLogRequest, WorkLogError } from "@/lib/work-log-client";
-import { defaultWorkTitle, isWorkCategory, normalizeWorkData, workFingerprint, workLogCsv } from "@/lib/work-logs";
+import { defaultWorkTitle, isWorkCategory, normalizeWorkData, workFingerprint, workLogCsv, stableWorkJson } from "@/lib/work-logs";
 import type { SavedWorkLog } from "@/lib/work-logs";
 import { ClassPolishControl } from "@/components/workspace/ClassPolishControl";
 import type { PolishCategory } from "@/lib/class-polish";
@@ -1728,7 +1728,7 @@ function DashboardPage() {
         if (logBusy || students.some(s => s.isGenerating) || isWorkLogLoading) return;
         if (isSavedEditor) { await persistSavedEdits(); return; }
         const payload = { category: activeTabId, title: logTitle, data: currentData, source_scope_key: activeTabId === "subject" ? activeSubjectScopeKey : DEFAULT_SCOPE_KEY };
-        const fingerprint = JSON.stringify(payload), epoch = workEpoch.current;
+        const fingerprint = stableWorkJson(payload), epoch = workEpoch.current;
         if (lastSnapshot.current?.fingerprint === fingerprint) {
             if (startNew) { setLogBusy(true); try { await clearCurrentDraft(); setLogMessage("이미 저장된 기록을 유지하고 새 작업을 시작했습니다."); } finally { setLogBusy(false); } }
             else setLogMessage("같은 내용이 이미 작업로그에 저장되어 있습니다.");

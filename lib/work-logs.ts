@@ -37,7 +37,14 @@ export function defaultWorkTitle(category: WorkCategory, subject = "", now = new
     const date = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(now);
     return `${subject.trim() || WORK_CATEGORIES[category]} · ${date}`;
 }
-export const workFingerprint = (data: WorkLogData, title: string) => JSON.stringify({ title: title.trim(), data });
+// JSONB may reorder object keys. Arrays keep their order; storage order must not
+// make an unchanged saved record look dirty or create a duplicate snapshot.
+export const stableWorkJson = (value: unknown) => JSON.stringify(value, (_key, item) => (
+    item && typeof item === "object" && !Array.isArray(item)
+        ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)))
+        : item
+));
+export const workFingerprint = (data: WorkLogData, title: string) => stableWorkJson({ title: title.trim(), data });
 
 export function workLogCsv(log: Pick<SavedWorkLog, "category" | "data">) {
     const cell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
