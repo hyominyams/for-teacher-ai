@@ -1,5 +1,7 @@
 # For Teacher AI — Supabase 연동 설계 (로그인, 임시저장, 마이페이지 최신 저장)
 
+> 2026-11-05: `work_logs`는 임시 작업 저장소로 유지하고, 작업로그의 독립 저장·수정·보관은 `saved_work_logs`로 분리했습니다. 최신 동작은 [작업로그 저장과 보관](work-log-lifecycle.md)을 참고하세요. 아래 내용은 기존 임시 작업 구조에 대한 기록입니다.
+
 이 문서는 현재 앱 코드(`app/app/page.tsx`, `app/app/logs/page.tsx`, `components/layout/NavbarMain.tsx`) 기준으로
 Supabase PostgreSQL 연동을 정리한 설계입니다.
 

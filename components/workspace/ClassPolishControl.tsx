@@ -13,6 +13,7 @@ type Props = {
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
     category: PolishCategory;
+    workLogId?: string;
     disabled?: boolean;
     onPersist: (students: Student[]) => Promise<boolean>;
 };
@@ -27,7 +28,7 @@ function DiffText({ proposal, after }: { proposal: PolishProposal; after: boolea
     </p>;
 }
 
-export function ClassPolishControl({ students, setStudents, category, disabled = false, onPersist }: Props) {
+export function ClassPolishControl({ students, setStudents, category, workLogId, disabled = false, onPersist }: Props) {
     const mounted = useSyncExternalStore(subscribe, () => true, () => false);
     const dialog = useRef<HTMLDialogElement>(null);
     const controller = useRef<AbortController | null>(null);
@@ -81,7 +82,7 @@ export function ClassPolishControl({ students, setStudents, category, disabled =
             const response = await fetch("/api/polish", {
                 method: "POST", signal: abort.signal,
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-                body: JSON.stringify(input),
+                body: JSON.stringify({ ...input, workLogId }),
             });
             const data = await response.json().catch(() => { throw new Error("윤문 결과를 읽지 못했습니다. 잠시 후 다시 시도해주세요."); });
             if (!response.ok) throw new Error(data.error || "윤문 검토에 실패했습니다.");

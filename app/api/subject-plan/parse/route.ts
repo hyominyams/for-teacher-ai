@@ -1,3 +1,4 @@
+import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { OpenAI } from "openai";
 import { NextResponse } from "next/server";
 import { parse } from "kordoc";
@@ -186,6 +187,7 @@ export async function POST(req: Request) {
         }
 
         const formData = await req.formData();
+        try { await assertEditableWorkLog(req, formData.get("workLogId")); } catch (error) { return workLogFailure(error); }
         const file = formData.get("file");
         if (!(file instanceof File)) {
             return NextResponse.json({ error: "파일을 선택해주세요." }, { status: 400 });

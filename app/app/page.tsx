@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, useRef, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     UserCheck,
@@ -43,6 +43,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabase";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
+import { WorkLogSessionBar } from "@/components/workspace/WorkLogSessionBar";
+import { getSavedWorkLog, workLogRequest, WorkLogError } from "@/lib/work-log-client";
+import { defaultWorkTitle, isWorkCategory, normalizeWorkData, workFingerprint, workLogCsv, stableWorkJson } from "@/lib/work-logs";
+import type { SavedWorkLog } from "@/lib/work-logs";
 import { ClassPolishControl } from "@/components/workspace/ClassPolishControl";
 import type { PolishCategory } from "@/lib/class-polish";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
@@ -245,10 +249,33 @@ const formatCriteriaFromLevels = (levels: CriteriaLevels) => (
         .join("\n")
 );
 
-export default function DashboardPage() {
+function DashboardPage() {
     const router = useRouter();
+    const params = useSearchParams();
+    const requestedLogId = params.get("log");
+    const isSavedEditor = !!requestedLogId;
+    const workEpoch = useRef(0);
+    const aiAbort = useRef(new AbortController());
+    const [workspaceVersion, setWorkspaceVersion] = useState(0);
+    const [savedLog, setSavedLog] = useState<SavedWorkLog | null>(null);
+    const savedLogRef = useRef<SavedWorkLog | null>(null);
+    const [savedBaseline, setSavedBaseline] = useState("");
+    const [logTitle, setLogTitle] = useState("");
+    const [logBusy, setLogBusy] = useState(false);
+    const [logMessage, setLogMessage] = useState("");
+    const [logError, setLogError] = useState("");
+    const [loadedSavedId, setLoadedSavedId] = useState("");
+    const saveQueue = useRef(Promise.resolve(true));
+    const lastSnapshot = useRef<{ fingerprint: string; id: string } | null>(null);
+    const snapshotAttempt = useRef<{ fingerprint: string; id: string } | null>(null);
+    const [staleEdit, setStaleEdit] = useState<{ title: string; data: WorkLogData } | null>(null);
+    const invalidateWorkspace = () => {
+        aiAbort.current.abort(); aiAbort.current = new AbortController();
+        workEpoch.current++; setWorkspaceVersion(v => v + 1);
+    };
+    useEffect(() => () => aiAbort.current.abort(), []);
     const [userName, setUserName] = useState<string | null>(null);
-    const [activeTabId, setActiveTabId] = useState(features[0].id);
+    const [activeTabId, setActiveTabId] = useState(isWorkCategory(params.get("category")) ? params.get("category")! : features[0].id);
     const [studentCounts, setStudentCounts] = useState<Record<string, number>>(DEFAULT_STUDENT_COUNTS);
     const [loadedStudentCountCategories, setLoadedStudentCountCategories] = useState<Record<string, boolean>>({});
     const [charLimits, setCharLimits] = useState<Record<string, number>>({
@@ -274,6 +301,99 @@ export default function DashboardPage() {
         setLoadedStudentCountCategories(prev => ({ ...prev, [activeTabId]: true }));
         setStudentCounts(prev => ({ ...prev, [activeTabId]: count }));
     };
+
+    const currentData = useMemo(() => normalizeWorkData({ ...(isSavedEditor ? savedLog?.data : {}), students, studentCount, charLimits, ...(activeTabId === "subject" ? { globalConfig: subjectConfig } : {}) }, activeTabId as keyof typeof import("@/lib/work-logs").WORK_CATEGORIES), [students, studentCount, charLimits, activeTabId, subjectConfig, savedLog, isSavedEditor]);
+    const editorDirty = isSavedEditor && loadedSavedId === requestedLogId && workFingerprint(currentData, logTitle) !== savedBaseline;
+    const editCacheKey = userId && requestedLogId ? `ftai:saved-edit:${userId}:${requestedLogId}` : null;
+
+    useEffect(() => {
+        if (!isSavedEditor) setLogTitle(defaultWorkTitle(activeTabId as "behavior" | "subject" | "creative" | "docs"));
+    }, [activeTabId, isSavedEditor]);
+
+    useEffect(() => {
+        if (!userId || !requestedLogId) { savedLogRef.current = null; setSavedLog(null); setLoadedSavedId(""); return; }
+        const abort = new AbortController();
+        invalidateWorkspace(); setIsWorkLogLoading(true); setLoadedSavedId(""); setLogError(""); setLogMessage(""); setStaleEdit(null);
+        getSavedWorkLog(requestedLogId, abort.signal).then(log => {
+            if (abort.signal.aborted) return;
+            if (log.archived_at) { router.replace(`/app/logs?view=${log.id}`); return; }
+            const normalized = normalizeWorkData(log.data, log.category);
+            savedLogRef.current = log; setSavedLog(log);
+            setSavedBaseline(workFingerprint(normalized, log.title));
+            let restored = normalized, title = log.title;
+            try {
+                const raw = sessionStorage.getItem(`ftai:saved-edit:${userId}:${log.id}`);
+                const pending = raw ? JSON.parse(raw) : null;
+                if (pending && pending.revision === log.revision) { restored = normalizeWorkData(pending.data, log.category); title = pending.title; setLogMessage("저장하지 않았던 수정 내용을 복구했습니다. 확인 후 저장해주세요."); }
+                else if (pending) { setStaleEdit({ title: pending.title, data: normalizeWorkData(pending.data, log.category) }); setLogMessage("다른 곳에서 변경된 최신 저장본을 열었습니다. 이전 임시 수정은 별도로 내보낼 수 있습니다."); }
+            } catch { /* Corrupt local drafts never replace the server copy. */ }
+            setActiveTabId(log.category); setLogTitle(title); setStudents(restored.students);
+            setStudentCounts(prev => ({ ...prev, [log.category]: restored.studentCount }));
+            setCharLimits(restored.charLimits);
+            setSubjectConfig(restored.globalConfig || getDefaultSubjectConfig());
+            setLoadedSavedId(log.id); setIsWorkLogLoading(false);
+        }).catch(e => { if (!abort.signal.aborted) { setLogError(e instanceof Error ? e.message : "저장본을 불러오지 못했습니다."); setIsWorkLogLoading(false); } });
+        return () => abort.abort();
+    }, [userId, requestedLogId, router]);
+
+    useEffect(() => {
+        if (!editCacheKey || !savedLog || loadedSavedId !== requestedLogId || isWorkLogLoading) return;
+        try {
+            if (editorDirty) sessionStorage.setItem(editCacheKey, JSON.stringify({ revision: savedLog.revision, title: logTitle, data: currentData }));
+            else { const prior = JSON.parse(sessionStorage.getItem(editCacheKey) || "null"); if (prior?.revision === savedLog.revision) sessionStorage.removeItem(editCacheKey); }
+        } catch { /* The visible editor remains usable when browser storage is full. */ }
+    }, [editCacheKey, savedLog, loadedSavedId, requestedLogId, isWorkLogLoading, editorDirty, currentData, logTitle]);
+
+    useEffect(() => {
+        if (!editorDirty) return;
+        const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+        const leaveLink = (event: MouseEvent) => {
+            const link = (event.target as Element)?.closest?.("a");
+            if (!link || link.target === "_blank" || event.metaKey || event.ctrlKey || link.href === window.location.href) return;
+            if (!confirm("저장하지 않은 수정 내용이 있습니다. 이 화면을 나가시겠습니까?")) { event.preventDefault(); event.stopImmediatePropagation(); }
+        };
+        window.addEventListener("beforeunload", beforeUnload); document.addEventListener("click", leaveLink, true);
+        return () => { window.removeEventListener("beforeunload", beforeUnload); document.removeEventListener("click", leaveLink, true); };
+    }, [editorDirty]);
+
+    const persistSavedEdits = (overrideStudents?: Student[]) => {
+        const snapshot = normalizeWorkData({ ...currentData, students: overrideStudents || students }, activeTabId as "behavior" | "subject" | "creative" | "docs");
+        const expectedId = requestedLogId, title = logTitle, epoch = workEpoch.current;
+        const run = async () => {
+            const log = savedLogRef.current;
+            if (!log || log.id !== expectedId || log.archived_at) return false;
+            setLogBusy(true); setLogError("");
+            try {
+                const updated = await workLogRequest<SavedWorkLog>(`/api/work-logs/${log.id}`, { method: "PUT", body: JSON.stringify({ id: log.id, category: log.category, revision: log.revision, title, data: snapshot }) });
+                if (epoch === workEpoch.current) { savedLogRef.current = updated; setSavedLog(updated); setSavedBaseline(workFingerprint(snapshot, title)); }
+                if (editCacheKey) sessionStorage.removeItem(editCacheKey);
+                if (epoch === workEpoch.current) setLogMessage("수정 내용을 작업로그에 저장했습니다."); return true;
+            } catch (e) { setLogError(e instanceof Error ? e.message : "저장하지 못했습니다."); return false; }
+            finally { setLogBusy(false); }
+        };
+        saveQueue.current = saveQueue.current.then(run, run); return saveQueue.current;
+    };
+
+    const requestWorkspaceAI = async (url: string, options: RequestInit) => {
+        const epoch = workEpoch.current, signal = aiAbort.current.signal;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (epoch !== workEpoch.current || signal.aborted) throw new DOMException("작업이 변경되었습니다.", "AbortError");
+        let body = options.body;
+        if (requestedLogId && body instanceof FormData) body.set("workLogId", requestedLogId);
+        else if (requestedLogId && typeof body === "string") body = JSON.stringify({ ...JSON.parse(body), workLogId: requestedLogId });
+        const response = await fetch(url, { ...options, body, signal, headers: { ...options.headers, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) } });
+        if (!response.ok) {
+            const failure = await response.clone().json().catch(() => ({}));
+            if (epoch === workEpoch.current) setLogError(failure.error || "AI 요청을 처리하지 못했습니다.");
+            throw new WorkLogError(failure.error || "AI 요청을 처리하지 못했습니다.", failure.code || "AI_ERROR", response.status);
+        }
+        return response;
+    };
+
+    const categoryFromUrl = params.get("category");
+    useEffect(() => {
+        if (!requestedLogId && isWorkCategory(categoryFromUrl)) setActiveTabId(categoryFromUrl);
+    }, [requestedLogId, categoryFromUrl]);
 
     // User Session Profile + auth guard
     useEffect(() => {
@@ -317,13 +437,15 @@ export default function DashboardPage() {
 
     // Load work logs from Supabase
     useEffect(() => {
-        if (!userId) return;
+        if (!userId || isSavedEditor) return;
 
         const supportedTabs = ['behavior', 'creative', 'subject'];
         if (!supportedTabs.includes(activeTabId)) {
             return;
         }
 
+        let cancelled = false;
+        invalidateWorkspace();
         const loadWorkLog = async () => {
             setIsWorkLogLoading(true);
 
@@ -335,6 +457,7 @@ export default function DashboardPage() {
                     .eq('category', 'subject')
                     .order('created_at', { ascending: false });
 
+                if (cancelled) return;
                 const logs = data || [];
                 let nextSubjectLogs: SubjectWorkLogSummary[] = logs.map(log => ({
                     scopeKey: log.scope_key || DEFAULT_SCOPE_KEY,
@@ -398,6 +521,7 @@ export default function DashboardPage() {
                 .eq('scope_key', DEFAULT_SCOPE_KEY)
                 .maybeSingle();
 
+            if (cancelled) return;
             if (data?.data) {
                 const nextCount = data.data.studentCount || studentCounts[activeTabId] || DEFAULT_STUDENT_COUNTS[activeTabId] || 7;
                 setLoadedStudentCountCategories(prev => ({ ...prev, [activeTabId]: true }));
@@ -417,10 +541,12 @@ export default function DashboardPage() {
             setIsWorkLogLoading(false);
         };
 
-        loadWorkLog();
-    }, [userId, activeTabId, activeSubjectScopeKey]); // studentCount 제거하여 수동 변경 시 데이터 덮어쓰기 방지
+        void loadWorkLog();
+        return () => { cancelled = true; };
+    }, [userId, activeTabId, activeSubjectScopeKey, isSavedEditor]); // studentCount 제거하여 수동 변경 시 데이터 덮어쓰기 방지
 
-    const saveWorkLog = async (silent = false, overrideStudents?: Student[]) => {
+    const saveWorkLog = async (silent = false, overrideStudents?: Student[], overrideConfig?: SubjectGlobalConfig) => {
+        if (isSavedEditor) return persistSavedEdits(overrideStudents);
         if (!userId) return false;
 
         const workLogData: WorkLogData = {
@@ -430,11 +556,11 @@ export default function DashboardPage() {
         };
 
         if (activeTabId === 'subject') {
-            workLogData.globalConfig = subjectConfig;
+            workLogData.globalConfig = overrideConfig || subjectConfig;
         }
 
         const scopeKey = activeTabId === 'subject' ? activeSubjectScopeKey : DEFAULT_SCOPE_KEY;
-        const scopeLabel = activeTabId === 'subject' ? getSubjectScopeLabel(subjectConfig) : null;
+        const scopeLabel = activeTabId === 'subject' ? getSubjectScopeLabel(overrideConfig || subjectConfig) : null;
         const savedAt = new Date().toISOString();
 
         const { error } = await supabase
@@ -690,14 +816,14 @@ export default function DashboardPage() {
 
     // Auto-save logic (Debounced)
     useEffect(() => {
-        if (!userId || !students.length || isWorkLogLoading) return;
+        if (!userId || !students.length || isWorkLogLoading || isSavedEditor || logBusy) return;
 
         const timer = setTimeout(() => {
             saveWorkLog(true);
         }, 3000); // 3초 뒤 자동 저장
 
         return () => clearTimeout(timer);
-    }, [students, studentCount, charLimits, userId, activeTabId, activeSubjectScopeKey, subjectConfig, isWorkLogLoading]);
+    }, [students, studentCount, charLimits, userId, activeTabId, activeSubjectScopeKey, subjectConfig, isWorkLogLoading, isSavedEditor, logBusy]);
 
     // 학생 수 변경 시 처리
     useEffect(() => {
@@ -709,6 +835,7 @@ export default function DashboardPage() {
     useEffect(() => {
         if (
             !userId ||
+            isSavedEditor ||
             activeTabId !== 'subject' ||
             isWorkLogLoading ||
             !subjectLogs.length ||
@@ -722,17 +849,20 @@ export default function DashboardPage() {
         }, 1200);
 
         return () => clearTimeout(timer);
-    }, [userId, activeTabId, studentCount, students.length, isWorkLogLoading, subjectLogs.length]);
+    }, [userId, activeTabId, studentCount, students.length, isWorkLogLoading, subjectLogs.length, isSavedEditor]);
 
     const activeTab = features.find(f => f.id === activeTabId) || features[0];
     const FeatureIcon = activeTab.icon;
 
     // AI 생성
     const handleGenerate = async (id: number) => {
+        const epoch = workEpoch.current;
+        const updateStudents: typeof setStudents = action => { if (epoch === workEpoch.current) setStudents(action); };
+
         const student = students.find(s => s.id === id);
         if (!student) return;
 
-        setStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: true } : s));
+        updateStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: true } : s));
 
         try {
             let tokens: string[] = [];
@@ -740,13 +870,13 @@ export default function DashboardPage() {
 
             if (activeTabId === 'behavior') {
                 if (student.selectedKeywords.length < 2) {
-                    setStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: false } : s));
+                    updateStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: false } : s));
                     return;
                 }
                 tokens = student.selectedKeywords;
             } else if (activeTabId === 'creative') {
                 if (!student.participatedEvents || student.participatedEvents.length === 0) {
-                    setStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: false } : s));
+                    updateStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: false } : s));
                     return;
                 }
                 tokens = student.participatedEvents;
@@ -762,7 +892,7 @@ export default function DashboardPage() {
                     // 모든 누락된 성취기준을 병렬로 요청
                     const standardPromises = missingAssessments.map(async (ass) => {
                         try {
-                            const sResp = await fetch("/api/generate/standard", {
+                            const sResp = await requestWorkspaceAI("/api/generate/standard", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({
@@ -783,6 +913,7 @@ export default function DashboardPage() {
                     });
 
                     const results = await Promise.all(standardPromises);
+                if (epoch !== workEpoch.current) return;
 
                     let updatedAssessments = [...subjectConfig.assessments];
                     results.forEach(res => {
@@ -792,12 +923,12 @@ export default function DashboardPage() {
                     });
 
                     currentSubjectConfig = { ...subjectConfig, assessments: updatedAssessments };
-                    setSubjectConfig(currentSubjectConfig);
+                    if (epoch === workEpoch.current) setSubjectConfig(currentSubjectConfig);
                 }
             }
 
             // 2단계: 본문 생성
-            const response = await fetch("/api/generate", {
+            const response = await requestWorkspaceAI("/api/generate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -815,8 +946,9 @@ export default function DashboardPage() {
             });
 
             const data = await response.json();
+                if (epoch !== workEpoch.current) return;
             if (data.result) {
-                setStudents(prev => prev.map(s => s.id === id ? {
+                updateStudents(prev => prev.map(s => s.id === id ? {
                     ...s,
                     isGenerating: false,
                     aiResult: data.result,
@@ -826,13 +958,17 @@ export default function DashboardPage() {
                 throw new Error(data.error || "Failed to generate");
             }
         } catch (error) {
+            if (epoch !== workEpoch.current) return;
             console.error(error);
-            setStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: false } : s));
+            updateStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: false } : s));
             alert("생성 중 오류가 발생했습니다.");
         }
     };
 
     const handleAllGenerate = async () => {
+        const epoch = workEpoch.current;
+        const updateStudents: typeof setStudents = action => { if (epoch === workEpoch.current) setStudents(action); };
+
         const targetStudents = students.filter(s => {
             if (activeTabId === 'behavior') return s.selectedKeywords.length >= 2;
             if (activeTabId === 'creative') return (s.participatedEvents?.length || 0) > 0;
@@ -849,7 +985,7 @@ export default function DashboardPage() {
             return;
         }
 
-        setStudents(prev => prev.map(s =>
+        updateStudents(prev => prev.map(s =>
             targetStudents.find(ss => ss.id === s.id) ? { ...s, isGenerating: true } : s
         ));
 
@@ -866,7 +1002,7 @@ export default function DashboardPage() {
             if (missingAssessments.length > 0) {
                 const standardPromises = missingAssessments.map(async (ass) => {
                     try {
-                        const sResp = await fetch("/api/generate/standard", {
+                        const sResp = await requestWorkspaceAI("/api/generate/standard", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
@@ -885,6 +1021,7 @@ export default function DashboardPage() {
                 });
 
                 const results = await Promise.all(standardPromises);
+                if (epoch !== workEpoch.current) return;
 
                 let updatedAssessments = [...subjectConfig.assessments];
                 results.forEach(res => {
@@ -894,7 +1031,7 @@ export default function DashboardPage() {
                 });
 
                 currentSubjectConfig = { ...subjectConfig, assessments: updatedAssessments };
-                setSubjectConfig(currentSubjectConfig);
+                if (epoch === workEpoch.current) setSubjectConfig(currentSubjectConfig);
             }
         }
 
@@ -906,7 +1043,7 @@ export default function DashboardPage() {
                 if (activeTabId === 'behavior') tokens = student.selectedKeywords;
                 else if (activeTabId === 'creative') tokens = student.participatedEvents || [];
 
-                const response = await fetch("/api/generate", {
+                const response = await requestWorkspaceAI("/api/generate", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -923,15 +1060,16 @@ export default function DashboardPage() {
                     })
                 });
                 const data = await response.json();
+                if (epoch !== workEpoch.current) return;
 
                 if (!response.ok) {
                     if (!firstError) firstError = data.error || `생성 실패 (HTTP ${response.status})`;
-                    setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
+                    updateStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
                     return false;
                 }
 
                 // 결과 도착 시 즉시 상태 업데이트 (개별 업데이트)
-                setStudents(prev => prev.map(s => s.id === student.id ? {
+                updateStudents(prev => prev.map(s => s.id === student.id ? {
                     ...s,
                     isGenerating: false,
                     aiResult: data.result || s.aiResult,
@@ -941,17 +1079,20 @@ export default function DashboardPage() {
             } catch (error: unknown) {
                 console.error(`Error generating for student ${student.id}:`, error);
                 if (!firstError) firstError = error instanceof Error ? error.message : "네트워크 오류가 발생했습니다.";
-                setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
+                updateStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
                 return false;
             }
         }));
 
-        if (firstError && results.every(ok => !ok)) {
+        if (epoch === workEpoch.current && firstError && results.every(ok => !ok)) {
             alert(`전체 생성 실패: ${firstError}`);
         }
     };
 
     const handleSelectedGenerate = async () => {
+        const epoch = workEpoch.current;
+        const updateStudents: typeof setStudents = action => { if (epoch === workEpoch.current) setStudents(action); };
+
         const selectedStudents = students.filter(s => {
             if (!s.selected) return false;
             if (activeTabId === 'behavior') return s.selectedKeywords.length >= 2;
@@ -965,7 +1106,7 @@ export default function DashboardPage() {
             return;
         }
 
-        setStudents(prev => prev.map(s =>
+        updateStudents(prev => prev.map(s =>
             selectedStudents.find(ss => ss.id === s.id) ? { ...s, isGenerating: true } : s
         ));
 
@@ -982,7 +1123,7 @@ export default function DashboardPage() {
             if (missingAssessments.length > 0) {
                 const standardPromises = missingAssessments.map(async (ass) => {
                     try {
-                        const sResp = await fetch("/api/generate/standard", {
+                        const sResp = await requestWorkspaceAI("/api/generate/standard", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
@@ -1001,6 +1142,7 @@ export default function DashboardPage() {
                 });
 
                 const results = await Promise.all(standardPromises);
+                if (epoch !== workEpoch.current) return;
 
                 let updatedAssessments = [...subjectConfig.assessments];
                 results.forEach(res => {
@@ -1010,7 +1152,7 @@ export default function DashboardPage() {
                 });
 
                 currentSubjectConfig = { ...subjectConfig, assessments: updatedAssessments };
-                setSubjectConfig(currentSubjectConfig);
+                if (epoch === workEpoch.current) setSubjectConfig(currentSubjectConfig);
             }
         }
 
@@ -1021,7 +1163,7 @@ export default function DashboardPage() {
                 if (activeTabId === 'behavior') tokens = student.selectedKeywords;
                 else if (activeTabId === 'creative') tokens = student.participatedEvents || [];
 
-                const response = await fetch("/api/generate", {
+                const response = await requestWorkspaceAI("/api/generate", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -1038,17 +1180,19 @@ export default function DashboardPage() {
                     })
                 });
                 const data = await response.json();
+                if (epoch !== workEpoch.current) return;
 
                 // 결과 도착 시 즉시 상태 업데이트 (개별 업데이트)
-                setStudents(prev => prev.map(s => s.id === student.id ? {
+                updateStudents(prev => prev.map(s => s.id === student.id ? {
                     ...s,
                     isGenerating: false,
                     aiResult: data.result || s.aiResult,
                     isEditable: !!data.result
                 } : s));
             } catch (error) {
+            if (epoch !== workEpoch.current) return;
                 console.error(`Error generating for student ${student.id}:`, error);
-                setStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
+                updateStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
             }
         });
     };
@@ -1067,11 +1211,12 @@ export default function DashboardPage() {
             isGenerating: false
         } : s);
         setStudents(nextStudents);
-        await saveWorkLog(true, nextStudents);
+        if (!isSavedEditor) await saveWorkLog(true, nextStudents);
     };
 
     const handleResetAll = async () => {
-        if (!confirm("모든 입력값(키워드 및 결과)을 초기화하시겠습니까? 초기화 후 즉시 저장되므로 복구할 수 없습니다.")) return;
+        if (!confirm(isSavedEditor ? "수정 중인 입력값을 비우시겠습니까? 저장 버튼을 누르기 전에는 저장본이 유지됩니다." : "현재 입력값을 비우시겠습니까? 작업로그의 저장본은 유지됩니다.")) return;
+        invalidateWorkspace();
         const nextStudents = students.map(s => ({
             ...s,
             selected: false,
@@ -1086,8 +1231,8 @@ export default function DashboardPage() {
             isGenerating: false
         }));
         setStudents(nextStudents);
-        await saveWorkLog(false, nextStudents);
-        alert("초기화 및 저장이 완료되었습니다.");
+        if (!isSavedEditor) await saveWorkLog(false, nextStudents);
+        alert(isSavedEditor ? "입력을 비웠습니다. 수정 내용 저장을 누르면 반영됩니다." : "입력을 비웠습니다. 저장된 작업로그는 유지됩니다.");
     };
 
     const handleResetBehaviorKeywords = async () => {
@@ -1098,8 +1243,8 @@ export default function DashboardPage() {
             customKeywords: []
         }));
         setStudents(nextStudents);
-        await saveWorkLog(false, nextStudents);
-        alert("키워드 초기화 및 저장이 완료되었습니다.");
+        if (!isSavedEditor) await saveWorkLog(false, nextStudents);
+        alert(isSavedEditor ? "키워드를 비웠습니다. 수정 내용 저장을 누르면 반영됩니다." : "키워드 초기화 및 임시 저장이 완료되었습니다.");
     };
 
     const handleDeleteUnusedBehaviorKeywords = async () => {
@@ -1108,8 +1253,8 @@ export default function DashboardPage() {
             customKeywords: s.customKeywords.filter(k => s.selectedKeywords.includes(k))
         }));
         setStudents(nextStudents);
-        await saveWorkLog(false, nextStudents);
-        alert("미선택 키워드 삭제 및 저장이 완료되었습니다.");
+        if (!isSavedEditor) await saveWorkLog(false, nextStudents);
+        alert(isSavedEditor ? "미선택 키워드를 지웠습니다. 수정 내용 저장을 누르면 반영됩니다." : "미선택 키워드를 지웠습니다.");
     };
 
     const handleResetSelection = () => {
@@ -1336,6 +1481,7 @@ export default function DashboardPage() {
     };
 
     const handleSubjectPlanUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (isSavedEditor) { setLogError("평가계획의 여러 교과 가져오기는 새 작업 화면에서 이용해주세요."); return; }
         const file = e.target.files?.[0];
         e.target.value = "";
         if (!file) return;
@@ -1560,13 +1706,60 @@ export default function DashboardPage() {
         setIsWorkLogLoading(false);
     };
 
+    const leaveEditor = (url: string) => {
+        if (editorDirty && !confirm("저장하지 않은 수정 내용이 있습니다. 나가시겠습니까?")) return false;
+        invalidateWorkspace(); setStudents([]); setIsWorkLogLoading(true); router.push(url); return true;
+    };
+    const changeCategory = (id: string) => {
+        if (logBusy || isWorkLogLoading) return;
+        if (isSavedEditor) { if (leaveEditor(`/app?category=${id}`)) setActiveTabId(id); }
+        else { invalidateWorkspace(); setActiveTabId(id); }
+    };
+    const clearCurrentDraft = async () => {
+        invalidateWorkspace(); lastSnapshot.current = null;
+        const empty = createInitialStudents(studentCount), config = getDefaultSubjectConfig();
+        setStudents(empty); if (activeTabId === "subject") setSubjectConfig(config);
+        setSubjectPlanImport(null); setSelectedSubjectPlanIndexes([]); setIsAddingKeyword(null); setNewKeywordInput("");
+        setLogTitle(defaultWorkTitle(activeTabId as "behavior" | "subject" | "creative" | "docs"));
+        const saved = await saveWorkLog(true, empty, config);
+        if (!saved) setLogError("저장본은 보존됐지만 새 작업의 임시 저장에 실패했습니다. 화면을 유지하고 다시 저장해주세요.");
+    };
+    const saveSnapshot = async (startNew: boolean) => {
+        if (logBusy || students.some(s => s.isGenerating) || isWorkLogLoading) return;
+        if (isSavedEditor) { await persistSavedEdits(); return; }
+        const payload = { category: activeTabId, title: logTitle, data: currentData, source_scope_key: activeTabId === "subject" ? activeSubjectScopeKey : DEFAULT_SCOPE_KEY };
+        const fingerprint = stableWorkJson(payload), epoch = workEpoch.current;
+        if (lastSnapshot.current?.fingerprint === fingerprint) {
+            if (startNew) { setLogBusy(true); try { await clearCurrentDraft(); setLogMessage("이미 저장된 기록을 유지하고 새 작업을 시작했습니다."); } finally { setLogBusy(false); } }
+            else setLogMessage("같은 내용이 이미 작업로그에 저장되어 있습니다.");
+            return;
+        }
+        if (snapshotAttempt.current?.fingerprint !== fingerprint) snapshotAttempt.current = { fingerprint, id: crypto.randomUUID() };
+        setLogBusy(true); setLogError(""); setLogMessage("");
+        try {
+            await workLogRequest<SavedWorkLog>("/api/work-logs", { method: "POST", body: JSON.stringify({ ...payload, id: snapshotAttempt.current.id }) });
+            lastSnapshot.current = { fingerprint, id: snapshotAttempt.current.id };
+            snapshotAttempt.current = null;
+            if (epoch !== workEpoch.current) return;
+            if (startNew) await clearCurrentDraft();
+            setLogMessage(startNew ? "작업로그에 저장하고 새 작업을 시작했습니다." : "작업로그에 독립된 저장본을 만들었습니다. 입력을 비워도 이 저장본은 유지됩니다.");
+        } catch (e) { setLogError(e instanceof Error ? e.message : "저장하지 못했습니다. 입력은 유지됩니다."); }
+        finally { setLogBusy(false); }
+    };
+    const startEmptyDraft = async () => {
+        if (!confirm("현재 입력을 비우고 새 작업을 시작하시겠습니까? 작업로그에 저장된 기록은 바뀌지 않습니다.")) return;
+        setLogBusy(true); setLogError(""); setLogMessage("");
+        try { await clearCurrentDraft(); } finally { setLogBusy(false); }
+    };
+
     const polishAction = ["behavior", "subject", "creative"].includes(activeTabId) ? (
         <ClassPolishControl
-            key={`${userId}:${activeTabId}:${activeTabId === "subject" ? activeSubjectScopeKey : "default"}`}
+            key={`${userId}:${requestedLogId || "draft"}:${workspaceVersion}:${activeTabId}:${activeTabId === "subject" ? activeSubjectScopeKey : "default"}`}
             students={students}
             setStudents={setStudents}
             category={activeTabId as PolishCategory}
-            disabled={isWorkLogLoading || isSubjectPlanImporting}
+            disabled={isWorkLogLoading || isSubjectPlanImporting || logBusy || (isSavedEditor && loadedSavedId !== requestedLogId)}
+            workLogId={requestedLogId || undefined}
             onPersist={nextStudents => saveWorkLog(true, nextStudents)}
         />
     ) : null;
@@ -1577,41 +1770,22 @@ export default function DashboardPage() {
 
             <main className="pt-32 pb-24">
                 <div className="container mx-auto px-6 max-w-[1440px]">
+                    <WorkLogSessionBar saving={logBusy} editing={isSavedEditor} title={logTitle} onTitle={setLogTitle}
+                        busy={logBusy || isWorkLogLoading || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} dirty={editorDirty}
+                        message={logMessage} error={logError} onSave={() => void saveSnapshot(false)} onSaveNew={() => void saveSnapshot(true)}
+                        onReset={() => void startEmptyDraft()} onBack={() => leaveEditor("/app/logs")} />
+                    {staleEdit && <button className="mb-5 text-sm text-blue-700 underline" onClick={() => { const url = URL.createObjectURL(new Blob([workLogCsv({ category: activeTabId as "behavior", data: staleEdit.data })], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href = url; a.download = `${staleEdit.title}-임시수정.csv`; a.click(); URL.revokeObjectURL(url); }}>이전 임시 수정 내보내기</button>}
                     {/* Header Section */}
-                    <header className="flex flex-col gap-6 mb-12 border-b border-slate-200 dark:border-border pb-12">
-                        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <div className="h-6 w-1 bg-primary rounded-full" />
-                                    <span className="text-[10px] font-black tracking-[0.4em] uppercase text-primary/60 dark:text-primary/80">Advanced Dashboard v2.9</span>
-                                </div>
-                                <h2 className="text-5xl font-black tracking-tight text-slate-900 dark:text-foreground leading-tight">
-                                    Welcome <span className="text-primary">Teacher!</span>
-                                </h2>
-                            </div>
-
-                            <div className="flex flex-col sm:flex-row items-center gap-4 bg-white dark:bg-card p-6 rounded-[2.5rem] border border-slate-100 dark:border-border shadow-xl shadow-slate-200/40 dark:shadow-none">
-                                <div className="flex items-center gap-6 px-4">
-                                    <div className="flex flex-col items-center min-w-[80px]">
-                                        <span className="text-[10px] font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest mb-1">학생 수</span>
-                                        <div className="flex items-center gap-4">
-                                            <input
-                                                type="range" min="1" max="40"
-                                                value={studentCount}
-                                                onChange={(e) => setStudentCount(Number(e.target.value))}
-                                                className="w-24 h-2 bg-slate-100 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary"
-                                            />
-                                            <span className="text-2xl font-black text-slate-900 dark:text-foreground tracking-tighter w-8">{studentCount}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                    <header className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5 dark:border-slate-700">
+                        <h2 className="text-2xl font-bold tracking-tight">{activeTab.title}</h2>
+                        <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900">
+                            학생 수 <input aria-label="학생 수" type="range" min="1" max="40" value={studentCount} disabled={logBusy || isWorkLogLoading} onChange={e => setStudentCount(Number(e.target.value))} className="w-28 accent-blue-600" /><span className="w-8 font-bold">{studentCount}명</span>
+                        </label>
                     </header>
 
                     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-8">
                         {/* Workspace Content (Left) */}
-                        <div className="min-w-0 space-y-10">
+                        <fieldset disabled={isWorkLogLoading || logBusy || (isSavedEditor && loadedSavedId !== requestedLogId)} className="min-w-0 space-y-10 border-0 p-0 m-0">
                             <AnimatePresence mode="wait">
                                 <motion.div
                                     key={activeTabId}
@@ -1793,6 +1967,7 @@ export default function DashboardPage() {
                                             </Card>
 
                                             <SubjectWorkspace
+                                                savedEditor={isSavedEditor}
                                                 polishAction={polishAction}
                                                 students={students}
                                                 setStudents={setStudents}
@@ -1888,12 +2063,12 @@ export default function DashboardPage() {
                                     ) : (
                                         <PlaceholderWorkspace
                                             title={features.find(f => f.id === activeTabId)?.title || ""}
-                                            onBack={() => setActiveTabId("behavior")}
+                                            onBack={() => changeCategory("behavior")}
                                         />
                                     )}
                                 </motion.div>
                             </AnimatePresence>
-                        </div>
+                        </fieldset>
 
                         {/* Sidebar (Right) */}
                         <aside className="space-y-6">
@@ -1906,7 +2081,7 @@ export default function DashboardPage() {
                                         return (
                                             <button
                                                 key={f.id}
-                                                onClick={() => setActiveTabId(f.id)}
+                                                onClick={() => changeCategory(f.id)}
                                                 className={cn(
                                                     "w-full p-6 min-h-28 rounded-[2.5rem] flex items-center gap-6 transition-all text-left border",
                                                     isActive
@@ -2175,4 +2350,8 @@ export default function DashboardPage() {
             `}</style>
         </div>
     );
+}
+
+export default function Page() {
+    return <Suspense fallback={<main className="p-12 pt-32">작업을 불러오는 중입니다.</main>}><DashboardPage /></Suspense>;
 }

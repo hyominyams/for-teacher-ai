@@ -1,3 +1,4 @@
+import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { parsePolishRequest } from "@/lib/class-polish";
@@ -22,7 +23,9 @@ export async function POST(req: Request) {
         try {
             const text = await req.text();
             if (Buffer.byteLength(text) > 200000) return NextResponse.json({ error: "요청 크기가 너무 큽니다." }, { status: 413 });
-            input = parsePolishRequest(JSON.parse(text));
+            const raw = JSON.parse(text);
+            try { await assertEditableWorkLog(req, raw.workLogId); } catch (error) { return workLogFailure(error); }
+            input = parsePolishRequest(raw);
         } catch (error) {
             return NextResponse.json({ error: error instanceof SyntaxError ? "요청 데이터를 읽을 수 없습니다." : error instanceof Error ? error.message : "입력을 확인해주세요." }, { status: 400 });
         }

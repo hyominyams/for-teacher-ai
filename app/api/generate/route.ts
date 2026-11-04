@@ -1,3 +1,4 @@
+import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { OpenAI } from "openai";
 import { NextResponse } from "next/server";
 import fs from "fs";
@@ -50,7 +51,8 @@ export async function POST(req: Request) {
         }
         const openai = new OpenAI({ apiKey });
 
-        const { keywords, targetChars, category = "behavior", role, term, subjectMeta } = await req.json();
+        const { keywords, targetChars, category = "behavior", role, term, subjectMeta, workLogId } = await req.json();
+        try { await assertEditableWorkLog(req, workLogId); } catch (error) { return workLogFailure(error); }
 
         // prompts 폴더에서 카테고리에 맞는 파일 읽기
         const promptPath = path.join(process.cwd(), "prompts", `${category}.md`);
