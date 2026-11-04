@@ -1,0 +1,67 @@
+{
+  "methodology": "9 existing synthetic fixtures; production handler messages captured with SDK stub; one concurrent model pair at a time; no retries; order alternates by round; common 2048 output-token ceiling; unedited outputs retained.",
+  "pricing": {
+    "gpt-4o": {
+      "input": 2.5,
+      "cached": 1.25,
+      "write30m": 0,
+      "output": 10
+    },
+    "gpt-6-luna": {
+      "input": 0.1,
+      "cached": 0.01,
+      "write30m": 0.125,
+      "output": 0.5
+    }
+  },
+  "priceUnit": "USD per 1M tokens, Standard short context, 2026-11-04",
+  "priceSource": "https://developers.openai.com/api/docs/pricing",
+  "cacheSource": "https://developers.openai.com/api/docs/guides/prompt-caching#monitor-cache-performance",
+  "comparisonScope": "Only behavior and subject (12 outputs per model) for cost and latency comparisons; failed creative outputs are excluded from these ratios.",
+  "models": {
+    "gpt-4o": {
+      "calls": 18,
+      "recordFormResponses": 18,
+      "commonSuccessfulCalls": 12,
+      "commonSuccessfulCostUSD": 0.07977,
+      "commonMeanSeconds": 3.6998333333333333,
+      "commonMedianSeconds": 3.5395,
+      "totalCostUSD": 0.11773,
+      "behaviorTheseViolations": 6,
+      "subjectLengthRange": [
+        384,
+        497
+      ]
+    },
+    "gpt-6-luna": {
+      "calls": 18,
+      "recordFormResponses": 12,
+      "commonSuccessfulCalls": 12,
+      "commonSuccessfulCostUSD": 0.00342139,
+      "commonMeanSeconds": 3.2065833333333336,
+      "commonMedianSeconds": 3.058,
+      "totalCostUSD": 0.00451213,
+      "behaviorTheseViolations": 0,
+      "subjectLengthRange": [
+        355,
+        447
+      ]
+    }
+  },
+  "costRatio": 23.315085389271612,
+  "costReductionPct": 95.71093142785509,
+  "creativeTrial": {
+    "calls": 6,
+    "recordFormResponses": 6,
+    "totalCostUSD": 0.001964,
+    "chars": [
+      408,
+      405,
+      385,
+      337,
+      395,
+      373
+    ]
+  },
+  "testTotalEstimatedUSD": 0.12420613
+}
