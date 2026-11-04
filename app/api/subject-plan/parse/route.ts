@@ -243,7 +243,8 @@ export async function POST(req: Request) {
 
         const openai = new OpenAI({ apiKey });
         const response = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: "gpt-6-luna",
+            reasoning_effort: "none",
             messages: [
                 {
                     role: "system",
