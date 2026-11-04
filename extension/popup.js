@@ -1,6 +1,6 @@
-const STORAGE_KEY = "neisUploadRecords";
-const WEB_RECORDS_KEY = "neisUploadWebRecordsByCategory";
 const SESSION_KEY = "forteacherSession";
+const CSV_KEY = "neisUploadCsvRecords";
+const LEGACY_KEYS = ["neisUploadRecords", "neisUploadWebRecordsByCategory", "neisUploadSubjectScope", "neisUploadRecordLabel"];
 const NEIS_GRID_EDITABLE_SELECTOR = ".cl-textarea:not(.cl-disabled)";
 const BEHAVIOR_SELECTOR = [
   ".cl-grid-cell[data-cellindex='3'][aria-label*='행동특성'] .cl-textarea:not(.cl-disabled)",
@@ -18,290 +18,241 @@ const DEFAULT_SELECTORS = {
   subject: SUBJECT_SELECTOR
 };
 
-const csvFile = document.getElementById("csvFile");
-const parseClipboard = document.getElementById("parseClipboard");
-const recordCount = document.getElementById("recordCount");
-const recordSummary = document.getElementById("recordSummary");
-const recordTable = document.getElementById("recordTable");
-const delay = document.getElementById("delay");
-const accountState = document.getElementById("accountState");
-const accountBadge = document.getElementById("accountBadge");
-const connectWebApp = document.getElementById("connectWebApp");
-const logoutWebApp = document.getElementById("logoutWebApp");
-const category = document.getElementById("category");
-const subjectScopePanel = document.getElementById("subjectScopePanel");
-const subjectScope = document.getElementById("subjectScope");
-const loadWebData = document.getElementById("loadWebData");
-const resetData = document.getElementById("resetData");
-const webSourcePanel = document.getElementById("webSourcePanel");
-const csvSourcePanel = document.getElementById("csvSourcePanel");
-const openOverlay = document.getElementById("openOverlay");
-const statusEl = document.getElementById("status");
+const $ = (id) => document.getElementById(id);
+const csvFile = $("csvFile"), parseClipboard = $("parseClipboard");
+const recordCount = $("recordCount"), recordSummary = $("recordSummary"), recordTable = $("recordTable");
+const delay = $("delay"), accountState = $("accountState"), accountBadge = $("accountBadge");
+const connectWebApp = $("connectWebApp"), logoutWebApp = $("logoutWebApp");
+const category = $("category"), logState = $("logState"), workLog = $("workLog"), logInfo = $("logInfo");
+const refreshLogs = $("refreshLogs"), previousPage = $("previousPage"), nextPage = $("nextPage"), pageInfo = $("pageInfo");
+const loadWebData = $("loadWebData"), resetData = $("resetData");
+const webSourcePanel = $("webSourcePanel"), csvSourcePanel = $("csvSourcePanel");
+const openOverlay = $("openOverlay"), statusEl = $("status");
 const sourceModeInputs = [...document.querySelectorAll("input[name='sourceMode']")];
-
-let records = [];
-let webRecordsByCategory = {};
-let activeSource = "web";
-let activeSubjectScope = "default";
-
-init();
+let records = [], csvRecords = [], logs = [], loadedLog = null;
+let activeSource = "web", session = null, page = 0, total = 0, epoch = 0, busy = false;
 
 function on(element, eventName, handler) {
-  if (!element) {
-    console.warn(`ForTeacher popup element is missing for ${eventName}.`);
-    return;
-  }
   element.addEventListener(eventName, handler);
 }
 
 async function init() {
-  const saved = await chrome.storage.local.get([STORAGE_KEY, WEB_RECORDS_KEY, SESSION_KEY, "neisUploadSource", "neisUploadCategory", "neisUploadSubjectScope", "neisUploadRecordLabel"]);
-  records = saved[STORAGE_KEY] || [];
-  webRecordsByCategory = saved[WEB_RECORDS_KEY] || {};
-  activeSource = saved.neisUploadSource || "web";
-  if (saved.neisUploadCategory) category.value = saved.neisUploadCategory;
-  if (saved.neisUploadSubjectScope) activeSubjectScope = saved.neisUploadSubjectScope;
-  if (activeSource === "web" && hasWebRecords()) {
-    records = getWebRecordsForCategory();
-  }
-  renderAccount(saved[SESSION_KEY]);
-  renderSource();
-  renderSubjectScope();
-  renderRecords(activeSource === "web" ? getCategoryLabel() : saved.neisUploadRecordLabel);
+  const saved = await chrome.storage.local.get([CSV_KEY, SESSION_KEY, "neisUploadSource", "neisUploadCategory", ...LEGACY_KEYS]);
+  session = saved[SESSION_KEY] || null;
+  activeSource = saved.neisUploadSource === "csv" ? "csv" : "web";
+  csvRecords = saved[CSV_KEY] || [];
+  // Old web caches have no reliable owner or saved-log identity. Never reuse them.
+  await chrome.storage.local.set({ [CSV_KEY]: csvRecords });
+  await chrome.storage.local.remove(LEGACY_KEYS);
+  if (DEFAULT_SELECTORS[saved.neisUploadCategory]) category.value = saved.neisUploadCategory;
+  records = activeSource === "csv" ? csvRecords : [];
+  renderAccount(); renderSource(); renderLogList(); renderRecords();
+  if (activeSource === "web" && session?.access_token) await loadLogList();
 }
 
-sourceModeInputs.forEach((input) => {
-  on(input, "change", async () => {
-    activeSource = input.value;
-    await chrome.storage.local.set({ neisUploadSource: activeSource });
-    renderSource();
-    if (activeSource === "web" && hasWebRecords()) {
-      await applyWebCategoryRecords();
-    }
-  });
-});
+function invalidate() {
+  epoch += 1;
+  busy = false;
+  loadedLog = null;
+  records = activeSource === "csv" ? csvRecords : [];
+  renderLogInfo(); renderRecords(); renderControls();
+  return epoch;
+}
+
+sourceModeInputs.forEach(input => on(input, "change", async () => {
+  activeSource = input.value;
+  invalidate(); renderSource();
+  await chrome.storage.local.set({ neisUploadSource: activeSource });
+  if (activeSource === "web") await loadLogList();
+}));
 
 on(category, "change", async () => {
+  page = 0;
+  invalidate();
   await chrome.storage.local.set({ neisUploadCategory: category.value });
-  renderSubjectScope();
-  if (activeSource === "web" && hasWebRecords()) {
-    await applyWebCategoryRecords();
-  }
-});
-
-on(subjectScope, "change", async () => {
-  activeSubjectScope = subjectScope.value || "default";
-  await chrome.storage.local.set({ neisUploadSubjectScope: activeSubjectScope });
-  if (activeSource === "web" && hasWebRecords()) {
-    await applyWebCategoryRecords();
-  }
-});
+  if (activeSource === "web") await loadLogList();
+} );
+on(logState, "change", () => { page = 0; return loadLogList(); });
+on(refreshLogs, "click", () => { page = 0; return loadLogList(); });
+on(previousPage, "click", () => { page = Math.max(0, page - 1); return loadLogList(); });
+on(nextPage, "click", () => { page += 1; return loadLogList(); });
+on(workLog, "change", () => { invalidate(); setStatus("선택한 작업로그를 불러오세요."); });
 
 on(csvFile, "change", async () => {
   const file = csvFile.files?.[0];
   if (!file) return;
-  const text = await file.text();
-  await setRecords(parseRecords(text), "CSV 파일");
+  const requestEpoch = epoch;
+  try {
+    const text = await file.text();
+    if (requestEpoch !== epoch) return;
+    await setCsvRecords(parseRecords(text));
+  } catch (error) { if (requestEpoch === epoch) setStatus(`CSV를 읽지 못했습니다: ${error.message}`); }
 });
-
 on(parseClipboard, "click", async () => {
+  const requestEpoch = epoch;
   try {
     const text = await navigator.clipboard.readText();
-    await setRecords(parseRecords(text), "클립보드 CSV");
-  } catch (error) {
-    setStatus(`클립보드를 읽지 못했습니다: ${error.message}`);
-  }
+    if (requestEpoch !== epoch) return;
+    await setCsvRecords(parseRecords(text));
+  } catch (error) { if (requestEpoch === epoch) setStatus(`클립보드를 읽지 못했습니다: ${error.message}`); }
 });
 
 on(connectWebApp, "click", async () => {
-  const appOrigin = await getAppOrigin();
-  const existingSession = await pullSessionFromBridgeTab(appOrigin);
-  if (existingSession) {
-    await chrome.storage.local.set({
-      [SESSION_KEY]: existingSession,
-      forteacherAppOrigin: appOrigin
-    });
-    renderAccount(existingSession);
-    setStatus("열려 있는 브리지 탭에서 계정을 연결했습니다.");
-    return;
-  }
-
-  await chrome.tabs.create({ url: `${appOrigin}/extension/bridge` });
-  setStatus("브리지 화면에서 로그인한 뒤 이 버튼을 다시 누르세요.");
+  try {
+    const appOrigin = await getAppOrigin();
+    const existingSession = await pullSessionFromBridgeTab(appOrigin);
+    if (existingSession?.access_token && (!existingSession.expires_at || existingSession.expires_at * 1000 > Date.now())) {
+      await chrome.storage.local.set({ [SESSION_KEY]: existingSession, forteacherAppOrigin: appOrigin });
+      setStatus("웹앱 계정을 연결했습니다.");
+    } else {
+      await chrome.tabs.create({ url: `${appOrigin}/extension/bridge` });
+      setStatus("브리지 화면에서 연결한 뒤 확장 프로그램을 다시 여세요.");
+    }
+  } catch (error) { setStatus(`계정 연결에 실패했습니다: ${error.message}`); }
 });
 
 on(logoutWebApp, "click", async () => {
-  await chrome.storage.local.remove([SESSION_KEY]);
-  renderAccount(null);
-  setStatus("확장 프로그램 계정 연결을 해제했습니다.");
+  session = null; logs = []; total = 0; csvRecords = [];
+  invalidate(); renderAccount(); renderLogList();
+  await chrome.storage.local.remove([SESSION_KEY, CSV_KEY, ...LEGACY_KEYS]);
+  setStatus("계정 연결과 불러온 학생 데이터를 지웠습니다.");
 });
 
-on(loadWebData, "click", async () => {
-  try {
-    setStatus("웹앱 저장 데이터를 불러오는 중입니다.");
-    loadWebData.disabled = true;
-    const logs = await fetchWorkLogs();
-    const nextRecordsByCategory = buildWebRecordsByCategory(logs);
-    if (Object.keys(nextRecordsByCategory).length) {
-      webRecordsByCategory = nextRecordsByCategory;
-      activeSource = "web";
-      await chrome.storage.local.set({
-        [WEB_RECORDS_KEY]: webRecordsByCategory,
-        neisUploadSource: activeSource
-      });
-      renderSource();
-      renderSubjectScope();
-      await applyWebCategoryRecords();
-      const totalCount = getTotalWebRecordCount(webRecordsByCategory);
-      setStatus(`${Object.keys(webRecordsByCategory).length}개 영역, ${totalCount}개 항목을 불러왔습니다.`);
-      return;
-    }
-    const selectedLog = logs.find((log) => log.category === category.value);
-    if (!selectedLog?.data) {
-      setStatus("선택한 영역의 저장 데이터가 없습니다.");
-      return;
-    }
-    await setRecords(workLogToRecords(selectedLog.category, selectedLog.data), category.options[category.selectedIndex].text);
-  } catch (error) {
-    setStatus(`웹앱 데이터를 불러오지 못했습니다: ${error.message}`);
-  } finally {
-    loadWebData.disabled = false;
-  }
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes[SESSION_KEY]) return;
+  const next = changes[SESSION_KEY].newValue || null;
+  // The bridge may send the same session repeatedly.
+  if (next?.access_token === session?.access_token && next?.user?.id === session?.user?.id) return;
+  session = next; logs = []; total = 0; page = 0;
+  invalidate(); renderAccount(); renderLogList();
+  if (activeSource === "web" && session?.access_token) void loadLogList();
 });
 
+on(loadWebData, "click", loadSelectedLog);
 on(resetData, "click", async () => {
-  records = [];
-  webRecordsByCategory = {};
-  csvFile.value = "";
-  await chrome.storage.local.remove([STORAGE_KEY, WEB_RECORDS_KEY, "neisUploadSubjectScope", "neisUploadRecordLabel"]);
-  renderSubjectScope();
-  renderRecords();
-  setStatus("불러온 데이터를 초기화했습니다. 다시 데이터 방식을 선택하세요.");
+  csvRecords = []; logs = []; total = 0; page = 0; csvFile.value = "";
+  invalidate(); renderLogList();
+  await chrome.storage.local.remove([CSV_KEY, ...LEGACY_KEYS]);
+  setStatus("불러온 데이터를 비웠습니다. 작업로그 목록을 새로고침하거나 CSV를 선택하세요.");
 });
 
 on(openOverlay, "click", async () => {
-  await runOnActiveTab("showOverlay", getPayload());
+  if (!records.length || busy) return;
+  const requestEpoch = epoch;
+  busy = true; renderControls();
+  try {
+    // Check again before handing off to NEIS so a newly edited record is not silently stale.
+    if (activeSource === "web") {
+      const current = await requestLog(`/api/work-logs/${encodeURIComponent(loadedLog.id)}`);
+      if (requestEpoch !== epoch) return;
+      if (current.category !== category.value || current.id !== loadedLog.id) throw new Error("작업로그를 다시 선택하세요.");
+      if (current.revision !== loadedLog.revision) {
+        applyLoadedLog(current);
+        setStatus("작업로그가 변경되어 최신 내용을 불러왔습니다. 목록을 확인한 뒤 다시 패널을 띄우세요.");
+        return;
+      }
+    }
+    if (requestEpoch === epoch) await runOnActiveTab("showOverlay", getPayload(), requestEpoch);
+  } catch (error) {
+    if (requestEpoch === epoch) { invalidate(); setStatus(`불러온 내용을 확인할 수 없습니다: ${error.message}`); }
+  } finally { if (requestEpoch === epoch) { busy = false; renderControls(); } }
 });
 
-async function setRecords(nextRecords, label) {
-  records = nextRecords;
-  await chrome.storage.local.set({
-    [STORAGE_KEY]: records,
-    neisUploadRecordLabel: label || ""
-  });
-  renderRecords(label);
+async function setCsvRecords(nextRecords) {
+  csvRecords = nextRecords;
+  invalidate();
+  await chrome.storage.local.set({ [CSV_KEY]: csvRecords });
   setStatus(`${records.length}개 항목을 불러왔습니다.`);
 }
 
-async function applyWebCategoryRecords() {
-  const label = getCategoryLabel();
-  records = getWebRecordsForCategory();
-  await chrome.storage.local.set({
-    [STORAGE_KEY]: records,
-    neisUploadRecordLabel: label
-  });
-  renderRecords(label);
+async function requestLog(path) {
+  const token = session?.access_token;
+  if (!token) throw new Error("먼저 웹앱 계정을 연결하세요.");
+  const appOrigin = await getAppOrigin();
+  const response = await fetch(`${appOrigin}${path}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (response.status === 401) throw new Error("연결이 만료됐습니다. 계정 다시 연결을 눌러주세요.");
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || `서버 응답 ${response.status}`);
+  return body;
 }
 
-function buildWebRecordsByCategory(logs) {
-  return logs.reduce((result, log) => {
-    if (!log?.category || !log?.data) return result;
-
-    if (log.category === "subject") {
-      const scopeKey = log.scope_key || "default";
-      const scopeLabel = log.scope_label || log.data?.globalConfig?.subjectName || "교과";
-      const subjectBucket = result.subject || { scopes: [] };
-      subjectBucket.scopes.push({
-        scopeKey,
-        scopeLabel,
-        updatedAt: log.updated_at,
-        records: workLogToRecords(log.category, log.data, scopeLabel)
-      });
-      result.subject = subjectBucket;
-      return result;
-    }
-
-    result[log.category] = workLogToRecords(log.category, log.data);
-    return result;
-  }, {});
+async function loadLogList() {
+  const requestEpoch = invalidate();
+  logs = []; total = 0; busy = true; renderLogList();
+  setStatus("작업로그 목록을 불러오는 중입니다.");
+  try {
+    const params = new URLSearchParams({ category: category.value, state: logState.value, page: String(page) });
+    const body = await requestLog(`/api/work-logs?${params}`);
+    if (requestEpoch !== epoch) return;
+    logs = Array.isArray(body.logs) ? body.logs : []; total = body.total || 0;
+    renderLogList();
+    setStatus(logs.length ? "작업로그를 고른 뒤 선택한 작업로그 불러오기를 누르세요." : "저장된 작업로그가 없습니다. 웹앱에서 작업로그에 저장을 먼저 눌러주세요.");
+  } catch (error) { if (requestEpoch === epoch) setStatus(`목록을 불러오지 못했습니다: ${error.message}`); }
+  finally { if (requestEpoch === epoch) { busy = false; renderControls(); } }
 }
 
-function getTotalWebRecordCount(recordsByCategory) {
-  return Object.values(recordsByCategory).reduce((sum, categoryRecords) => {
-    if (Array.isArray(categoryRecords)) return sum + categoryRecords.length;
-    return sum + (categoryRecords.scopes || []).reduce((scopeSum, scope) => scopeSum + scope.records.length, 0);
-  }, 0);
+async function loadSelectedLog() {
+  const id = workLog.value;
+  if (!id || busy) return;
+  const requestEpoch = invalidate();
+  busy = true; renderControls(); setStatus("선택한 작업로그를 불러오는 중입니다.");
+  try {
+    const log = await requestLog(`/api/work-logs/${encodeURIComponent(id)}`);
+    if (requestEpoch !== epoch) return;
+    if (log.id !== id || log.category !== category.value) throw new Error("작업로그 영역이 일치하지 않습니다.");
+    applyLoadedLog(log);
+    setStatus(records.length ? `${records.length}명의 작성 결과를 불러왔습니다.` : "이 작업로그에는 작성 결과가 없습니다.");
+  } catch (error) { if (requestEpoch === epoch) setStatus(`작업로그를 불러오지 못했습니다: ${error.message}`); }
+  finally { if (requestEpoch === epoch) { busy = false; renderControls(); } }
 }
 
-function getWebRecordsForCategory() {
-  if (category.value !== "subject") {
-    return webRecordsByCategory[category.value] || [];
-  }
-
-  const scopes = getSubjectScopes();
-  const selectedScope = scopes.find(scope => scope.scopeKey === activeSubjectScope) || scopes[0];
-  return selectedScope?.records || [];
+function applyLoadedLog(log) {
+  loadedLog = log;
+  records = workLogToRecords(log.category, log.data, log.title);
+  renderLogInfo(); renderRecords(getCategoryLabel());
 }
 
-function hasWebRecords() {
-  return Object.keys(webRecordsByCategory).length > 0;
+function renderLogList() {
+  workLog.innerHTML = logs.length ? logs.map(log => `<option value="${escapeHTML(log.id)}">${escapeHTML(log.title)} · ${log.completed_count}명 · ${escapeHTML(formatDate(log.updated_at))}</option>`).join("") : '<option value="">저장된 작업로그 없음</option>';
+  pageInfo.parentElement?.classList.toggle("hidden", total <= 30);
+  pageInfo.textContent = `${page + 1} / ${Math.max(1, Math.ceil(total / 30))}쪽 · ${total}개`;
+  renderLogInfo(); renderControls();
 }
-
-function getSubjectScopes() {
-  return webRecordsByCategory.subject?.scopes || [];
+function renderLogInfo() {
+  const log = loadedLog || logs.find(log => log.id === workLog.value);
+  logInfo.textContent = log ? `${log.archived_at ? "보관본 · 읽기 전용" : "저장본"} · ${formatDate(log.updated_at)} 저장 · 작성 ${log.completed_count}/${log.student_count}명` : "웹앱에서 작업로그에 저장한 결과를 선택하세요.";
 }
-
-function renderSubjectScope() {
-  const showSubjectScope = activeSource === "web" && category.value === "subject";
-  subjectScopePanel.classList.toggle("hidden", !showSubjectScope);
-  if (!showSubjectScope) return;
-
-  const scopes = getSubjectScopes();
-  if (!scopes.length) {
-    subjectScope.innerHTML = `<option value="default">저장된 교과 없음</option>`;
-    subjectScope.disabled = true;
-    activeSubjectScope = "default";
-    return;
-  }
-
-  subjectScope.disabled = false;
-  if (!scopes.some(scope => scope.scopeKey === activeSubjectScope)) {
-    activeSubjectScope = scopes[0].scopeKey;
-    chrome.storage.local.set({ neisUploadSubjectScope: activeSubjectScope });
-  }
-
-  subjectScope.innerHTML = scopes.map(scope => (
-    `<option value="${escapeHTML(scope.scopeKey)}">${escapeHTML(scope.scopeLabel || "교과")}</option>`
-  )).join("");
-  subjectScope.value = activeSubjectScope;
+function renderControls() {
+  workLog.disabled = busy || !logs.length;
+  loadWebData.disabled = busy || !workLog.value;
+  refreshLogs.disabled = busy;
+  previousPage.disabled = busy || page <= 0;
+  nextPage.disabled = busy || (page + 1) * 30 >= total || page >= 100;
+  openOverlay.disabled = busy || !records.length;
 }
-
+function formatDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 function getCategoryLabel() {
   const baseLabel = category.options[category.selectedIndex]?.text || category.value;
-  if (category.value !== "subject") return baseLabel;
-
-  const scopes = getSubjectScopes();
-  const selectedScope = scopes.find(scope => scope.scopeKey === activeSubjectScope) || scopes[0];
-  return selectedScope?.scopeLabel ? `${baseLabel} - ${selectedScope.scopeLabel}` : baseLabel;
+  return activeSource === "web" && loadedLog ? `${baseLabel} · ${loadedLog.title}${loadedLog.archived_at ? " (보관본)" : ""}` : `${baseLabel} · CSV`;
 }
-
-function renderAccount(session) {
+function renderAccount() {
   const email = session?.user?.email || "";
   accountBadge.textContent = email ? "연결 완료" : "미연결";
   accountBadge.classList.toggle("connected", Boolean(email));
-  accountState.textContent = email || "웹앱 계정을 연결하면 저장 데이터를 불러올 수 있습니다.";
-  connectWebApp.disabled = Boolean(email);
-  logoutWebApp.disabled = !email;
+  accountState.textContent = email || "웹앱 계정을 연결하면 작업로그를 불러올 수 있습니다.";
+  connectWebApp.textContent = email ? "계정 다시 연결" : "웹앱 계정 연결";
+  logoutWebApp.disabled = !session;
 }
-
 function renderSource() {
-  sourceModeInputs.forEach((input) => {
-    input.checked = input.value === activeSource;
-  });
+  sourceModeInputs.forEach(input => { input.checked = input.value === activeSource; });
   webSourcePanel.classList.toggle("hidden", activeSource !== "web");
   csvSourcePanel.classList.toggle("hidden", activeSource !== "csv");
-  renderSubjectScope();
 }
+
+void init();
 
 function renderRecords(label) {
   recordCount.textContent = `${records.length}명`;
@@ -376,30 +327,6 @@ function readSupabaseSessionFromPage() {
   }
 }
 
-async function fetchWorkLogs() {
-  const saved = await chrome.storage.local.get([SESSION_KEY]);
-  const session = saved[SESSION_KEY];
-  if (!session?.access_token) {
-    throw new Error("먼저 웹앱 계정을 연결하세요.");
-  }
-
-  renderAccount(session);
-  const appOrigin = await getAppOrigin();
-  const response = await fetch(`${appOrigin}/api/extension/work-logs`, {
-    headers: {
-      Authorization: `Bearer ${session.access_token}`
-    }
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`서버 응답 ${response.status} ${errorText.slice(0, 160)}`);
-  }
-
-  const body = await response.json();
-  return body.logs || [];
-}
-
 function workLogToRecords(logCategory, data, scopeLabel = "") {
   const students = data.students || [];
   return students
@@ -414,13 +341,14 @@ function workLogToRecords(logCategory, data, scopeLabel = "") {
     .sort(compareRecordById);
 }
 
-async function runOnActiveTab(action, payload) {
+async function runOnActiveTab(action, payload, requestEpoch = epoch) {
   if (!records.length) {
     setStatus("먼저 데이터를 불러오세요.");
     return;
   }
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (requestEpoch !== epoch) return;
   if (!tab?.id) {
     setStatus("활성 탭을 찾지 못했습니다.");
     return;
@@ -466,6 +394,7 @@ function parseRecords(csvText) {
   const idIndex = findHeader(headers, ["번호", "no", "number", "id"]);
   const nameIndex = findHeader(headers, ["이름", "성명", "name"]);
   const textIndex = findHeader(headers, [
+    "작성 결과",
     "AI생성결과",
     "AI 생성 결과",
     "결과",
