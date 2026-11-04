@@ -61,6 +61,7 @@ const Wrapper = ({ children, isExpanded, mounted }: WrapperProps) => {
 };
 
 interface SubjectWorkspaceProps {
+    polishAction?: React.ReactNode;
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
     globalConfig: SubjectGlobalConfig;
@@ -150,6 +151,7 @@ const formatCriteriaFromLevels = (levels: CriteriaLevels) => (
 );
 
 export const SubjectWorkspace = ({
+    polishAction,
     students,
     setStudents,
     globalConfig,
@@ -371,6 +373,7 @@ export const SubjectWorkspace = ({
                 isExpanded ? "fixed inset-4 z-[9999] rounded-[2rem] border border-indigo-100 shadow-primary/20 !transform-none overflow-hidden flex flex-col pointer-events-auto cursor-default p-6 space-y-0 gap-4" : "rounded-[3rem] overflow-hidden"
             )}>
                 {/* Header Section */}
+                {isExpanded && <div className="flex justify-end">{polishAction}</div>}
                 {!isExpanded && (
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
                     <div className="flex items-center gap-4">
@@ -386,6 +389,7 @@ export const SubjectWorkspace = ({
                         </div>
                     </div>
                     <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 w-full xl:w-auto">
+                        <div className="col-span-2 sm:col-span-1">{polishAction}</div>
                         <Button
                             variant="outline"
                             className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 text-emerald-600 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"

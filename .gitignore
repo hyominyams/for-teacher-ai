@@ -13,6 +13,11 @@
 # testing
 /coverage
 
+# Local browser verification artifacts
+/.playwright-cli/
+/output/playwright/
+/output/class-polish/
+
 # next.js
 /.next/
 /out/

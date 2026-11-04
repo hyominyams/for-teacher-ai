@@ -7,6 +7,13 @@ export interface Student {
     isGenerating: boolean;
     isEditable: boolean;
     selected: boolean;
+    // Original text is persisted with work_logs for the last three polish actions.
+    polishHistory?: Array<{
+        batchId: string;
+        createdAt: string;
+        before: string;
+        after: string;
+    }>;
 
     // 창체활동 영역
     participatedEvents?: string[];

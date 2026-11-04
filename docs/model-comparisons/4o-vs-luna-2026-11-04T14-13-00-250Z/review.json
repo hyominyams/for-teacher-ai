@@ -1,0 +1,16 @@
+{
+  "scope": "Qualitative review by the assistant; not a blinded teacher evaluation or a universal model benchmark.",
+  "samples": {
+    "behavior-01": "Luna는 성실함·책임감·규칙·배려를 자연스럽게 연결했다. 4o는 두 회차 모두 금지된 “이러한”을 사용했고, 1회차에는 “존중하며 협력하며”라는 연결 반복이 보였다. 두 모델 모두 키워드 외 일반적인 성향을 덧붙여 실제 관찰과의 대조가 필요하다.",
+    "behavior-02": "Luna는 두 회차 모두 금지어 없이 기록 문체를 유지했다. 1회차 349자로 목표 300자를 약 16% 초과했고, 마지막 문장이 앞선 내용을 일부 반복했다. 4o도 읽히는 문장이지만 두 회차 모두 “이러한”을 사용했다.",
+    "behavior-03": "Luna는 “조심스러운 편이나”처럼 부정적 낙인을 완화하며 참여 의지를 서술했다. 4o는 “비록 소극적인” 또는 “소극적인 면”으로 더 직접적으로 표현했고, 두 회차 모두 “이러한”을 사용했다.",
+    "subject-01": "두 모델 모두 읽기·토론·쓰기와 개별 관찰 메모를 반영했다. 4o 1회차는 지침에서 직접 언급하지 말라고 한 역량명을 서술했다. Luna는 391자·369자로 목표 500자보다 22~26% 짧았다.",
+    "subject-02": "Luna는 소수 성취도 하를 “기본 개념을 익히는 과정”, “차이를 파악하는 과정”으로 표현하고 차분한 풀이 메모를 반영했다. 4o는 두 회차 모두 금지된 영역 직접 명시인 “자료와 가능성 영역에서는”을 사용했다. Luna 2회차는 355자로 짧았다.",
+    "subject-03": "Luna는 기상 요소·회로·에너지와 관찰 메모를 반영했다. 4o 1회차에는 금지된 “깊은”이 나왔다. Luna는 두 회차 모두 400자 안팎으로 비교적 간결했고, 4o는 408~497자였다.",
+    "creative-01": "기존 프롬프트의 Luna는 두 회차 모두 행사명을 다시 요구해 기록으로 사용할 수 없었다. 4o는 임원 기간과 네 행사를 반영했다. 입력 데이터를 마지막에 분리한 추가 실험에서는 Luna도 두 회차 모두 다섯 문장을 생성했다.",
+    "creative-02": "기존 Luna는 입력을 재요청했다. 4o는 모든 행사명을 포함하지만 2회차에 입력에 없는 “인근 공원”을 추가했다. 보강 실험의 Luna는 네 행사명을 모두 포함하고 불필요한 전체 총평 없이 기록을 생성했다. 두 모델의 문장에 추가된 활동 묘사는 관찰 사실과 구분해 검토해야 한다.",
+    "creative-03": "기존 Luna는 두 회차 모두 입력을 재요청했다. 4o는 임원 역할·기간과 네 행사를 반영했다. 추가 실험에서는 Luna도 동아리 부장과 기간을 앞에 배치하고 행사별 기록을 생성했다."
+  },
+  "recommendation": "Luna is a promising replacement for behavior and subject. Existing creative requests require explicit input separation; this follow-up passed 6/6 synthetic trials. Length control and truthful activity description still need application-level validation.",
+  "productionChanges": "No production prompts were changed during this comparison; the creative input change is experimental only."
+}

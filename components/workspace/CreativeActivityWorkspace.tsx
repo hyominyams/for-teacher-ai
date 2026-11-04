@@ -61,6 +61,7 @@ const Wrapper = ({ children, isExpanded, mounted }: WrapperProps) => {
 };
 
 interface CreativeActivityWorkspaceProps {
+    polishAction?: React.ReactNode;
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
     handleGenerate: (id: number) => void;
@@ -76,6 +77,7 @@ interface CreativeActivityWorkspaceProps {
 }
 
 export const CreativeActivityWorkspace = ({
+    polishAction,
     students,
     setStudents,
     handleGenerate,
@@ -142,6 +144,7 @@ export const CreativeActivityWorkspace = ({
                         </div>
                     </div>
                     <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 w-full xl:w-auto">
+                        <div className="col-span-2 sm:col-span-1">{polishAction}</div>
                         <AutoDistributeEvents students={students} setStudents={setStudents} />
                         <BulkEventAdd students={students} setStudents={setStudents} />
                         <Button
