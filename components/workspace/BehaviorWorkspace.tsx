@@ -31,6 +31,7 @@ import { Student } from "@/types";
 const KEYWORD_PREVIEW_LIMIT = 10;
 
 interface BehaviorWorkspaceProps {
+    polishAction?: React.ReactNode;
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
     isExpanded: boolean;
@@ -55,6 +56,7 @@ interface BehaviorWorkspaceProps {
 }
 
 export const BehaviorWorkspace = ({
+    polishAction,
     students,
     setStudents,
     isExpanded,
@@ -97,7 +99,7 @@ export const BehaviorWorkspace = ({
             "p-10 border-0 bg-white dark:bg-slate-900 shadow-2xl shadow-slate-200/50 dark:shadow-none space-y-8 overflow-hidden transition-all duration-500 dark:border dark:border-slate-800",
             isExpanded ? "fixed inset-4 z-[200] rounded-[3rem] border border-blue-100 dark:border-slate-700 shadow-primary/20" : "rounded-[3rem]"
         )}>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                     <div className="size-14 rounded-2xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                         <UserCheck className="size-7" />
@@ -110,7 +112,8 @@ export const BehaviorWorkspace = ({
                         <p className="text-sm text-slate-400 dark:text-slate-500 font-medium">키워드를 기반으로 생활기록부 작성을 시작하세요.</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                    {polishAction}
                     <Button
                         variant="outline"
                         onClick={handleAutoGenerateKeywords}

@@ -43,6 +43,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabase";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
+import { ClassPolishControl } from "@/components/workspace/ClassPolishControl";
+import type { PolishCategory } from "@/lib/class-polish";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
 import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
@@ -1558,6 +1560,17 @@ export default function DashboardPage() {
         setIsWorkLogLoading(false);
     };
 
+    const polishAction = ["behavior", "subject", "creative"].includes(activeTabId) ? (
+        <ClassPolishControl
+            key={`${userId}:${activeTabId}:${activeTabId === "subject" ? activeSubjectScopeKey : "default"}`}
+            students={students}
+            setStudents={setStudents}
+            category={activeTabId as PolishCategory}
+            disabled={isWorkLogLoading || isSubjectPlanImporting}
+            onPersist={nextStudents => saveWorkLog(true, nextStudents)}
+        />
+    ) : null;
+
     // --- UI Rendering ---
     return (
         <div className="min-h-screen bg-[#FAFBFF] dark:bg-background transition-colors duration-300">
@@ -1665,6 +1678,7 @@ export default function DashboardPage() {
                                             </Card>
 
                                             <BehaviorWorkspace
+                                                polishAction={polishAction}
                                                 students={students}
                                                 setStudents={setStudents}
                                                 isExpanded={isExpanded}
@@ -1779,6 +1793,7 @@ export default function DashboardPage() {
                                             </Card>
 
                                             <SubjectWorkspace
+                                                polishAction={polishAction}
                                                 students={students}
                                                 setStudents={setStudents}
                                                 globalConfig={subjectConfig}
@@ -1855,6 +1870,7 @@ export default function DashboardPage() {
                                             </Card>
 
                                             <CreativeActivityWorkspace
+                                                polishAction={polishAction}
                                                 students={students}
                                                 setStudents={setStudents}
                                                 handleGenerate={handleGenerate}
