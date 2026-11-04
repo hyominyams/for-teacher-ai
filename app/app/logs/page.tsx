@@ -1,432 +1,84 @@
-"use client"
+"use client";
+import React, { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Archive, Download, Edit3, Eye, FilePlus2, Loader2, LockKeyhole, Search, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabase";
+import { getSavedWorkLog, listSavedWorkLogs, workLogRequest } from "@/lib/work-log-client";
+import { normalizeWorkData, WORK_CATEGORIES, workLogCsv } from "@/lib/work-logs";
+import type { SavedWorkLog, WorkLogSummary } from "@/lib/work-logs";
+const dateLabel = (v: string) => new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(v));
 
-import React, { useEffect, useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import {
-    History,
-    Download,
-    Sparkles,
-    ChevronRight,
-    Calendar,
-    Users,
-    LayoutDashboard,
-    Search,
-    Filter,
-    ArrowLeft,
-    CheckCircle2,
-    Eye,
-    Brain,
-    Activity,
-    BookOpen,
-    Edit3,
-    FileText,
-    ExternalLink,
-    X
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Card } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { supabase } from "@/lib/supabase"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
-
-interface Student {
-    id: number;
-    name: string;
-    selectedKeywords: string[];
-    aiResult: string;
-}
-
-interface WorkLog {
-    id: string;
-    category: string;
-    scope_key?: string;
-    scope_label?: string | null;
-    data: {
-        students: Student[];
-        studentCount: number;
-        charLimit?: number;
-        charLimits?: Record<string, number>;
-    };
-    updated_at: string;
-}
-
-const CATEGORIES = [
-    { id: "behavior", name: "행동특성", icon: Activity, color: "blue" },
-    { id: "subject", name: "교과세특", icon: BookOpen, color: "purple" },
-    { id: "creative", name: "창체활동", icon: Brain, color: "emerald" },
-    { id: "docs", name: "문서작성", icon: Edit3, color: "orange" }
-];
-
-const getLogTitle = (log: WorkLog) => {
-    const categoryName = CATEGORIES.find(c => c.id === log.category)?.name || log.category;
-    if (log.category !== "subject") return categoryName;
-    return log.scope_label ? `${categoryName} · ${log.scope_label}` : categoryName;
-};
-
-export default function WorkLogPage() {
-    const [logs, setLogs] = useState<WorkLog[]>([]);
-    const [loading, setLoading] = useState(true);
+function WorkLogs() {
+    const router = useRouter(), params = useSearchParams();
     const [userId, setUserId] = useState<string | null>(null);
-    const [selectedLog, setSelectedLog] = useState<WorkLog | null>(null);
-    const [searchQuery, setSearchQuery] = useState("");
-    const router = useRouter();
-
+    const [logs, setLogs] = useState<WorkLogSummary[]>([]), [total, setTotal] = useState(0);
+    const [state, setState] = useState("editable"), [category, setCategory] = useState("all");
+    const [search, setSearch] = useState(""), [query, setQuery] = useState("");
+    const [page, setPage] = useState(0), [refresh, setRefresh] = useState(0);
+    const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
+    const [error, setError] = useState(""), [message, setMessage] = useState("");
+    const [selected, setSelected] = useState<SavedWorkLog | null>(null);
+    const [archiveTarget, setArchiveTarget] = useState<WorkLogSummary | null>(null);
+    const preview = useRef<HTMLDialogElement>(null), archiveDialog = useRef<HTMLDialogElement>(null);
+    const viewId = params.get("view");
     useEffect(() => {
-        let mounted = true;
-
-        const applySession = (session: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]) => {
-            if (!mounted) return;
-            if (session?.user) {
-                setUserId(session.user.id);
-            } else {
-                setUserId(null);
-                router.replace("/login");
-            }
-        };
-
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            applySession(session);
-        });
-
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            applySession(session);
-        });
-
-        return () => {
-            mounted = false;
-            subscription.unsubscribe();
-        };
+        const apply = (id?: string) => { if (id) setUserId(id); else { setUserId(null); router.replace("/login"); } };
+        void supabase.auth.getSession().then(({ data }) => apply(data.session?.user.id));
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => apply(session?.user.id));
+        return () => subscription.unsubscribe();
     }, [router]);
-
+    useEffect(() => { const timer = setTimeout(() => { setQuery(search.trim()); setPage(0); }, 250); return () => clearTimeout(timer); }, [search]);
     useEffect(() => {
         if (!userId) return;
-
-        const fetchLogs = async () => {
-            const { data, error } = await supabase
-                .from('work_logs')
-                .select('*')
-                .eq('user_id', userId)
-                .order('updated_at', { ascending: false });
-
-            if (data) {
-                setLogs(data);
-            }
-            setLoading(false);
-        };
-
-        fetchLogs();
-    }, [userId]);
-
-    const handleExport = (log: WorkLog) => {
+        const abort = new AbortController(); setLoading(true); setError(""); if (!page) setLogs([]);
+        listSavedWorkLogs(new URLSearchParams({ state, category, q: query, page: String(page) }), abort.signal).then(data => {
+            if (!abort.signal.aborted) { setLogs(prev => page ? [...prev, ...data.logs.filter(r => !prev.some(p => p.id === r.id))] : data.logs); setTotal(data.total); }
+        }).catch(e => { if (!abort.signal.aborted) setError(e.message); }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
+        return () => abort.abort();
+    }, [userId, state, category, query, page, refresh]);
+    useEffect(() => {
+        if (!userId || !viewId) return;
+        const abort = new AbortController();
+        getSavedWorkLog(viewId, abort.signal).then(log => { if (!abort.signal.aborted) { setSelected(log); if (log.archived_at) { setState("archived"); setPage(0); } } }).catch(e => { if (!abort.signal.aborted) setError(e.message); });
+        return () => abort.abort();
+    }, [userId, viewId]);
+    useEffect(() => { if (selected && !preview.current?.open) preview.current?.showModal(); if (!selected) preview.current?.close(); }, [selected]);
+    useEffect(() => { if (archiveTarget && !archiveDialog.current?.open) archiveDialog.current?.showModal(); if (!archiveTarget) archiveDialog.current?.close(); }, [archiveTarget]);
+    const openPreview = async (id: string) => { setBusy(true); setError(""); try { const log = await getSavedWorkLog(id); setSelected(log); if (log.archived_at) { setState("archived"); setPage(0); } } catch (e) { setError(e instanceof Error ? e.message : "저장본을 읽지 못했습니다."); } finally { setBusy(false); } };
+    const exportLog = async (id: string) => {
+        setBusy(true); setError("");
         try {
-            if (!log.data || !log.data.students) {
-                alert("기록된 데이터가 부적절합니다.");
-                return;
-            }
-
-            const headers = ["번호", "키워드", "AI생성결과"];
-            const rows = log.data.students.map(s => [
-                s.id,
-                `"${(s.selectedKeywords || []).join(", ")}"`,
-                `"${(s.aiResult || "").replace(/\n/g, " ").replace(/"/g, '""')}"`
-            ]);
-
-            const csvString = "\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n");
-            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-
-            const categoryName = getLogTitle(log);
-            const dateStr = new Date(log.updated_at).toISOString().slice(0, 10);
-
-            const link = document.createElement("a");
-            link.setAttribute("href", url);
-            link.setAttribute("download", `${categoryName}_기록_${dateStr}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        } catch (error) {
-            console.error("Export Error:", error);
-            alert("파일 생성 중 오류가 발생했습니다.");
-        }
+            const log = await getSavedWorkLog(id), data = normalizeWorkData(log.data, log.category);
+            const url = URL.createObjectURL(new Blob([workLogCsv({ ...log, data })], { type: "text/csv;charset=utf-8;" }));
+            const a = document.createElement("a"); a.href = url; a.download = `${log.title.replace(/[\\/:*?"<>|]/g, "-")}.csv`; a.click(); URL.revokeObjectURL(url);
+        } catch (e) { setError(e instanceof Error ? e.message : "내보내기에 실패했습니다."); } finally { setBusy(false); }
     };
-
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        return new Intl.DateTimeFormat('ko-KR', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        }).format(date);
+    const archive = async () => {
+        if (!archiveTarget || busy) return;
+        setBusy(true); setError("");
+        try {
+            await workLogRequest<SavedWorkLog>(`/api/work-logs/${archiveTarget.id}`, { method: "PATCH", body: JSON.stringify({ action: "archive", revision: archiveTarget.revision }) });
+            setMessage(`‘${archiveTarget.title}’을 보관함으로 옮겼습니다. 보관본은 수정할 수 없습니다.`); setPage(0); setRefresh(v => v + 1);
+        } catch (e) { setError(e instanceof Error ? e.message : "보관하지 못했습니다."); setRefresh(v => v + 1); }
+        finally { setArchiveTarget(null); setBusy(false); }
     };
-
-    return (
-        <main className="min-h-screen bg-[#F8FAFC] pt-32 pb-24 px-6 md:px-12 lg:px-24">
-            <div className="max-w-7xl mx-auto space-y-12">
-                {/* Header Section */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-3">
-                            <div className="size-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
-                                <History className="size-5" />
-                            </div>
-                            <span className="text-xs font-black text-primary uppercase tracking-[0.2em]">Work History</span>
-                        </div>
-                        <h1 className="text-5xl font-black text-slate-900 tracking-tight">작업 로그 <span className="text-primary">기록</span></h1>
-                        <p className="text-slate-500 font-medium text-lg leading-relaxed max-w-2xl">
-                            영역별로 저장된 마지막 작업 기록을 확인하고 <br className="hidden md:block" />
-                            필요한 데이터를 빠르게 내보내세요.
-                        </p>
-                    </div>
-
-                    <div className="flex items-center gap-4 bg-white p-2 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/50 w-full md:w-[400px]">
-                        <Search className="size-5 text-slate-400 ml-4" />
-                        <input
-                            type="text"
-                            placeholder="영역 또는 날짜 검색..."
-                            className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-600 placeholder:text-slate-300"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-                </div>
-
-                {loading ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                        {[1, 2, 3, 4].map(i => (
-                            <Card key={i} className="h-80 rounded-[3rem] bg-white border-slate-50 animate-pulse shadow-sm" />
-                        ))}
-                    </div>
-                ) : logs.length === 0 ? (
-                    <Card className="p-24 border-0 bg-white shadow-2xl shadow-slate-200/40 rounded-[4rem] flex flex-col items-center justify-center text-center space-y-8">
-                        <div className="size-32 rounded-[3.5rem] bg-slate-50 flex items-center justify-center relative group">
-                            <Sparkles className="size-14 text-slate-200 animate-pulse" />
-                        </div>
-                        <div className="space-y-3">
-                            <h3 className="text-3xl font-black text-slate-900">아직 저장된 기록이 없습니다.</h3>
-                            <p className="text-slate-400 font-medium text-lg">대시보드에서 생성을 시작하고 작업로그를 남겨보세요!</p>
-                        </div>
-                        <Button
-                            onClick={() => router.push("/app")}
-                            className="rounded-[2rem] bg-slate-900 text-white font-black h-16 px-12 text-lg hover:bg-slate-800 shadow-2xl shadow-slate-900/20"
-                        >
-                            대시보드로 이동하기
-                        </Button>
-                    </Card>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                        {logs
-                            .filter(log => {
-                                const categoryName = getLogTitle(log);
-                                return categoryName.includes(searchQuery) || log.updated_at.includes(searchQuery);
-                            })
-                            .map((log) => {
-                                const category = CATEGORIES.find(c => c.id === log.category) || CATEGORIES[0];
-                                const hasData = log.data.students.some(s => s.aiResult);
-
-                                return (
-                                    <motion.div
-                                        key={log.id}
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        whileHover={{ y: -8 }}
-                                        className="h-full"
-                                    >
-                                        <Card className="h-full rounded-[3rem] border-0 bg-white p-8 shadow-xl shadow-slate-200/40 flex flex-col justify-between group cursor-pointer hover:shadow-2xl hover:shadow-primary/5 transition-all duration-500 relative overflow-hidden">
-                                            {/* Category Indicator */}
-                                            <div className={cn(
-                                                "absolute top-0 left-0 w-2 h-full",
-                                                category.color === "blue" ? "bg-blue-500" :
-                                                    category.color === "purple" ? "bg-purple-500" :
-                                                        category.color === "emerald" ? "bg-emerald-500" : "bg-orange-500"
-                                            )} />
-
-                                            <div className="space-y-6">
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <div className={cn(
-                                                        "size-14 shrink-0 rounded-2xl flex items-center justify-center transition-all group-hover:scale-110",
-                                                        category.color === "blue" ? "bg-blue-50 text-blue-500" :
-                                                            category.color === "purple" ? "bg-purple-50 text-purple-500" :
-                                                                category.color === "emerald" ? "bg-emerald-50 text-emerald-500" : "bg-orange-50 text-orange-500"
-                                                    )}>
-                                                        <category.icon className="size-7" />
-                                                    </div>
-                                                    <div className="text-right min-w-0">
-                                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 whitespace-nowrap">Total Students</div>
-                                                        <div className="text-2xl font-black text-slate-900 tracking-tighter">{log.data.studentCount}</div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="space-y-2">
-                                                    <h3 className="text-2xl font-black text-slate-900 tracking-tight break-keep">{getLogTitle(log)}</h3>
-                                                    <div className="flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-wider min-w-0">
-                                                        <Calendar className="size-3.5 shrink-0" />
-                                                        <span className="truncate">{formatDate(log.updated_at)}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex flex-wrap gap-2">
-                                                    <div className="px-3 py-1.5 rounded-xl bg-slate-50 text-[10px] font-black text-slate-500 border border-slate-100 italic">
-                                                        {log.data.charLimits?.[log.category] ?? log.data.charLimit ?? '-'} chars limit
-                                                    </div>
-                                                    {hasData ? (
-                                                        <div className="px-3 py-1.5 rounded-xl bg-green-50 text-[10px] font-black text-green-600 border border-green-100 flex items-center gap-1.5">
-                                                            <CheckCircle2 className="size-3" /> Ready to Export
-                                                        </div>
-                                                    ) : (
-                                                        <div className="px-3 py-1.5 rounded-xl bg-slate-50 text-[10px] font-black text-slate-400 border border-slate-100">
-                                                            No Result
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            <div className="mt-8 grid grid-cols-2 gap-3">
-                                                <Button
-                                                    variant="outline"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setSelectedLog(log);
-                                                    }}
-                                                    className="rounded-2xl h-12 font-black text-xs border-slate-100 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all gap-2"
-                                                >
-                                                    <Eye className="size-4" /> 미리보기
-                                                </Button>
-                                                <Button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleExport(log);
-                                                    }}
-                                                    disabled={!hasData}
-                                                    className={cn(
-                                                        "rounded-2xl h-12 font-black text-xs gap-2 transition-all shadow-lg",
-                                                        category.color === "blue" ? "bg-blue-600 hover:bg-blue-700 shadow-blue-100" :
-                                                            category.color === "purple" ? "bg-purple-600 hover:bg-purple-700 shadow-purple-100" :
-                                                                category.color === "emerald" ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100" : "bg-orange-600 hover:bg-orange-700 shadow-orange-100"
-                                                    )}
-                                                >
-                                                    <Download className="size-4" /> 내보내기
-                                                </Button>
-                                            </div>
-                                        </Card>
-                                    </motion.div>
-                                );
-                            })}
-                    </div>
-                )}
-            </div>
-
-            {/* Preview Modal */}
-            <AnimatePresence>
-                {selectedLog && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 md:p-12">
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setSelectedLog(null)}
-                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl"
-                        />
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                            className="relative w-full max-w-6xl h-[85vh] bg-white rounded-[4rem] shadow-2xl overflow-hidden flex flex-col"
-                        >
-                            {/* Modal Header */}
-                            <div className="p-10 border-b border-slate-100 flex items-center justify-between">
-                                <div className="flex items-center gap-6">
-                                    <div className={cn(
-                                        "size-16 rounded-[1.8rem] flex items-center justify-center",
-                                        CATEGORIES.find(c => c.id === selectedLog.category)?.color === "blue" ? "bg-blue-50 text-blue-500" :
-                                            CATEGORIES.find(c => c.id === selectedLog.category)?.color === "purple" ? "bg-purple-50 text-purple-500" :
-                                                CATEGORIES.find(c => c.id === selectedLog.category)?.color === "emerald" ? "bg-emerald-50 text-emerald-500" : "bg-orange-50 text-orange-500"
-                                    )}>
-                                        {React.createElement(CATEGORIES.find(c => c.id === selectedLog.category)?.icon || History, { className: "size-8" })}
-                                    </div>
-                                    <div>
-                                        <h2 className="text-3xl font-black text-slate-900 tracking-tight">
-                                            {getLogTitle(selectedLog)} 기록
-                                        </h2>
-                                        <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-1">
-                                            {formatDate(selectedLog.updated_at)} • {selectedLog.data.studentCount} Students
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <Button
-                                        onClick={() => handleExport(selectedLog)}
-                                        className="rounded-2xl h-12 px-8 bg-slate-900 text-white font-black hover:bg-slate-800 gap-2 transition-all"
-                                    >
-                                        Excel로 전체 내보내기 <Download className="size-4" />
-                                    </Button>
-                                    <button
-                                        onClick={() => setSelectedLog(null)}
-                                        className="size-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all"
-                                    >
-                                        <X className="size-6" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Modal Content */}
-                            <div className="flex-1 overflow-y-auto p-12 custom-scrollbar space-y-8 bg-slate-50/30">
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {selectedLog.data.students.map((student) => (
-                                        <Card key={student.id} className="p-8 border-0 bg-white shadow-xl shadow-slate-200/30 rounded-[2.5rem] flex flex-col gap-6 relative group/card overflow-hidden">
-                                            <div className="flex items-center justify-between">
-                                                <div className="text-2xl font-black text-slate-400 tracking-tighter">#{student.id}</div>
-                                                <div className="text-xs font-black text-slate-300 uppercase tracking-[0.2em]">{student.name}</div>
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <div className="flex flex-wrap gap-2">
-                                                    {student.selectedKeywords.map((k, idx) => (
-                                                        <span key={idx} className="px-3 py-1 bg-slate-50 text-[10px] font-black text-slate-500 rounded-lg border border-slate-100">
-                                                            {k}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                                <div className="p-6 bg-slate-50 rounded-2xl text-[12px] font-medium leading-[1.8] text-slate-600 italic border border-slate-100/50">
-                                                    {student.aiResult || "생성된 결과가 없습니다."}
-                                                </div>
-                                            </div>
-                                        </Card>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="p-8 bg-white border-t border-slate-100 flex justify-center">
-                                <button
-                                    onClick={() => setSelectedLog(null)}
-                                    className="text-slate-400 font-black text-sm hover:text-slate-600 transition-all flex items-center gap-2"
-                                >
-                                    <ArrowLeft className="size-4" /> 기록 목록으로 돌아가기
-                                </button>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
-
-            <style jsx global>{`
-                .custom-scrollbar::-webkit-scrollbar {
-                    width: 6px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: #e2e8f0;
-                    border-radius: 10px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: #cbd5e1;
-                }
-            `}</style>
-        </main>
-    );
+    const closePreview = () => { setSelected(null); if (viewId) router.replace("/app/logs"); };
+    const dialogClass = "fixed inset-0 m-auto max-w-none overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50 dark:border-slate-700 dark:bg-slate-950 dark:text-white";
+    return <main className="min-h-screen bg-slate-50 px-4 pb-20 pt-28 md:px-10 dark:bg-slate-950"><div className="mx-auto max-w-7xl">
+        <header className="mb-7 flex flex-wrap items-end justify-between gap-5"><div><p className="mb-2 text-xs font-semibold text-blue-600 dark:text-blue-400">선생님의 작성 기록</p><h1 className="text-3xl font-bold tracking-tight">작업로그</h1><p className="mt-3 text-sm leading-6 text-slate-500">저장본을 다시 열어 수정하거나, 완성된 기록을 보관하세요.</p></div><Button onClick={() => router.push("/app")} className="h-11 gap-2 rounded-xl"><FilePlus2 className="size-4" />작성 화면으로</Button></header>
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900" aria-label="저장된 작업로그">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4 md:px-6 dark:border-slate-700"><div className="flex gap-2" aria-label="저장 상태">{[{ id: "editable", label: "수정 가능한 기록" }, { id: "archived", label: "보관함" }].map(tab => <button key={tab.id} aria-pressed={state === tab.id} onClick={() => { setState(tab.id); setPage(0); }} className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold ${state === tab.id ? "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200" : "text-slate-500"}`}>{tab.id === "archived" && <LockKeyhole className="size-4" />}{tab.label}</button>)}</div><span className="text-xs text-slate-500">{total}개 기록</span></div>
+            <div className="flex flex-wrap gap-3 border-b border-slate-100 p-4 md:px-6 dark:border-slate-800"><label className="flex min-w-48 flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 dark:border-slate-700"><Search className="size-4 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="작업 이름 검색" aria-label="작업 이름 검색" className="h-10 w-full bg-transparent text-sm outline-none" /></label><select aria-label="영역 필터" value={category} onChange={e => { setCategory(e.target.value); setPage(0); }} className="rounded-lg border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"><option value="all">모든 영역</option>{Object.entries(WORK_CATEGORIES).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
+            {error && <div role="alert" className="m-4 rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{error}<button onClick={() => setRefresh(v => v + 1)} className="ml-3 underline">다시 불러오기</button></div>}{message && <p role="status" className="m-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">{message}</p>}
+            {state === "archived" && <p className="mx-6 mt-4 text-xs leading-6 text-slate-500">보관본은 열람과 내보내기만 가능합니다. 제목 변경, AI 재생성, 내용 수정, 보관 해제와 삭제는 할 수 없습니다.</p>}
+            {loading && !page ? <div role="status" className="flex justify-center gap-3 p-16 text-sm text-slate-500"><Loader2 className="size-5 animate-spin" />기록을 불러오고 있습니다.</div> : !logs.length && !error ? <div className="px-6 py-20 text-center"><Archive className="mx-auto mb-4 size-9 text-slate-300" /><h2 className="font-semibold">{query || category !== "all" ? "조건에 맞는 기록이 없습니다." : state === "archived" ? "아직 보관한 기록이 없습니다." : "아직 저장된 작업로그가 없습니다."}</h2><p className="mt-3 text-sm text-slate-500">{state === "editable" ? "작성 화면에서 ‘작업로그에 저장’을 누르면 이곳에 쌓입니다." : "수정 가능한 기록에서 보관하기를 이용하세요."}</p></div> : <div className="divide-y divide-slate-100 dark:divide-slate-800">{logs.map(log => <article key={log.id} className="flex flex-wrap items-center gap-4 p-5 md:px-6"><div className="min-w-52 flex-1"><div className="mb-2 flex items-center gap-2 text-xs text-slate-500"><span>{WORK_CATEGORIES[log.category]}</span><span>·</span><span>{log.archived_at ? "보관본 · 읽기 전용" : "수정 가능"}</span></div><h2 className="break-words text-base font-semibold">{log.title}</h2><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500"><span>학생 {log.student_count}명 · 결과 {log.completed_count}명</span><time dateTime={log.updated_at}>{dateLabel(log.updated_at)}</time></div></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void openPreview(log.id)} disabled={busy} className="h-10 gap-1.5 rounded-lg"><Eye className="size-4" />보기</Button>{!log.archived_at && log.category !== "docs" && <Button variant="outline" onClick={() => router.push(`/app?log=${log.id}`)} disabled={busy} className="h-10 gap-1.5 rounded-lg text-blue-700 dark:text-blue-300"><Edit3 className="size-4" />수정하기</Button>}<Button variant="ghost" onClick={() => void exportLog(log.id)} disabled={busy || !log.completed_count} className="h-10 gap-1.5 rounded-lg"><Download className="size-4" />내보내기</Button>{!log.archived_at && <Button variant="ghost" onClick={() => setArchiveTarget(log)} disabled={busy} className="h-10 gap-1.5 rounded-lg text-slate-500"><Archive className="size-4" />보관하기</Button>}</div></article>)}</div>}
+            {logs.length < total && <div className="border-t border-slate-100 p-5 text-center"><Button variant="outline" onClick={() => setPage(v => v + 1)} disabled={loading}>{loading ? "불러오는 중" : "기록 더 보기"}</Button></div>}
+        </section></div>
+        <dialog ref={preview} onCancel={e => { e.preventDefault(); closePreview(); }} onClose={() => setSelected(null)} aria-labelledby="log-preview-title" className={`${dialogClass} max-h-[90dvh] w-[min(1000px,calc(100vw-24px))]`}>
+            {selected && <div className="flex max-h-[90dvh] flex-col"><header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800"><div className="min-w-0"><p className="mb-2 text-xs text-slate-500">{WORK_CATEGORIES[selected.category]} · {selected.archived_at ? "보관본 · 읽기 전용" : "수정 가능한 저장본"}</p><h2 id="log-preview-title" className="break-words text-xl font-bold">{selected.title}</h2><p className="mt-2 text-xs text-slate-500">{dateLabel(selected.updated_at)} · 학생 {selected.student_count}명</p></div><button aria-label="기록 보기 닫기" onClick={closePreview} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="size-5" /></button></header><div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">{(selected.data.students || []).map(student => <article key={student.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><div className="mb-3 flex flex-wrap gap-3"><h3 className="text-sm font-bold">{student.id}번 학생</h3><span className="text-xs text-slate-500">{(selected.category === "creative" ? student.participatedEvents || [] : student.selectedKeywords || []).join(" · ")}</span></div><p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700 dark:text-slate-200">{student.aiResult || "작성된 결과가 없습니다."}</p></article>)}</div><footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-slate-200 p-4 dark:border-slate-800"><Button variant="outline" onClick={() => void exportLog(selected.id)} disabled={busy || !selected.completed_count} className="gap-2 rounded-lg"><Download className="size-4" />CSV 내보내기</Button>{!selected.archived_at && selected.category !== "docs" && <Button onClick={() => router.push(`/app?log=${selected.id}`)} className="gap-2 rounded-lg"><Edit3 className="size-4" />수정하기</Button>}<Button variant="ghost" onClick={closePreview} className="rounded-lg">닫기</Button></footer></div>}
+        </dialog>
+        <dialog ref={archiveDialog} onCancel={e => { if (busy) e.preventDefault(); else setArchiveTarget(null); }} onClose={() => setArchiveTarget(null)} aria-labelledby="archive-title" className={`${dialogClass} w-[min(460px,calc(100vw-24px))]`}><div className="p-6"><LockKeyhole className="mb-4 size-7 text-slate-500" /><h2 id="archive-title" className="text-xl font-bold">이 기록을 보관하시겠습니까?</h2><p className="my-4 break-words text-sm font-semibold">{archiveTarget?.title}</p><p className="text-sm leading-7 text-slate-500">보관한 뒤에는 열람과 내보내기만 가능합니다. 내용 수정, 특정 학생 AI 재생성, 삭제, 보관 해제는 불가능합니다.</p><div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={() => setArchiveTarget(null)} disabled={busy} className="rounded-lg">취소</Button><Button onClick={() => void archive()} disabled={busy} className="gap-2 rounded-lg">{busy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}수정 불가 상태로 보관</Button></div></div></dialog>
+    </main>;
 }
+export default function Page() { return <Suspense fallback={<main className="p-12 pt-32">작업로그를 불러오는 중입니다.</main>}><WorkLogs /></Suspense>; }

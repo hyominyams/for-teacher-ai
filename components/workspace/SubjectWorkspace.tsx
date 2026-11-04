@@ -61,6 +61,7 @@ const Wrapper = ({ children, isExpanded, mounted }: WrapperProps) => {
 };
 
 interface SubjectWorkspaceProps {
+    savedEditor?: boolean;
     polishAction?: React.ReactNode;
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
@@ -151,6 +152,7 @@ const formatCriteriaFromLevels = (levels: CriteriaLevels) => (
 );
 
 export const SubjectWorkspace = ({
+    savedEditor = false,
     polishAction,
     students,
     setStudents,
@@ -448,7 +450,7 @@ export const SubjectWorkspace = ({
                     </div>
                 )}
 
-                {!isExpanded && (
+                {!isExpanded && !savedEditor && (
                 <div className="rounded-[2rem] bg-indigo-50/60 border border-indigo-100 p-5 space-y-4">
                     <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,680px)_1fr] gap-4 lg:items-end">
                         <div className="space-y-2 min-w-0 max-w-[680px]">

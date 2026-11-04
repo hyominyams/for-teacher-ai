@@ -1,3 +1,4 @@
+import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { OpenAI } from "openai";
 import { NextResponse } from "next/server";
 import fs from "fs";
@@ -22,7 +23,8 @@ export async function POST(req: Request) {
         }
         const openai = new OpenAI({ apiKey });
 
-        const { schoolLevel, grade, subjectName, area, criteria, competency } = await req.json();
+        const { schoolLevel, grade, subjectName, area, criteria, competency, workLogId } = await req.json();
+        try { await assertEditableWorkLog(req, workLogId); } catch (error) { return workLogFailure(error); }
 
         // 1. 성취기준 데이터 파일 읽기
         const dataPath = path.join(process.cwd(), "public", "all_subjects.md");
