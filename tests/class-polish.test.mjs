@@ -55,6 +55,20 @@ test("unknown IDs and duplicate candidate IDs cannot target students", () => {
     assert.equal(same.proposals.length, 1);
 });
 
+test("counts cannot be exchanged between two activities", () => {
+    const original = "과제를 2회 수행함. 발표에 3회 참여함. " + text;
+    const input = records.map(r => ({ ...r, text: original }));
+    const result = validatePolishCandidates(input, { changes: [{ ...candidate(), edits: [{ from: "과제를 2회", to: "과제를 3회" }, { from: "발표에 3회", to: "발표에 2회" }] }] });
+    assert.equal(result.proposals.length, 0);
+});
+
+test("protected event names cannot be exchanged between two edits", () => {
+    const original = "학급회의에서 의견을 나눔. 환경정화활동에서 구역을 정리함. " + text;
+    const input = records.map(r => ({ ...r, text: original, protectedTerms: ["학급회의", "환경정화활동"] }));
+    const result = validatePolishCandidates(input, { changes: [{ ...candidate(), edits: [{ from: "학급회의", to: "환경정화활동" }, { from: "환경정화활동", to: "학급회의" }] }] });
+    assert.equal(result.proposals.length, 0);
+});
+
 test("polishing cannot add line breaks or remove sentence endings", () => {
     for (const edit of [
         { from: "도움이 필요할 때 질문함.", to: "도움이 필요하면 질문함" },

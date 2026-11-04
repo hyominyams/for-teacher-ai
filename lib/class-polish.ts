@@ -73,7 +73,7 @@ export function editSegments(before: string, edits: PolishEdit[], showAfter = fa
 }
 
 const occurrences = (text: string, phrase: string) => text.split(phrase).length - 1;
-const numbers = (text: string) => (text.match(/\d+(?:[.,]\d+)*/g) || []).sort().join("|");
+const numbers = (text: string) => (text.match(/\d+(?:[.,]\d+)*/g) || []).join("|");
 
 /** Reject malformed, ambiguous, overlapping, or fact-bearing replacements. */
 export function validatePolishCandidates(records: PolishRecord[], value: unknown): { proposals: PolishProposal[]; discarded: number } {
@@ -87,6 +87,7 @@ export function validatePolishCandidates(records: PolishRecord[], value: unknown
             if (!record || !isObject(candidate) || duplicateIds.has(candidate.studentId) || typeof candidate.reason !== "string" || !candidate.reason.trim() || candidate.reason.length > 240 || !Array.isArray(candidate.edits) || !candidate.edits.length || candidate.edits.length > POLISH_LIMITS.edits) throw new Error("invalid");
             const edits = candidate.edits.map((edit): PolishEdit => {
                 if (!isObject(edit) || typeof edit.from !== "string" || typeof edit.to !== "string" || edit.from.trim().length < 4 || !edit.to.trim() || edit.from === edit.to || edit.from.length > POLISH_LIMITS.phrase || edit.to.length > POLISH_LIMITS.phrase || /[\r\n]/.test(edit.from + edit.to) || occurrences(record.text, edit.from) !== 1) throw new Error("invalid edit");
+                if (record.protectedTerms.some(term => occurrences(edit.from as string, term) !== occurrences(edit.to as string, term))) throw new Error("protected term moved between edits");
                 return { from: edit.from, to: edit.to };
             });
             if (edits.reduce((sum, e) => sum + e.from.length, 0) > record.text.length * 0.6) throw new Error("too much rewritten");
