@@ -21,6 +21,7 @@ import { supabase } from "@/lib/supabase";
 import { creditAIFetch } from "@/lib/credit-client";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
 import { WorkLogSessionBar } from "@/components/workspace/WorkLogSessionBar";
+import { WorkspaceButton, WorkspaceNumberSelect } from "@/components/workspace/WorkspaceControls";
 import { getSavedWorkLog, workLogRequest, WorkLogError } from "@/lib/work-log-client";
 import { defaultWorkTitle, isWorkCategory, normalizeWorkData, workFingerprint, workLogCsv, stableWorkJson } from "@/lib/work-logs";
 import type { SavedWorkLog } from "@/lib/work-logs";
@@ -1607,28 +1608,29 @@ function DashboardPage() {
                     {isWorkLogLoading && logError && <Button variant="outline" onClick={() => window.location.reload()} className="mb-4">다시 불러오기</Button>}
                     {staleEdit && <button className="mb-4 text-sm text-blue-700 underline" onClick={() => { const url = URL.createObjectURL(new Blob([workLogCsv({ category: activeTabId as "behavior", data: staleEdit.data })], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href = url; a.download = `${staleEdit.title}-임시수정.csv`; a.click(); URL.revokeObjectURL(url); }}>이전 임시 수정 내보내기</button>}
                     <fieldset disabled={isWorkLogLoading || logBusy || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} className="min-w-0 border-0 p-0 m-0">
-                        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900" aria-label="작성 설정과 가져오기">
-                            <label className="flex items-center gap-2 text-sm font-semibold">학생 수
-                                <select aria-label="학생 수" value={studentCount} disabled={isSubjectPlanImporting || students.some(s => s.isGenerating)} onChange={e => changeStudentCount(Number(e.target.value))} className="h-10 rounded-lg border border-slate-200 bg-transparent px-2 dark:border-slate-700">
-                                    {Array.from({ length: 40 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}명</option>)}
-                                </select>
-                            </label>
-                            <label className="flex items-center gap-2 text-sm font-semibold">목표 글자 수
-                                <select aria-label="목표 글자 수" value={charLimits[activeTabId]} onChange={e => setCharLimits(prev => ({ ...prev, [activeTabId]: Number(e.target.value) }))} className="h-10 rounded-lg border border-slate-200 bg-transparent px-2 dark:border-slate-700">
-                                    {[charLimits[activeTabId], 100, 200, 300, 400, 500, 600, 800, 1000].filter((value, i, all) => all.indexOf(value) === i).map(value => <option key={value} value={value}>{value}자</option>)}
-                                </select>
-                            </label>
-                            {students.some(student => student.selected) && <Button variant="ghost" onClick={handleResetSelection} className="rounded-xl">선택 해제</Button>}
-                            <input type="file" id="workspace-csv-upload" accept=".csv,text/csv" className="hidden" onChange={handleFileUpload} />
-                            <Button variant="outline" onClick={() => document.getElementById("workspace-csv-upload")?.click()} disabled={isSubjectPlanImporting} className="ml-auto gap-2 rounded-xl"><Upload className="size-4" />CSV 가져오기</Button>
-                            {activeTabId === "subject" && <>
-                                <input type="file" id="subject-plan-upload" accept=".hwp,.hwpx,.pdf" className="hidden" onChange={handleSubjectPlanUpload} />
-                                <Button onClick={() => document.getElementById("subject-plan-upload")?.click()} disabled={isSubjectPlanImporting} className="h-auto min-h-10 gap-2 whitespace-normal rounded-xl bg-indigo-600 px-4 py-2 text-left hover:bg-indigo-700">
-                                    {isSubjectPlanImporting ? <Loader2 className="size-4 shrink-0 animate-spin" /> : <FileSearch className="size-4 shrink-0" />}
-                                    {isSubjectPlanImporting ? "평가계획 분석 중…" : "평가계획 PDF·HWPX 가져오기"}
-                                </Button>
-                                {isSubjectPlanImporting && <Button variant="outline" onClick={cancelSubjectPlanImport}>분석 취소</Button>}
-                            </>}
+                        <div className="mb-4 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 lg:flex-row lg:items-end" aria-label="작성 설정과 가져오기">
+                            <div className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap">
+                                <WorkspaceNumberSelect id="workspace-student-count" label="학생 수" value={studentCount} unit="명"
+                                    options={Array.from({ length: 40 }, (_, i) => i + 1)} onValueChange={changeStudentCount}
+                                    disabled={isWorkLogLoading || logBusy || isSubjectPlanImporting || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} />
+                                <WorkspaceNumberSelect id="workspace-char-limit" label="목표 글자 수" value={charLimits[activeTabId]} unit="자"
+                                    options={[charLimits[activeTabId], 100, 200, 300, 400, 500, 600, 800, 1000].filter((value, i, all) => all.indexOf(value) === i).sort((a, b) => a - b)}
+                                    onValueChange={value => setCharLimits(prev => ({ ...prev, [activeTabId]: value }))}
+                                    disabled={isWorkLogLoading || logBusy || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} />
+                                {students.some(student => student.selected) && <WorkspaceButton variant="ghost" onClick={handleResetSelection} className="col-span-2 justify-self-start text-slate-500 dark:text-slate-400">선택 해제</WorkspaceButton>}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+                                <input type="file" id="workspace-csv-upload" accept=".csv,text/csv" className="hidden" onChange={handleFileUpload} />
+                                <WorkspaceButton variant="outline" onClick={() => document.getElementById("workspace-csv-upload")?.click()} disabled={isSubjectPlanImporting} className="border-slate-200 dark:border-slate-700"><Upload aria-hidden="true" />CSV 가져오기</WorkspaceButton>
+                                {activeTabId === "subject" && <>
+                                    <input type="file" id="subject-plan-upload" accept=".hwp,.hwpx,.pdf" className="hidden" onChange={handleSubjectPlanUpload} />
+                                    <WorkspaceButton onClick={() => document.getElementById("subject-plan-upload")?.click()} disabled={isSubjectPlanImporting} className="bg-indigo-600 hover:bg-indigo-700">
+                                        {isSubjectPlanImporting ? <Loader2 aria-hidden="true" className="animate-spin" /> : <FileSearch aria-hidden="true" />}
+                                        {isSubjectPlanImporting ? "평가계획 분석 중…" : <><span>평가계획 가져오기</span><span className="text-xs font-medium text-indigo-100">PDF · HWPX</span></>}
+                                    </WorkspaceButton>
+                                    {isSubjectPlanImporting && <WorkspaceButton variant="outline" onClick={cancelSubjectPlanImport}>분석 취소</WorkspaceButton>}
+                                </>}
+                            </div>
                         </div>
                         {activeTabId === "behavior" ? (
                             <BehaviorWorkspace

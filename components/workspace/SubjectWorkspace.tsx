@@ -442,10 +442,10 @@ export const SubjectWorkspace = ({
                         <div className="min-w-0 space-y-1.5">
                             <Label htmlFor="subject-school-level" className="text-xs font-semibold text-slate-500 dark:text-slate-400">학교급</Label>
                             <Select value={globalConfig.schoolLevel ? normalizeSchoolLevel(globalConfig.schoolLevel) : ""} onValueChange={(val) => setGlobalConfig(p => ({ ...p, schoolLevel: val }))}>
-                                <SelectTrigger id="subject-school-level" className="w-full data-[size=default]:h-11 h-11 rounded-xl bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700 font-bold focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
+                                <SelectTrigger id="subject-school-level" className="w-full data-[size=default]:h-11 h-11 rounded-[12px] bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700 font-semibold tabular-nums focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
                                     <SelectValue placeholder="학교급 선택" />
                                 </SelectTrigger>
-                                <SelectContent className="rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl">
+                                <SelectContent className="rounded-[12px] border-slate-100 dark:border-slate-700 shadow-lg">
                                     <SelectItem value="elementary" className="font-bold">초등학교</SelectItem>
                                     <SelectItem value="middle" className="font-bold">중학교</SelectItem>
                                     <SelectItem value="high" className="font-bold">고등학교</SelectItem>
@@ -455,10 +455,10 @@ export const SubjectWorkspace = ({
                         <div className="min-w-0 space-y-1.5">
                             <Label htmlFor="subject-grade" className="text-xs font-semibold text-slate-500 dark:text-slate-400">학년</Label>
                             <Select value={globalConfig.grade} onValueChange={(val) => setGlobalConfig(p => ({ ...p, grade: val }))}>
-                                <SelectTrigger id="subject-grade" className="w-full data-[size=default]:h-11 h-11 rounded-xl bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700 font-bold focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
+                                <SelectTrigger id="subject-grade" className="w-full data-[size=default]:h-11 h-11 rounded-[12px] bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700 font-semibold tabular-nums focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
                                     <SelectValue placeholder="학년 선택" />
                                 </SelectTrigger>
-                                <SelectContent className="rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl">
+                                <SelectContent className="rounded-[12px] border-slate-100 dark:border-slate-700 shadow-lg">
                                     {[1, 2, 3, 4, 5, 6].map(g => (
                                         <SelectItem key={g} value={g.toString()} className="font-bold">{g}학년</SelectItem>
                                     ))}
@@ -472,7 +472,7 @@ export const SubjectWorkspace = ({
                                 value={globalConfig.subjectName}
                                 onChange={(e) => setGlobalConfig(p => ({ ...p, subjectName: e.target.value }))}
                                 placeholder="예: 국어, 수학, 통합교과(봄) 등"
-                                className="h-11 rounded-xl bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700 font-bold px-5 focus:border-indigo-300 shadow-inner border-none text-slate-700 dark:text-slate-200 placeholder:text-slate-300 placeholder:font-medium"
+                                className="h-11 rounded-[12px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-semibold px-3 text-slate-700 dark:text-slate-200 focus:border-indigo-300 shadow-none placeholder:text-slate-400 placeholder:font-medium"
                             />
                         </div>
                         {!savedEditor && (
@@ -809,10 +809,10 @@ export const SubjectWorkspace = ({
                                                                 handleLevelChange(student.id, a.id, level);
                                                             }}
                                                         >
-                                                            <SelectTrigger className="h-11 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-none shadow-inner font-bold text-xs">
+                                                            <SelectTrigger className="h-11 rounded-[12px] bg-slate-50 dark:bg-slate-800/70 border-none shadow-inner font-bold text-xs">
                                                                 <SelectValue placeholder="평가" />
                                                             </SelectTrigger>
-                                                            <SelectContent className="z-[10080] rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl">
+                                                            <SelectContent className="z-[10080] rounded-[12px] border-slate-100 dark:border-slate-700 shadow-lg">
                                                                 <SelectItem value="none" className="font-bold text-slate-300">미선택</SelectItem>
                                                                 <SelectItem value="상" className="font-bold text-indigo-600 dark:text-indigo-300">상</SelectItem>
                                                                 <SelectItem value="중" className="font-bold text-slate-600 dark:text-slate-300">중</SelectItem>
