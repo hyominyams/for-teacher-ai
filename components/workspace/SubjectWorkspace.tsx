@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import {
     Zap,
+    BookOpen,
     Maximize2,
     Minimize2,
     X,
@@ -382,7 +383,7 @@ export const SubjectWorkspace = ({
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
                     <div className="flex items-center gap-4">
                         <div className="size-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center">
-                            <Zap className="size-5" />
+                            <BookOpen aria-hidden="true" className="size-5" />
                         </div>
                         <div>
                             <h4 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-3">
