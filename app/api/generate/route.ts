@@ -1,6 +1,6 @@
+import { callBudget, completionText, creditFailure, creditUser, CreditError, readAIJson, runCreditJob } from "@/lib/server/credits";
 import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { OpenAI } from "openai";
-import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
@@ -32,26 +32,14 @@ const getCriteriaForLevel = (criteria: string, level: string) => {
     return match?.[1]?.trim() || criteria;
 };
 
-const getErrorMessage = (error: unknown) => {
-    if (error instanceof Error) {
-        return error.message;
-    }
-
-    return "AI 생성 중 오류가 발생했습니다.";
-};
+export const maxDuration = 90;
 
 export async function POST(req: Request) {
     try {
-        const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) {
-            return NextResponse.json(
-                { error: "OPENAI_API_KEY가 설정되어 있지 않습니다. .env.local에 키를 추가하고 dev 서버를 재시작해주세요." },
-                { status: 503 }
-            );
-        }
-        const openai = new OpenAI({ apiKey });
-
-        const { keywords, targetChars, category = "behavior", role, term, subjectMeta, workLogId } = await req.json();
+        const user = await creditUser(req);
+        const raw = await readAIJson(req);
+        const { keywords, targetChars, category = "behavior", role, term, subjectMeta, workLogId } = raw;
+        if (!["behavior", "subject", "creative"].includes(category) || !Array.isArray(keywords) || keywords.some(k => typeof k !== "string") || !Number.isInteger(targetChars) || targetChars < 1 || targetChars > 10000) throw new CreditError("INVALID_INPUT", "영역·키워드·목표 글자 수를 확인해주세요.");
         try { await assertEditableWorkLog(req, workLogId); } catch (error) { return workLogFailure(error); }
 
         // prompts 폴더에서 카테고리에 맞는 파일 읽기
@@ -107,21 +95,18 @@ ${assessmentsText || "선택된 평가 항목이 없습니다."}
             }
         }
 
-        const response = await openai.chat.completions.create({
+        const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
             model: "gpt-6-luna",
             reasoning_effort: "none",
+            max_completion_tokens: Math.min(32768, Math.max(1024, targetChars * 4 + 256)),
             messages: [
                 { role: "system", content: "당신은 학생 생활기록부를 전문적으로 작성하는 대한민국 교사입니다. 학생의 이름이나 번호를 절대 언급하지 마세요." },
                 { role: "user", content: prompt }
             ],
             temperature: 0.7,
-        });
-
-        const result = response.choices[0].message.content?.trim();
-
-        return NextResponse.json({ result });
+        };
+        return await runCreditJob(req, user, "generate", raw, [callBudget(params)], async complete => ({ result: completionText(await complete(params)) }));
     } catch (error: unknown) {
-        console.error("AI Generation Error:", error);
-        return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+        return creditFailure(error);
     }
 }

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Check, Loader2, PenLine, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
+import { creditAIFetch } from "@/lib/credit-client";
 import { applyPolishProposals, editSegments, latestPolishBatch, parsePolishRequest, toPolishRecords, undoPolishBatch, validatePolishCandidates } from "@/lib/class-polish";
 import type { PolishCategory, PolishProposal } from "@/lib/class-polish";
 import type { Student } from "@/types";
@@ -79,7 +80,7 @@ export function ClassPolishControl({ students, setStudents, category, workLogId,
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) throw new Error("다시 로그인한 뒤 이용해주세요.");
             if (abort.signal.aborted) return;
-            const response = await fetch("/api/polish", {
+            const response = await creditAIFetch("/api/polish", {
                 method: "POST", signal: abort.signal,
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
                 body: JSON.stringify({ ...input, workLogId }),
