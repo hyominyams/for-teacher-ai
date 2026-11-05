@@ -2,30 +2,12 @@
 
 import React, { useState, useEffect, useRef, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
 import {
     UserCheck,
     BookOpen,
     Zap,
     FileText,
-    ArrowRight,
-    Layout,
-    Activity,
-    ChevronRight,
-    ChevronDown,
-    Clock,
-    Target,
-    Brain,
-    Plus,
-    RotateCcw,
-    Edit3,
-    CheckCircle2,
-    Settings2,
-    Search,
     X,
-    Maximize2,
-    Minimize2,
-    Download,
     Upload,
     FileSearch,
     Loader2,
@@ -33,14 +15,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { importWorkspaceCsv } from "@/lib/workspace-csv";
 import { supabase } from "@/lib/supabase";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
 import { WorkLogSessionBar } from "@/components/workspace/WorkLogSessionBar";
@@ -53,8 +29,6 @@ import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
 import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
 import { PlaceholderWorkspace } from "@/components/workspace/PlaceholderWorkspace";
-import { NavbarMain } from "@/components/layout/NavbarMain";
-import { Footer } from "@/components/layout/Footer";
 import { studentKeywordPool, defaultKeywords } from "@/lib/constants/behavior-keywords";
 
 type WorkLogData = {
@@ -266,6 +240,8 @@ function DashboardPage() {
     const [logError, setLogError] = useState("");
     const [loadedSavedId, setLoadedSavedId] = useState("");
     const saveQueue = useRef(Promise.resolve(true));
+    const draftSaveQueue = useRef(Promise.resolve());
+    const [draftSaveStatus, setDraftSaveStatus] = useState("");
     const lastSnapshot = useRef<{ fingerprint: string; id: string } | null>(null);
     const snapshotAttempt = useRef<{ fingerprint: string; id: string } | null>(null);
     const [staleEdit, setStaleEdit] = useState<{ title: string; data: WorkLogData } | null>(null);
@@ -274,10 +250,8 @@ function DashboardPage() {
         workEpoch.current++; setWorkspaceVersion(v => v + 1);
     };
     useEffect(() => () => aiAbort.current.abort(), []);
-    const [userName, setUserName] = useState<string | null>(null);
     const [activeTabId, setActiveTabId] = useState(isWorkCategory(params.get("category")) ? params.get("category")! : features[0].id);
     const [studentCounts, setStudentCounts] = useState<Record<string, number>>(DEFAULT_STUDENT_COUNTS);
-    const [loadedStudentCountCategories, setLoadedStudentCountCategories] = useState<Record<string, boolean>>({});
     const [charLimits, setCharLimits] = useState<Record<string, number>>({
         behavior: 300,
         subject: 300,
@@ -292,13 +266,23 @@ function DashboardPage() {
     const [subjectConfig, setSubjectConfig] = useState<SubjectGlobalConfig>(getDefaultSubjectConfig);
     const [subjectLogs, setSubjectLogs] = useState<SubjectWorkLogSummary[]>([]);
     const [activeSubjectScopeKey, setActiveSubjectScopeKey] = useState(DEFAULT_SCOPE_KEY);
-    const [isWorkLogLoading, setIsWorkLogLoading] = useState(false);
+    const restoredSubjectUser = useRef<string | null>(null);
+    const hydratedSubjectScope = useRef<{ userId: string; scopeKey: string; epoch: number } | null>(null);
+    const [isWorkLogLoading, setIsWorkLogLoading] = useState(true);
     const [isSubjectPlanImporting, setIsSubjectPlanImporting] = useState(false);
     const [subjectPlanImport, setSubjectPlanImport] = useState<SubjectPlanImportResult | null>(null);
     const [selectedSubjectPlanIndexes, setSelectedSubjectPlanIndexes] = useState<number[]>([]);
+    const planDialogRef = useRef<HTMLDivElement>(null);
+    const hasSubjectPlanImport = Boolean(subjectPlanImport);
+    useEffect(() => {
+        if (!hasSubjectPlanImport) return;
+        const previous = document.activeElement as HTMLElement | null;
+        const overflow = document.body.style.overflow; document.body.style.overflow = "hidden";
+        planDialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+        return () => { document.body.style.overflow = overflow; previous?.focus(); };
+    }, [hasSubjectPlanImport]);
     const studentCount = studentCounts[activeTabId] || DEFAULT_STUDENT_COUNTS[activeTabId] || 7;
     const setStudentCount = (count: number) => {
-        setLoadedStudentCountCategories(prev => ({ ...prev, [activeTabId]: true }));
         setStudentCounts(prev => ({ ...prev, [activeTabId]: count }));
     };
 
@@ -403,22 +387,11 @@ function DashboardPage() {
             if (!mounted) return;
             if (!session?.user) {
                 setUserId(null);
-                setUserName(null);
                 router.replace("/login");
                 return;
             }
 
             setUserId(session.user.id);
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('full_name')
-                .eq('id', session.user.id)
-                .single();
-
-            if (!mounted) return;
-            if (profile) {
-                setUserName(profile.full_name);
-            }
         };
 
         supabase.auth.getSession().then(({ data: { session } }) => {
@@ -441,16 +414,23 @@ function DashboardPage() {
 
         const supportedTabs = ['behavior', 'creative', 'subject'];
         if (!supportedTabs.includes(activeTabId)) {
-            return;
+            setIsWorkLogLoading(false); return;
         }
 
         let cancelled = false;
+        const previousEpoch = workEpoch.current, hydrated = hydratedSubjectScope.current;
+        hydratedSubjectScope.current = null;
         invalidateWorkspace();
+        if (activeTabId === "subject" && hydrated?.userId === userId && hydrated.scopeKey === activeSubjectScopeKey && hydrated.epoch === previousEpoch) {
+            try { localStorage.setItem(`ftai:active-subject:${userId}`, activeSubjectScopeKey); } catch { /* Optional preference. */ }
+            setIsWorkLogLoading(false);
+            return;
+        }
         const loadWorkLog = async () => {
             setIsWorkLogLoading(true);
 
             if (activeTabId === 'subject') {
-                const { data } = await supabase
+                const { data, error } = await supabase
                     .from('work_logs')
                     .select('scope_key, scope_label, data, created_at, updated_at')
                     .eq('user_id', userId)
@@ -458,6 +438,7 @@ function DashboardPage() {
                     .order('created_at', { ascending: false });
 
                 if (cancelled) return;
+                if (error) { setLogError("작업을 불러오지 못했습니다. 기존 저장 데이터를 보호하기 위해 편집을 멈췄습니다. 다시 불러오기를 눌러주세요."); return; }
                 const logs = data || [];
                 let nextSubjectLogs: SubjectWorkLogSummary[] = logs.map(log => ({
                     scopeKey: log.scope_key || DEFAULT_SCOPE_KEY,
@@ -467,8 +448,20 @@ function DashboardPage() {
                 }));
                 nextSubjectLogs = applySubjectOrder(nextSubjectLogs, readSubjectOrder(userId));
 
-                let selectedLog = logs.find(log => (log.scope_key || DEFAULT_SCOPE_KEY) === activeSubjectScopeKey);
-                if (!selectedLog && activeSubjectScopeKey !== DEFAULT_SCOPE_KEY) {
+                let preferredScopeKey = activeSubjectScopeKey;
+                if (restoredSubjectUser.current !== userId) {
+                    restoredSubjectUser.current = userId;
+                    preferredScopeKey = DEFAULT_SCOPE_KEY;
+                    try {
+                        const remembered = localStorage.getItem(`ftai:active-subject:${userId}`);
+                        if (remembered && logs.some(log => log.scope_key === remembered)) preferredScopeKey = remembered;
+                    } catch { /* Browser storage can be unavailable. */ }
+                }
+                let selectedLog = logs.find(log => (log.scope_key || DEFAULT_SCOPE_KEY) === preferredScopeKey);
+                if (preferredScopeKey === DEFAULT_SCOPE_KEY && !selectedLog?.data?.globalConfig?.subjectName && !selectedLog?.data?.globalConfig?.assessments?.length) {
+                    selectedLog = nextSubjectLogs.map(summary => logs.find(log => log.scope_key === summary.scopeKey)).find(log => log?.data?.globalConfig?.subjectName || log?.data?.globalConfig?.assessments?.length) || selectedLog;
+                }
+                if (!selectedLog && preferredScopeKey !== DEFAULT_SCOPE_KEY) {
                     nextSubjectLogs = [
                         { scopeKey: activeSubjectScopeKey, scopeLabel: "새 교과" },
                         ...nextSubjectLogs
@@ -483,23 +476,20 @@ function DashboardPage() {
                         ? logs.find(log => (log.scope_key || DEFAULT_SCOPE_KEY) === firstOrderedScopeKey)
                         : undefined
                 );
-                const subjectCountAlreadyLoaded = Boolean(loadedStudentCountCategories.subject);
-                const nextSubjectCount = subjectCountAlreadyLoaded
-                    ? studentCounts.subject
-                    : (selectedLog?.data?.studentCount || logs[0]?.data?.studentCount || DEFAULT_STUDENT_COUNTS.subject);
-                if (!subjectCountAlreadyLoaded) {
-                    setLoadedStudentCountCategories(prev => ({ ...prev, subject: true }));
-                    setStudentCounts(prev => ({ ...prev, subject: nextSubjectCount }));
-                }
+                // Each subject owns its student records and count. Opening or resizing one
+                // subject must never truncate students in a different saved draft.
+                const nextSubjectCount = selectedLog?.data?.studentCount || studentCounts.subject || DEFAULT_STUDENT_COUNTS.subject;
+                setStudentCounts(prev => ({ ...prev, subject: nextSubjectCount }));
 
                 if (selectedLog?.data) {
                     const nextScopeKey = selectedLog.scope_key || DEFAULT_SCOPE_KEY;
+                    try { localStorage.setItem(`ftai:active-subject:${userId}`, nextScopeKey); } catch { /* Optional preference. */ }
                     if (nextScopeKey !== activeSubjectScopeKey) {
                         setActiveSubjectScopeKey(nextScopeKey);
                     }
-                    setStudents(resizeStudentsToCount(selectedLog.data.students, nextSubjectCount));
+                    setStudents(resizeStudentsToCount(selectedLog.data.students, nextSubjectCount).map(student => ({ ...student, isGenerating: false })));
                     if (selectedLog.data.charLimits) {
-                        setCharLimits(selectedLog.data.charLimits);
+                        setCharLimits(prev => ({ ...prev, ...selectedLog.data.charLimits }));
                     } else if (selectedLog.data.charLimit) {
                         setCharLimits(prev => ({ ...prev, subject: selectedLog.data.charLimit }));
                     }
@@ -513,7 +503,7 @@ function DashboardPage() {
                 return;
             }
 
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('work_logs')
                 .select('data')
                 .eq('user_id', userId)
@@ -522,19 +512,18 @@ function DashboardPage() {
                 .maybeSingle();
 
             if (cancelled) return;
+                if (error) { setLogError("작업을 불러오지 못했습니다. 기존 저장 데이터를 보호하기 위해 편집을 멈췄습니다. 다시 불러오기를 눌러주세요."); return; }
             if (data?.data) {
                 const nextCount = data.data.studentCount || studentCounts[activeTabId] || DEFAULT_STUDENT_COUNTS[activeTabId] || 7;
-                setLoadedStudentCountCategories(prev => ({ ...prev, [activeTabId]: true }));
                 setStudentCounts(prev => ({ ...prev, [activeTabId]: nextCount }));
-                setStudents(resizeStudentsToCount(data.data.students, nextCount));
+                setStudents(resizeStudentsToCount(data.data.students, nextCount).map(student => ({ ...student, isGenerating: false })));
                 if (data.data.charLimits) {
-                    setCharLimits(data.data.charLimits);
+                    setCharLimits(prev => ({ ...prev, ...data.data.charLimits }));
                 } else if (data.data.charLimit) {
                     setCharLimits(prev => ({ ...prev, [activeTabId]: data.data.charLimit }));
                 }
             } else {
                 const nextCount = studentCounts[activeTabId] || DEFAULT_STUDENT_COUNTS[activeTabId] || 7;
-                setLoadedStudentCountCategories(prev => ({ ...prev, [activeTabId]: true }));
                 setStudents(createInitialStudents(nextCount));
             }
 
@@ -550,7 +539,7 @@ function DashboardPage() {
         if (!userId) return false;
 
         const workLogData: WorkLogData = {
-            students: overrideStudents || students,
+            students: (overrideStudents || students).map(student => ({ ...student, isGenerating: false })),
             studentCount,
             charLimits
         };
@@ -563,7 +552,8 @@ function DashboardPage() {
         const scopeLabel = activeTabId === 'subject' ? getSubjectScopeLabel(overrideConfig || subjectConfig) : null;
         const savedAt = new Date().toISOString();
 
-        const { error } = await supabase
+        const epoch = workEpoch.current;
+        const task = draftSaveQueue.current.catch(() => {}).then(() => supabase
             .from('work_logs')
             .upsert({
                 user_id: userId,
@@ -575,7 +565,10 @@ function DashboardPage() {
                 updated_at: savedAt
             }, {
                 onConflict: 'user_id, category, scope_key'
-            });
+            }));
+        draftSaveQueue.current = task.then(() => {}, () => {});
+        const { error } = await task;
+        if (epoch === workEpoch.current) setDraftSaveStatus(error ? "임시 저장 실패 · 작업로그에 저장을 다시 눌러주세요" : "임시 작업 저장 완료");
 
         if (error) {
             // Silence common auth/session errors
@@ -617,25 +610,30 @@ function DashboardPage() {
         return hasSavedLog || hasSubjectConfig || hasStudentSubjectData;
     };
 
+    const runSubjectAction = async (action: (epoch: number) => Promise<void>) => {
+        if (!userId || logBusy || isWorkLogLoading) return;
+        setLogBusy(true); setLogError("");
+        try { await action(workEpoch.current); }
+        catch { setIsWorkLogLoading(false); setLogError("교과 작업을 처리하지 못했습니다. 현재 입력은 유지됩니다. 다시 시도해주세요."); }
+        finally { setLogBusy(false); }
+    };
     const handleSubjectScopeChange = async (scopeKey: string) => {
         if (scopeKey === activeSubjectScopeKey) return;
-
-        const saved = hasCurrentSubjectWork() ? await saveWorkLog(true) : true;
-        if (!saved && !confirm("현재 교과 저장에 실패했습니다. 저장하지 않고 이동하시겠습니까?")) {
-            return;
-        }
-
-        setActiveSubjectScopeKey(scopeKey);
+        await runSubjectAction(async (epoch) => {
+            if (hasCurrentSubjectWork() && !await saveWorkLog(true)) { setLogError("현재 교과를 저장하지 못했습니다. 저장한 뒤 다시 이동해주세요."); return; }
+            if (epoch !== workEpoch.current) return;
+            setIsWorkLogLoading(true);
+            setActiveSubjectScopeKey(scopeKey);
+        });
     };
 
-    const handleCreateSubjectLog = async () => {
+    const handleCreateSubjectLog = async () => runSubjectAction(async (epoch) => {
         if (!userId) return;
 
         const currentSaved = hasCurrentSubjectWork() ? await saveWorkLog(true) : true;
-        if (!currentSaved && !confirm("현재 교과 저장에 실패했습니다. 새 교과로 이동하시겠습니까?")) {
-            return;
-        }
+        if (!currentSaved) { setLogError("현재 교과를 저장하지 못했습니다. 저장한 뒤 새 교과를 만들어주세요."); return; }
 
+        if (epoch !== workEpoch.current) return;
         const scopeKey = crypto.randomUUID();
         const defaultConfig = getDefaultSubjectConfig();
         const initialStudents = createInitialStudents(studentCount);
@@ -662,6 +660,7 @@ function DashboardPage() {
                 onConflict: 'user_id, category, scope_key'
             });
 
+        if (epoch !== workEpoch.current) return;
         if (error) {
             console.error("Create Subject Error:", error);
             alert("새 교과 저장본을 만들지 못했습니다.");
@@ -669,6 +668,7 @@ function DashboardPage() {
             return;
         }
 
+        hydratedSubjectScope.current = { userId, scopeKey, epoch: workEpoch.current };
         setActiveSubjectScopeKey(scopeKey);
         setSubjectConfig(defaultConfig);
         setStudents(initialStudents);
@@ -678,15 +678,16 @@ function DashboardPage() {
             return nextLogs;
         });
         setIsWorkLogLoading(false);
-    };
+    });
 
-    const handleDeleteSubjectLog = async (scopeKey: string) => {
+    const handleDeleteSubjectLog = async (scopeKey: string) => runSubjectAction(async (epoch) => {
         if (!userId) return;
         const target = subjectLogs.find(log => log.scopeKey === scopeKey);
         const label = target?.scopeLabel || "교과";
-        if (!confirm(`${label} 저장본을 삭제하시겠습니까?`)) return;
+        if (!confirm(`${label} 교과의 임시 작업을 삭제할까요? 작업로그에 저장한 기록은 유지됩니다.`)) return;
 
         setIsWorkLogLoading(true);
+        await draftSaveQueue.current;
         const { error } = await supabase
             .from('work_logs')
             .delete()
@@ -694,6 +695,7 @@ function DashboardPage() {
             .eq('category', 'subject')
             .eq('scope_key', scopeKey);
 
+        if (epoch !== workEpoch.current) return;
         if (error) {
             console.error("Delete Error:", error);
             alert("삭제 중 오류가 발생했습니다.");
@@ -709,7 +711,9 @@ function DashboardPage() {
             const nextLog = remainingLogs[0];
             if (nextLog) {
                 setActiveSubjectScopeKey(nextLog.scopeKey);
+                return; // The loader unlocks the new subject after its data arrives.
             } else {
+                hydratedSubjectScope.current = activeSubjectScopeKey !== DEFAULT_SCOPE_KEY ? { userId, scopeKey: DEFAULT_SCOPE_KEY, epoch: workEpoch.current } : null;
                 setActiveSubjectScopeKey(DEFAULT_SCOPE_KEY);
                 setSubjectConfig(getDefaultSubjectConfig());
                 setStudents(createInitialStudents(studentCount));
@@ -717,20 +721,22 @@ function DashboardPage() {
         }
 
         setIsWorkLogLoading(false);
-    };
+    });
 
-    const handleDeleteAllSubjectLogs = async () => {
+    const handleDeleteAllSubjectLogs = async () => runSubjectAction(async (epoch) => {
         if (!userId) return;
         if (!subjectLogs.length && !hasCurrentSubjectWork()) return;
-        if (!confirm("모든 교과 저장본을 삭제하시겠습니까?")) return;
+        if (!confirm("모든 교과의 임시 작업을 삭제할까요? 작업로그에 저장한 기록은 유지됩니다.")) return;
 
         setIsWorkLogLoading(true);
+        await draftSaveQueue.current;
         const { error } = await supabase
             .from('work_logs')
             .delete()
             .eq('user_id', userId)
             .eq('category', 'subject');
 
+        if (epoch !== workEpoch.current) return;
         if (error) {
             console.error("Delete All Subjects Error:", error);
             alert("전체삭제 중 오류가 발생했습니다.");
@@ -740,11 +746,12 @@ function DashboardPage() {
 
         setSubjectLogs([]);
         writeSubjectOrder(userId, []);
+        hydratedSubjectScope.current = activeSubjectScopeKey !== DEFAULT_SCOPE_KEY ? { userId, scopeKey: DEFAULT_SCOPE_KEY, epoch: workEpoch.current } : null;
         setActiveSubjectScopeKey(DEFAULT_SCOPE_KEY);
         setSubjectConfig(getDefaultSubjectConfig());
         setStudents(createInitialStudents(studentCount));
         setIsWorkLogLoading(false);
-    };
+    });
 
     const handleReorderSubjectLogs = (fromScopeKey: string, toScopeKey: string) => {
         if (!userId || fromScopeKey === toScopeKey) return;
@@ -762,65 +769,14 @@ function DashboardPage() {
         });
     };
 
-    const syncSubjectStudentCountAcrossLogs = async (count: number, currentStudents: Student[]) => {
-        if (!userId || activeTabId !== 'subject') return;
-
-        const { data, error } = await supabase
-            .from('work_logs')
-            .select('scope_key, scope_label, data, schema_version')
-            .eq('user_id', userId)
-            .eq('category', 'subject');
-
-        if (error || !data?.length) {
-            if (error) console.error("Subject Count Sync Error:", error);
-            return;
-        }
-
-        const syncedAt = new Date().toISOString();
-        const updates = data.map(log => {
-            const scopeKey = log.scope_key || DEFAULT_SCOPE_KEY;
-            const baseData = log.data || {};
-            const baseStudents = scopeKey === activeSubjectScopeKey
-                ? currentStudents
-                : baseData.students;
-
-            return {
-                user_id: userId,
-                category: 'subject',
-                scope_key: scopeKey,
-                scope_label: log.scope_label,
-                data: {
-                    ...baseData,
-                    students: resizeStudentsToCount(baseStudents, count),
-                    studentCount: count,
-                    charLimits: baseData.charLimits || charLimits,
-                    globalConfig: scopeKey === activeSubjectScopeKey
-                        ? subjectConfig
-                        : baseData.globalConfig
-                },
-                schema_version: log.schema_version || 2,
-                updated_at: syncedAt
-            };
-        });
-
-        const { error: upsertError } = await supabase
-            .from('work_logs')
-            .upsert(updates, {
-                onConflict: 'user_id, category, scope_key'
-            });
-
-        if (upsertError) {
-            console.error("Subject Count Sync Save Error:", upsertError);
-        }
-    };
-
     // Auto-save logic (Debounced)
     useEffect(() => {
         if (!userId || !students.length || isWorkLogLoading || isSavedEditor || logBusy) return;
 
+        setDraftSaveStatus("임시 작업 저장 중…");
         const timer = setTimeout(() => {
-            saveWorkLog(true);
-        }, 3000); // 3초 뒤 자동 저장
+            void saveWorkLog(true);
+        }, 1000);
 
         return () => clearTimeout(timer);
     }, [students, studentCount, charLimits, userId, activeTabId, activeSubjectScopeKey, subjectConfig, isWorkLogLoading, isSavedEditor, logBusy]);
@@ -832,35 +788,21 @@ function DashboardPage() {
         });
     }, [studentCount]);
 
-    useEffect(() => {
-        if (
-            !userId ||
-            isSavedEditor ||
-            activeTabId !== 'subject' ||
-            isWorkLogLoading ||
-            !subjectLogs.length ||
-            students.length !== studentCount
-        ) {
-            return;
-        }
 
-        const timer = setTimeout(() => {
-            syncSubjectStudentCountAcrossLogs(studentCount, students);
-        }, 1200);
-
-        return () => clearTimeout(timer);
-    }, [userId, activeTabId, studentCount, students.length, isWorkLogLoading, subjectLogs.length, isSavedEditor]);
 
     const activeTab = features.find(f => f.id === activeTabId) || features[0];
-    const FeatureIcon = activeTab.icon;
 
     // AI 생성
     const handleGenerate = async (id: number) => {
+        setLogError("");
         const epoch = workEpoch.current;
         const updateStudents: typeof setStudents = action => { if (epoch === workEpoch.current) setStudents(action); };
 
         const student = students.find(s => s.id === id);
         if (!student) return;
+        if (activeTabId === "subject" && !student.subjectData?.assessments.some(a => a.level && subjectConfig.assessments.some(g => g.id === a.assessmentId))) {
+            setLogError("학생의 평가 수준을 하나 이상 선택해주세요."); return;
+        }
 
         updateStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: true } : s));
 
@@ -955,24 +897,25 @@ function DashboardPage() {
                     isEditable: true
                 } : s));
             } else {
-                throw new Error(data.error || "Failed to generate");
+                throw new Error(data.error || "작성 결과를 받지 못했습니다. 다시 생성해주세요.");
             }
         } catch (error) {
-            if (epoch !== workEpoch.current) return;
+            if (epoch !== workEpoch.current || (error instanceof Error && error.name === "AbortError")) return;
             console.error(error);
             updateStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: false } : s));
-            alert("생성 중 오류가 발생했습니다.");
+            setLogError(`${id}번 학생 생성에 실패했습니다. 기존 문장은 유지됩니다. ${error instanceof Error ? error.message : "다시 시도해주세요."}`);
         }
     };
 
     const handleAllGenerate = async () => {
+        setLogError("");
         const epoch = workEpoch.current;
         const updateStudents: typeof setStudents = action => { if (epoch === workEpoch.current) setStudents(action); };
 
         const targetStudents = students.filter(s => {
             if (activeTabId === 'behavior') return s.selectedKeywords.length >= 2;
             if (activeTabId === 'creative') return (s.participatedEvents?.length || 0) > 0;
-            if (activeTabId === 'subject') return (s.subjectData?.assessments?.length || 0) > 0;
+            if (activeTabId === 'subject') return Boolean(s.subjectData?.assessments?.some(a => a.level && subjectConfig.assessments.some(g => g.id === a.assessmentId)));
             return false;
         });
 
@@ -1084,12 +1027,13 @@ function DashboardPage() {
             }
         }));
 
-        if (epoch === workEpoch.current && firstError && results.every(ok => !ok)) {
-            alert(`전체 생성 실패: ${firstError}`);
+        if (epoch === workEpoch.current && firstError) {
+            setLogError(`${results.filter(ok => !ok).length}명 생성에 실패했습니다. 기존 문장은 유지됩니다. ${firstError}`);
         }
     };
 
     const handleSelectedGenerate = async () => {
+        setLogError("");
         const epoch = workEpoch.current;
         const updateStudents: typeof setStudents = action => { if (epoch === workEpoch.current) setStudents(action); };
 
@@ -1097,7 +1041,7 @@ function DashboardPage() {
             if (!s.selected) return false;
             if (activeTabId === 'behavior') return s.selectedKeywords.length >= 2;
             if (activeTabId === 'creative') return (s.participatedEvents?.length || 0) > 0;
-            if (activeTabId === 'subject') return (s.subjectData?.assessments?.length || 0) > 0;
+            if (activeTabId === 'subject') return Boolean(s.subjectData?.assessments?.some(a => a.level && subjectConfig.assessments.some(g => g.id === a.assessmentId)));
             return false;
         });
 
@@ -1190,8 +1134,9 @@ function DashboardPage() {
                     isEditable: !!data.result
                 } : s));
             } catch (error) {
-            if (epoch !== workEpoch.current) return;
+            if (epoch !== workEpoch.current || (error instanceof Error && error.name === "AbortError")) return;
                 console.error(`Error generating for student ${student.id}:`, error);
+                setLogError(`${student.id}번 학생 생성에 실패했습니다. 기존 문장은 유지됩니다.`);
                 updateStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
             }
         });
@@ -1300,193 +1245,33 @@ function DashboardPage() {
         setIsAddingKeyword(null);
     };
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const text = event.target?.result as string;
-            if (!text) return;
-
-            const lines = text.split(/\r?\n/).filter(line => line.trim());
-            if (lines.length <= 1) return;
-
-            // Robust CSV parser that handles quotes correctly
-            const parseCSVLine = (line: string) => {
-                const result = [];
-                let cur = "";
-                let inQuotes = false;
-                for (let i = 0; i < line.length; i++) {
-                    const char = line[i];
-                    if (char === '"') inQuotes = !inQuotes;
-                    else if (char === ',' && !inQuotes) {
-                        result.push(cur.trim());
-                        cur = "";
-                    } else cur += char;
-                }
-                result.push(cur.trim());
-                // Remove outer quotes and handle double quotes
-                return result.map(v => v.replace(/^"(.*)"$/, '$1').replace(/""/g, '"'));
-            };
-
-            const header = parseCSVLine(lines[0]);
-            const noIdx = header.indexOf("번호");
-            const resultIdx = header.findIndex(h => ["AI생성결과", "AI생성", "AI 결과", "AI결과"].includes(h.replace(/\s+/g, ""))) !== -1
-                ? header.findIndex(h => ["AI생성결과", "AI생성", "AI 결과", "AI결과"].includes(h.replace(/\s+/g, "")))
-                : header.indexOf("AI생성결과");
-
-            if (activeTabId === 'behavior') {
-                const keywordIdx = header.indexOf("키워드");
-                if (noIdx === -1 || keywordIdx === -1) {
-                    alert("행발 CSV 헤더에는 '번호'와 '키워드' 컬럼이 포함되어야 합니다.");
-                    return;
-                }
-
-                const newStudents: Student[] = lines.slice(1).map((line, idx): Student | null => {
-                    const cols = parseCSVLine(line);
-                    if (cols.length < 2) return null;
-                    const studentNo = parseInt(cols[noIdx]) || (idx + 1);
-                    const rawKeywords = cols[keywordIdx] || "";
-                    const cleanKeywords: string[] = rawKeywords.replace(/[{}[\]]/g, "").split(/[|,]/).map(k => k.trim()).filter(k => k);
-                    const resultText = cols[resultIdx] || "";
-
-                    return {
-                        id: studentNo,
-                        name: `${studentNo}번 학생`,
-                        customKeywords: cleanKeywords.filter(k => !defaultKeywords.includes(k)),
-                        selectedKeywords: cleanKeywords,
-                        participatedEvents: [] as string[],
-                        officerRole: "임원아님",
-                        officerPeriod: "",
-                        aiResult: resultText,
-                        isGenerating: false,
-                        isEditable: !!resultText,
-                        selected: false
-                    };
-                }).filter((s): s is Student => s !== null);
-
-                setStudents(newStudents);
-                setStudentCount(newStudents.length);
-            } else if (activeTabId === 'creative') {
-                const eventIdx = header.findIndex(h => h.replace(/\s+/g, "") === "참여행사");
-                if (noIdx === -1 || eventIdx === -1) {
-                    alert("창체 CSV 헤더에는 '번호'와 '참여 행사' 컬럼이 포함되어야 합니다.");
-                    return;
-                }
-
-                const roleIdx = header.indexOf("임원여부");
-                const periodIdx = header.indexOf("임원기간");
-
-                const newStudents: Student[] = lines.slice(1).map((line, idx): Student | null => {
-                    const cols = parseCSVLine(line);
-                    if (cols.length < 2) return null;
-                    const studentNo = parseInt(cols[noIdx]) || (idx + 1);
-                    const rawEvents = cols[eventIdx] || "";
-                    const cleanEvents: string[] = rawEvents.replace(/[{}[\]()]/g, "").split(/[|,]/).map(k => k.trim()).filter(k => k);
-                    const resultText = cols[resultIdx] || "";
-
-                    return {
-                        id: studentNo,
-                        name: `${studentNo}번 학생`,
-                        customKeywords: [] as string[],
-                        selectedKeywords: [] as string[],
-                        participatedEvents: cleanEvents,
-                        officerRole: roleIdx !== -1 ? (cols[roleIdx] || "임원아님") : "임원아님",
-                        officerPeriod: periodIdx !== -1 ? (cols[periodIdx] || "") : "",
-                        aiResult: resultText,
-                        isGenerating: false,
-                        isEditable: !!resultText,
-                        selected: false
-                    };
-                }).filter((s): s is Student => s !== null);
-
-                setStudents(newStudents);
-                setStudentCount(newStudents.length);
-            } else if (activeTabId === 'subject') {
-                // 1. 평가 컬럼(평가1, 평가2...) 찾기
-                const assessmentCols = header.filter(h => h.startsWith("평가") && !isNaN(Number(h.replace("평가", ""))));
-                const noteIdx = header.findIndex(h => ["개별특이사항", "특이사항"].includes(h.replace(/\s+/g, "")));
-
-                if (noIdx === -1 || assessmentCols.length === 0) {
-                    alert("교과 CSV 헤더에는 '번호'와 최소 하나 이상의 '평가N' 컬럼이 포함되어야 합니다.");
-                    return;
-                }
-
-                // 2. config 업데이트 (평가 영역 자동 생성)
-                // 기존 config의 assessment 정보를 유지하려면 별도 로직이 필요하나,
-                // 여기서는 "양식 업로드" 개념이므로 파일 내용에 맞춰 재구성합니다.
-                // 단, 평가 문구(성취기준 등)는 CSV에 없으므로 빈 값으로 생성됩니다.
-                const newAssessments = assessmentCols.map((col) => ({
-                    id: crypto.randomUUID(),
-                    area: col, // 임시로 컬럼명을 영역명으로
-                    standard: "",
-                    criteria: "",
-                    criteriaLevels: {},
-                    competency: ""
-                }));
-
-                setSubjectConfig(prev => ({
-                    ...prev,
-                    assessments: newAssessments
-                }));
-
-                // 3. 학생 데이터 파싱
-                const newStudents: Student[] = lines.slice(1).map((line, idx): Student | null => {
-                    const cols = parseCSVLine(line);
-                    if (cols.length < 2) return null;
-
-                    const studentNo = parseInt(cols[noIdx]) || (idx + 1);
-                    const resultText = cols[resultIdx] || "";
-                    const noteText = noteIdx !== -1 ? (cols[noteIdx] || "") : "";
-
-                    // 평가 점수 매핑
-                    const studentAssessments = newAssessments.map(ass => {
-                        const colIdx = header.indexOf(ass.area);
-                        let val = colIdx !== -1 ? (cols[colIdx] || "") : "";
-                        // 유효성 검사 (상/중/하 아니면 빈값 처리)
-                        if (!["상", "중", "하"].includes(val)) val = "";
-                        return {
-                            assessmentId: ass.id,
-                            level: val as "상" | "중" | "하" | ""
-                        };
-                    });
-
-                    return {
-                        id: studentNo,
-                        name: `${studentNo}번 학생`,
-                        customKeywords: [],
-                        selectedKeywords: [],
-                        participatedEvents: [],
-                        officerRole: "임원아님",
-                        officerPeriod: "",
-                        aiResult: resultText,
-                        isGenerating: false,
-                        isEditable: !!resultText,
-                        selected: false,
-                        subjectData: {
-                            assessments: studentAssessments,
-                            individualNote: noteText
-                        }
-                    };
-                }).filter((s): s is Student => s !== null);
-
-                setStudents(newStudents);
-                setStudentCount(newStudents.length);
-            }
-        };
-        reader.readAsText(file);
-        // Reset input value to allow re-uploading the same file
-        e.target.value = "";
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]; e.target.value = "";
+        if (!file || !["behavior", "subject", "creative"].includes(activeTabId)) return;
+        if (isWorkLogLoading || logBusy || isSubjectPlanImporting) { setLogError("작업을 불러오는 중입니다. 완료 후 파일을 다시 선택해주세요."); return; }
+        const epoch = workEpoch.current;
+        setLogError(""); setLogBusy(true);
+        try {
+            if (file.size > 5 * 1024 * 1024) throw new Error("CSV는 5MB 이하 파일을 선택해주세요.");
+            const imported = importWorkspaceCsv(await file.text(), activeTabId as "behavior" | "subject" | "creative", students, subjectConfig, defaultKeywords);
+            if (epoch !== workEpoch.current) return;
+            if (!confirm(`${imported.importedCount}명의 데이터를 가져옵니다. 같은 번호 학생의 CSV에 있는 항목을 갱신하고, 파일에 없는 학생과 기존 평가기준은 유지합니다. 적용할까요?`)) return;
+            setStudents(imported.students); setStudentCount(imported.students.length);
+            if (activeTabId === "subject") setSubjectConfig(imported.globalConfig);
+            setLogMessage(`${imported.importedCount}명의 CSV 입력을 적용했습니다.`);
+        } catch (error) { if (epoch === workEpoch.current) setLogError(error instanceof Error ? error.message : "CSV를 읽지 못했습니다."); }
+        finally { setLogBusy(false); }
     };
 
     const handleSubjectPlanUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (isSavedEditor) { setLogError("평가계획의 여러 교과 가져오기는 새 작업 화면에서 이용해주세요."); return; }
         const file = e.target.files?.[0];
         e.target.value = "";
         if (!file) return;
+        if (isWorkLogLoading || logBusy || isSubjectPlanImporting) { setLogError("진행 중인 작업이 끝난 뒤 파일을 다시 선택해주세요."); return; }
 
+        const epoch = workEpoch.current, signal = aiAbort.current.signal;
         setIsSubjectPlanImporting(true);
+        setLogError("");
         setSubjectPlanImport(null);
         setSelectedSubjectPlanIndexes([]);
 
@@ -1497,11 +1282,15 @@ function DashboardPage() {
             formData.append("grade", subjectConfig.grade);
             formData.append("subjectName", subjectConfig.subjectName);
 
+            const { data: { session } } = await supabase.auth.getSession();
+            if (requestedLogId) formData.append("workLogId", requestedLogId);
+            if (epoch !== workEpoch.current) return;
             const response = await fetch("/api/subject-plan/parse", {
-                method: "POST",
-                body: formData,
+                method: "POST", body: formData, signal,
+                headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
             });
             const data = await response.json();
+            if (epoch !== workEpoch.current || signal.aborted) return;
 
             if (!response.ok) {
                 throw new Error(data.error || "평가계획을 읽을 수 없습니다.");
@@ -1516,16 +1305,17 @@ function DashboardPage() {
                 subjects,
                 warnings: Array.isArray(data.warnings) ? data.warnings : [],
             });
-            setSelectedSubjectPlanIndexes(subjects.map((_, index) => index));
+            setSelectedSubjectPlanIndexes(isSavedEditor ? [0] : subjects.map((_, index) => index));
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : "평가계획을 읽을 수 없습니다.";
-            alert(message);
+            if (epoch === workEpoch.current && !signal.aborted) setLogError(message);
         } finally {
-            setIsSubjectPlanImporting(false);
+            if (epoch === workEpoch.current) setIsSubjectPlanImporting(false);
         }
     };
 
     const toggleSubjectPlanSelection = (index: number) => {
+        if (isSavedEditor) { setSelectedSubjectPlanIndexes([index]); return; }
         setSelectedSubjectPlanIndexes(prev => (
             prev.includes(index)
                 ? prev.filter(item => item !== index)
@@ -1620,10 +1410,18 @@ function DashboardPage() {
             return;
         }
 
-        const currentSaved = hasCurrentSubjectWork() ? await saveWorkLog(true) : true;
-        if (!currentSaved && !confirm("현재 교과 저장에 실패했습니다. 평가계획을 적용하시겠습니까?")) {
+        if (isSavedEditor) {
+            if (selectedSubjectPlanIndexes.length !== 1) { setLogError("수정 중인 저장본에 적용할 교과를 하나만 선택해주세요."); return; }
+            const subject = subjectPlanImport.subjects[selectedSubjectPlanIndexes[0]];
+            if (!confirm("현재 저장본의 교과·평가기준을 교체하고 학생별 상·중·하 입력을 비웁니다. 작성 문장과 개별 메모는 유지됩니다. 적용할까요?")) return;
+            setSubjectConfig({ schoolLevel: subject.schoolLevel || subjectConfig.schoolLevel, grade: subject.grade || subjectConfig.grade, subjectName: subject.subjectName, assessments: subject.assessments.map(a => ({ ...a, id: crypto.randomUUID(), criteriaLevels: getCriteriaLevels(a) })) });
+            setStudents(prev => prev.map(student => ({ ...student, subjectData: { ...student.subjectData, assessments: [], individualNote: student.subjectData?.individualNote || "" } })));
+            setSubjectPlanImport(null); setSelectedSubjectPlanIndexes([]);
+            setLogMessage("평가계획을 적용했습니다. 학생별 평가를 입력한 뒤 수정 내용 저장을 눌러주세요.");
             return;
         }
+        const currentSaved = hasCurrentSubjectWork() ? await saveWorkLog(true) : true;
+        if (!currentSaved) { setLogError("현재 교과를 저장하지 못했습니다. 입력을 유지했습니다. 저장을 다시 시도한 뒤 가져오기를 적용해주세요."); return; }
 
         const savedAt = new Date().toISOString();
         const selectedSubjects = selectedSubjectPlanIndexes
@@ -1698,6 +1496,7 @@ function DashboardPage() {
             writeSubjectOrder(userId, nextLogs);
             return nextLogs;
         });
+        hydratedSubjectScope.current = { userId, scopeKey: firstLog.scopeKey, epoch: workEpoch.current };
         setActiveSubjectScopeKey(firstLog.scopeKey);
         setSubjectConfig(firstLog.globalConfig);
         setStudents(firstLog.students);
@@ -1710,10 +1509,16 @@ function DashboardPage() {
         if (editorDirty && !confirm("저장하지 않은 수정 내용이 있습니다. 나가시겠습니까?")) return false;
         invalidateWorkspace(); setStudents([]); setIsWorkLogLoading(true); router.push(url); return true;
     };
-    const changeCategory = (id: string) => {
-        if (logBusy || isWorkLogLoading) return;
+    const changeCategory = async (id: string) => {
+        if (logBusy || isWorkLogLoading || isSubjectPlanImporting || id === activeTabId) return;
         if (isSavedEditor) { if (leaveEditor(`/app?category=${id}`)) setActiveTabId(id); }
-        else { invalidateWorkspace(); setActiveTabId(id); }
+        else {
+            setLogBusy(true);
+            try {
+                if (["behavior", "creative", "subject"].includes(activeTabId) && !await saveWorkLog(true)) { setLogError("현재 입력을 저장하지 못했습니다. 다시 저장한 뒤 영역을 이동해주세요."); return; }
+                setLogError(""); setLogMessage(""); invalidateWorkspace(); setActiveTabId(id); router.replace(`/app?category=${id}`, { scroll: false });
+            } finally { setLogBusy(false); }
+        }
     };
     const clearCurrentDraft = async () => {
         invalidateWorkspace(); lastSnapshot.current = null;
@@ -1746,6 +1551,16 @@ function DashboardPage() {
         } catch (e) { setLogError(e instanceof Error ? e.message : "저장하지 못했습니다. 입력은 유지됩니다."); }
         finally { setLogBusy(false); }
     };
+    const changeStudentCount = (count: number) => {
+        if (count < studentCount && students.slice(count).some(student => student.aiResult || student.selectedKeywords.length || student.participatedEvents?.length || student.officerPeriod || (student.officerRole && student.officerRole !== "임원아님") || student.subjectData?.individualNote || student.subjectData?.assessments.some(a => a.level))) {
+            if (!confirm(`${count + 1}번 이후 학생의 현재 입력이 삭제됩니다. 작업로그에 저장한 기록은 유지됩니다. 학생 수를 줄일까요?`)) return;
+        }
+        setStudentCount(count);
+    };
+    const cancelSubjectPlanImport = () => {
+        invalidateWorkspace(); setIsSubjectPlanImporting(false); setSubjectPlanImport(null); setSelectedSubjectPlanIndexes([]);
+        setLogMessage("평가계획 분석을 취소했습니다. 기존 입력은 유지됩니다.");
+    };
     const startEmptyDraft = async () => {
         if (!confirm("현재 입력을 비우고 새 작업을 시작하시겠습니까? 작업로그에 저장된 기록은 바뀌지 않습니다.")) return;
         setLogBusy(true); setLogError(""); setLogMessage("");
@@ -1768,396 +1583,143 @@ function DashboardPage() {
     return (
         <div className="min-h-screen bg-[#FAFBFF] dark:bg-background transition-colors duration-300">
 
-            <main className="pt-32 pb-24">
-                <div className="container mx-auto px-6 max-w-[1440px]">
-                    <WorkLogSessionBar saving={logBusy} editing={isSavedEditor} title={logTitle} onTitle={setLogTitle}
-                        busy={logBusy || isWorkLogLoading || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} dirty={editorDirty}
-                        message={logMessage} error={logError} onSave={() => void saveSnapshot(false)} onSaveNew={() => void saveSnapshot(true)}
-                        onReset={() => void startEmptyDraft()} onBack={() => leaveEditor("/app/logs")} />
-                    {staleEdit && <button className="mb-5 text-sm text-blue-700 underline" onClick={() => { const url = URL.createObjectURL(new Blob([workLogCsv({ category: activeTabId as "behavior", data: staleEdit.data })], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href = url; a.download = `${staleEdit.title}-임시수정.csv`; a.click(); URL.revokeObjectURL(url); }}>이전 임시 수정 내보내기</button>}
-                    {/* Header Section */}
-                    <header className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5 dark:border-slate-700">
-                        <h2 className="text-2xl font-bold tracking-tight">{activeTab.title}</h2>
-                        <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900">
-                            학생 수 <input aria-label="학생 수" type="range" min="1" max="40" value={studentCount} disabled={logBusy || isWorkLogLoading} onChange={e => setStudentCount(Number(e.target.value))} className="w-28 accent-blue-600" /><span className="w-8 font-bold">{studentCount}명</span>
-                        </label>
+            <main className="pt-24 pb-12">
+                <div className="mx-auto w-full max-w-[1800px] px-4 sm:px-6 lg:px-8">
+                    <nav aria-label="작성 영역" className="mb-5 flex flex-wrap gap-2 border-b border-slate-200 pb-4 dark:border-slate-700">
+                        {features.filter(feature => feature.id !== "docs").map(feature => <button key={feature.id}
+                            onClick={() => changeCategory(feature.id)} aria-current={activeTabId === feature.id ? "page" : undefined}
+                            disabled={logBusy || isWorkLogLoading || isSubjectPlanImporting}
+                            className={cn("flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-colors disabled:opacity-50", activeTabId === feature.id ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200" : "bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300")}>
+                            <feature.icon className="size-4 shrink-0" />{feature.title}
+                        </button>)}
+                        <a href="/app/logs" className="ml-auto flex items-center px-3 text-sm font-semibold text-slate-600 underline underline-offset-4 dark:text-slate-300">작업로그 열기</a>
+                    </nav>
+                    <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                        <div><h1 className="text-2xl font-black tracking-tight">{activeTab.title}</h1>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{activeTabId === "subject" ? "평가계획을 가져오거나 직접 기준을 입력한 뒤, 학생별 상·중·하를 선택하세요." : activeTabId === "creative" ? "각 학생의 활동 선택에서 참여 활동을 고르세요. 임원 직책과 기간도 함께 기록할 수 있습니다." : "관찰 키워드를 2개 이상 선택하고 학생별 문장을 작성하세요."}</p></div>
+                        <a href="/extension/bridge" target="_blank" rel="noreferrer" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900">나이스 확장 연결</a>
                     </header>
-
-                    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-8">
-                        {/* Workspace Content (Left) */}
-                        <fieldset disabled={isWorkLogLoading || logBusy || (isSavedEditor && loadedSavedId !== requestedLogId)} className="min-w-0 space-y-10 border-0 p-0 m-0">
-                            <AnimatePresence mode="wait">
-                                <motion.div
-                                    key={activeTabId}
-                                    initial={{ opacity: 0, y: 20 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -20 }}
-                                    transition={{ duration: 0.3 }}
-                                    className={cn(isExpanded && "!transform-none")}
-                                >
-
-                                    {activeTabId === "behavior" ? (
-                                        <div className="space-y-10">
-                                            {/* Configuration Card */}
-                                            <Card className="p-0 border-0 bg-white dark:bg-card dark:border dark:border-border shadow-2xl shadow-slate-200/40 dark:shadow-none rounded-[3.5rem] overflow-hidden">
-                                                <div className="grid grid-cols-1 md:grid-cols-2">
-                                                    <div className="p-10 border-r border-slate-100 dark:border-border space-y-8 bg-slate-50/30 dark:bg-slate-900/20">
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
-                                                                <Target className="size-5 text-primary shrink-0" /> 워크스페이스 설정
-                                                            </div>
-                                                            <input
-                                                                type="file"
-                                                                id="csv-upload-behavior"
-                                                                accept=".csv"
-                                                                className="hidden"
-                                                                onChange={handleFileUpload}
-                                                            />
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => document.getElementById('csv-upload-behavior')?.click()}
-                                                                className="rounded-xl h-10 px-5 font-black bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
-                                                            >
-                                                                양식 업로드 <Upload className="size-3.5" />
-                                                            </Button>
-                                                        </div>
-                                                        <div className="flex flex-col items-center justify-center h-24">
-                                                            <span className="text-6xl font-black text-slate-900 dark:text-foreground tracking-tighter">{studentCount}</span>
-                                                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">Selected Students</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="p-10 space-y-8">
-                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
-                                                            <Edit3 className="size-5 text-primary shrink-0" /> 행동특성 글자수 가이드
-                                                        </div>
-                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                            {[100, 200, 300, 500].map(limit => (
-                                                                <button
-                                                                    key={limit}
-                                                                    onClick={() => setCharLimits(prev => ({ ...prev, behavior: limit }))}
-                                                                    className={cn(
-                                                                        "h-20 rounded-[1.5rem] flex flex-col items-center justify-center gap-1 transition-all border-4",
-                                                                        charLimits.behavior === limit
-                                                                            ? "bg-primary border-primary text-white scale-105 shadow-xl shadow-primary/20 dark:shadow-none"
-                                                                            : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 text-slate-400 dark:text-slate-500 hover:border-slate-200 dark:hover:border-slate-700 hover:scale-105"
-                                                                    )}
-                                                                >
-                                                                    <span className="text-xl font-black">{limit}</span>
-                                                                    <span className="text-[10px] font-bold uppercase opacity-60">Char</span>
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </Card>
-
-                                            <BehaviorWorkspace
-                                                polishAction={polishAction}
-                                                students={students}
-                                                setStudents={setStudents}
-                                                isExpanded={isExpanded}
-                                                setIsExpanded={setIsExpanded}
-                                                charLimit={charLimits.behavior}
-                                                handleAutoGenerateKeywords={handleAutoGenerateKeywords}
-                                                handleGenerate={handleGenerate}
-                                                handleReset={handleReset}
-                                                handleResetAll={handleResetAll}
-                                                handleResetKeywords={handleResetBehaviorKeywords}
-                                                handleDeleteUnusedKeywords={handleDeleteUnusedBehaviorKeywords}
-                                                handleSelectedGenerate={handleSelectedGenerate}
-                                                handleAllGenerate={handleAllGenerate}
-                                                toggleAllSelection={() => {
-                                                    const allSelected = students.every(s => s.selected);
-                                                    setStudents(prev => prev.map(s => ({ ...s, selected: !allSelected })));
-                                                }}
-                                                toggleStudentSelection={toggleStudentSelection}
-                                                isAddingKeyword={isAddingKeyword}
-                                                setIsAddingKeyword={setIsAddingKeyword}
-                                                newKeywordInput={newKeywordInput}
-                                                setNewKeywordInput={setNewKeywordInput}
-                                                addCustomKeyword={addCustomKeyword}
-                                                defaultKeywords={defaultKeywords}
-                                            />
-                                        </div>
-                                    ) : activeTabId === "subject" ? (
-                                        <div className="space-y-10">
-                                            <Card className="p-0 border-0 bg-white dark:bg-card dark:border dark:border-border shadow-2xl shadow-slate-200/40 dark:shadow-none rounded-[3.5rem] overflow-hidden">
-                                                <div className="grid grid-cols-1 md:grid-cols-2">
-                                                    <div className="p-10 border-r border-slate-100 dark:border-border space-y-8 bg-slate-50/30 dark:bg-slate-900/20">
-                                                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
-                                                                <Target className="size-5 text-indigo-500 shrink-0" /> 워크스페이스 설정
-                                                            </div>
-                                                            <input
-                                                                type="file"
-                                                                id="csv-upload-subject"
-                                                                accept=".csv"
-                                                                className="hidden"
-                                                                onChange={handleFileUpload}
-                                                            />
-                                                            <input
-                                                                type="file"
-                                                                id="subject-plan-upload"
-                                                                accept=".hwp,.hwpx,.pdf"
-                                                                className="hidden"
-                                                                onChange={handleSubjectPlanUpload}
-                                                            />
-                                                            <DropdownMenu>
-                                                                <DropdownMenuTrigger asChild>
-                                                                    <Button
-                                                                        variant="outline"
-                                                                        disabled={isSubjectPlanImporting}
-                                                                        className="rounded-xl h-10 px-5 font-black bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 border-indigo-100 dark:border-slate-700 gap-2 hover:bg-indigo-100 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
-                                                                    >
-                                                                        {isSubjectPlanImporting ? (
-                                                                            <>
-                                                                                읽는 중 <Loader2 className="size-3.5 animate-spin" />
-                                                                            </>
-                                                                        ) : (
-                                                                            <>
-                                                                                불러오기 <ChevronDown className="size-3.5" />
-                                                                            </>
-                                                                        )}
-                                                                    </Button>
-                                                                </DropdownMenuTrigger>
-                                                                <DropdownMenuContent align="end" className="w-40 rounded-2xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-2xl z-[300]">
-                                                                    <DropdownMenuItem
-                                                                        onClick={() => document.getElementById('csv-upload-subject')?.click()}
-                                                                        className="rounded-xl px-3 py-2 text-xs font-bold cursor-pointer gap-2"
-                                                                    >
-                                                                        <Upload className="size-3.5" /> CSV
-                                                                    </DropdownMenuItem>
-                                                                    <DropdownMenuItem
-                                                                        onClick={() => document.getElementById('subject-plan-upload')?.click()}
-                                                                        className="rounded-xl px-3 py-2 text-xs font-bold cursor-pointer gap-2"
-                                                                    >
-                                                                        <FileSearch className="size-3.5" /> 평가계획
-                                                                    </DropdownMenuItem>
-                                                                </DropdownMenuContent>
-                                                            </DropdownMenu>
-                                                        </div>
-                                                        <div className="flex flex-col items-center justify-center h-24">
-                                                            <span className="text-6xl font-black text-slate-900 dark:text-foreground tracking-tighter">{studentCount}</span>
-                                                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">Selected Students</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="p-10 space-y-8">
-                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
-                                                            <Edit3 className="size-5 text-indigo-500 shrink-0" /> 교과세특 글자수 가이드
-                                                        </div>
-                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                            {[100, 200, 300, 500].map(limit => (
-                                                                <button
-                                                                    key={limit}
-                                                                    onClick={() => setCharLimits(prev => ({ ...prev, subject: limit }))}
-                                                                    className={cn(
-                                                                        "h-20 rounded-[1.5rem] flex flex-col items-center justify-center gap-1 transition-all border-4",
-                                                                        charLimits.subject === limit
-                                                                            ? "bg-indigo-500 border-indigo-500 text-white scale-105 shadow-xl shadow-indigo-200/40 dark:shadow-none"
-                                                                            : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 text-slate-400 dark:text-slate-500 hover:border-slate-200 dark:hover:border-slate-700 hover:scale-105"
-                                                                    )}
-                                                                >
-                                                                    <span className="text-xl font-black">{limit}</span>
-                                                                    <span className="text-[10px] font-bold uppercase opacity-60">Char</span>
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </Card>
-
-                                            <SubjectWorkspace
-                                                savedEditor={isSavedEditor}
-                                                polishAction={polishAction}
-                                                students={students}
-                                                setStudents={setStudents}
-                                                globalConfig={subjectConfig}
-                                                setGlobalConfig={setSubjectConfig}
-                                                subjectLogs={subjectLogs}
-                                                activeSubjectScopeKey={activeSubjectScopeKey}
-                                                onSubjectScopeChange={handleSubjectScopeChange}
-                                                onCreateSubjectLog={handleCreateSubjectLog}
-                                                onDeleteSubjectLog={handleDeleteSubjectLog}
-                                                onDeleteAllSubjectLogs={handleDeleteAllSubjectLogs}
-                                                onReorderSubjectLogs={handleReorderSubjectLogs}
-                                                handleGenerate={handleGenerate}
-                                                handleAllGenerate={handleAllGenerate}
-                                                handleSelectedGenerate={handleSelectedGenerate}
-                                                handleResetAll={handleResetAll}
-                                                toggleAllSelection={toggleAllSelection}
-                                                toggleStudentSelection={toggleStudentSelection}
-                                                isExpanded={isExpanded}
-                                                setIsExpanded={setIsExpanded}
-                                            />
-                                        </div>
-                                    ) : activeTabId === "creative" ? (
-                                        <div className="space-y-10">
-                                            <Card className="p-0 border-0 bg-white dark:bg-card dark:border dark:border-border shadow-2xl shadow-slate-200/40 dark:shadow-none rounded-[3.5rem] overflow-hidden">
-                                                <div className="grid grid-cols-1 md:grid-cols-2">
-                                                    <div className="p-10 border-r border-slate-100 dark:border-border space-y-8 bg-slate-50/30 dark:bg-slate-900/20">
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
-                                                                <Target className="size-5 text-amber-500 shrink-0" /> 워크스페이스 설정
-                                                            </div>
-                                                            <input
-                                                                type="file"
-                                                                id="csv-upload-creative"
-                                                                accept=".csv"
-                                                                className="hidden"
-                                                                onChange={handleFileUpload}
-                                                            />
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => document.getElementById('csv-upload-creative')?.click()}
-                                                                className="rounded-xl h-10 px-5 font-black bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm text-[11px]"
-                                                            >
-                                                                양식 업로드 <Upload className="size-3.5" />
-                                                            </Button>
-                                                        </div>
-                                                        <div className="flex flex-col items-center justify-center h-24">
-                                                            <span className="text-6xl font-black text-slate-900 dark:text-foreground tracking-tighter">{studentCount}</span>
-                                                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">Selected Students</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="p-10 space-y-8">
-                                                        <div className="flex items-center gap-3 text-sm font-black text-slate-400 dark:text-muted-foreground uppercase tracking-widest break-keep min-w-0">
-                                                            <Edit3 className="size-5 text-amber-500 shrink-0" /> 창체활동 글자수 가이드
-                                                        </div>
-                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                            {[100, 200, 300, 500].map(limit => (
-                                                                <button
-                                                                    key={limit}
-                                                                    onClick={() => setCharLimits(prev => ({ ...prev, creative: limit }))}
-                                                                    className={cn(
-                                                                        "h-20 rounded-[1.5rem] flex flex-col items-center justify-center gap-1 transition-all border-4",
-                                                                        charLimits.creative === limit
-                                                                            ? "bg-amber-500 border-amber-500 text-white scale-105 shadow-xl shadow-amber-200/40 dark:shadow-none"
-                                                                            : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 text-slate-400 dark:text-slate-500 hover:border-slate-200 dark:hover:border-slate-700 hover:scale-105"
-                                                                    )}
-                                                                >
-                                                                    <span className="text-xl font-black">{limit}</span>
-                                                                    <span className="text-[10px] font-bold uppercase opacity-60">Char</span>
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </Card>
-
-                                            <CreativeActivityWorkspace
-                                                polishAction={polishAction}
-                                                students={students}
-                                                setStudents={setStudents}
-                                                handleGenerate={handleGenerate}
-                                                handleAllGenerate={handleAllGenerate}
-                                                handleSelectedGenerate={handleSelectedGenerate}
-                                                handleResetAll={handleResetAll}
-                                                toggleAllSelection={toggleAllSelection}
-                                                toggleStudentSelection={toggleStudentSelection}
-                                                studentCount={studentCount}
-                                                charLimit={charLimits.creative}
-                                                isExpanded={isExpanded}
-                                                setIsExpanded={setIsExpanded}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <PlaceholderWorkspace
-                                            title={features.find(f => f.id === activeTabId)?.title || ""}
-                                            onBack={() => changeCategory("behavior")}
-                                        />
-                                    )}
-                                </motion.div>
-                            </AnimatePresence>
-                        </fieldset>
-
-                        {/* Sidebar (Right) */}
-                        <aside className="space-y-6">
-                            <div className="px-2">
-                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 px-4">Service Area</h3>
-                                <div className="space-y-4">
-                                    {features.map((f) => {
-                                        const Icon = f.icon;
-                                        const isActive = activeTabId === f.id;
-                                        return (
-                                            <button
-                                                key={f.id}
-                                                onClick={() => changeCategory(f.id)}
-                                                className={cn(
-                                                    "w-full p-6 min-h-28 rounded-[2.5rem] flex items-center gap-6 transition-all text-left border",
-                                                    isActive
-                                                        ? "bg-white dark:bg-card border-primary shadow-2xl shadow-primary/5 dark:shadow-none ring-1 ring-primary/20 dark:ring-primary/40"
-                                                        : "bg-white dark:bg-slate-900/50 border-transparent dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-200 dark:hover:border-slate-700"
-                                                )}
-                                            >
-                                                <div className={cn("size-14 rounded-3xl flex items-center justify-center shrink-0", isActive ? "bg-primary text-white shadow-lg shadow-primary/30" : "bg-slate-50 dark:bg-slate-800")}>
-                                                    <Icon className="size-7" />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <span className={cn("font-black text-sm block mb-1 break-keep", isActive ? "text-slate-900 dark:text-white" : "text-slate-500 dark:text-slate-400")}>{f.title}</span>
-                                                    <span className="text-[10px] font-bold text-slate-300 dark:text-slate-600 uppercase tracking-tighter">Feature</span>
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-
-                                    {/* Chrome Extension Promo Card - Neon Dark Design */}
-                                    <div className="w-full p-11 rounded-[2.5rem] bg-[#0A101E] border border-white/5 shadow-2xl relative overflow-hidden group mt-6 text-center transition-all hover:scale-[1.01]">
-                                        {/* Radial background glow */}
-                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none" />
-
-                                        {/* Stable Badge */}
-                                        <div className="absolute top-6 right-6 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
-                                            <span className="size-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                                            <span className="text-[10px] font-bold text-slate-300">Stable</span>
-                                        </div>
-
-                                        <div className="relative z-10 flex flex-col items-center space-y-8">
-                                            {/* Neon Icon */}
-                                            <div className="relative">
-                                                <div className="absolute inset-0 bg-cyan-400 blur-2xl opacity-20 animate-pulse" />
-                                                <Zap className="size-20 text-cyan-400 stroke-[1.5] relative filter drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <h4 className="text-2xl font-black text-white tracking-tight">나이스 붙여넣기</h4>
-                                                <p className="text-[13px] font-medium text-slate-400 leading-relaxed max-w-[280px]">
-                                                    열심히 작업하신 결과를 <br />
-                                                    <span className="text-white font-bold">크롬 확장프로그램</span>을 통해 <br /> 나이스에 바로 입력하세요.
-                                                </p>
-                                            </div>
-
-                                            <Button
-                                                asChild
-                                                variant="outline"
-                                                className="w-full rounded-[1.25rem] h-16 border-2 border-cyan-500/40 hover:border-cyan-400 bg-transparent hover:bg-cyan-500/5 text-cyan-400 font-extrabold text-sm transition-all shadow-[0_0_20px_rgba(6,182,212,0.1)] active:scale-95 flex items-center justify-center gap-2 group/btn"
-                                            >
-                                                <a
-                                                    href="https://chromewebstore.google.com/detail/forteacher-ai-neis-upload/kccpnhgkaombpfajdjgonenibmglpcmp?hl=ko"
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                >
-                                                    다운로드하러가기
-                                                    <ChevronRight className="size-4 group-hover/btn:translate-x-1 transition-transform" />
-                                                </a>
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </aside>
-                    </div>
+                    <WorkLogSessionBar saving={logBusy} editing={isSavedEditor} title={logTitle} onTitle={setLogTitle}
+                        busy={logBusy || isWorkLogLoading || isSubjectPlanImporting || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} dirty={editorDirty}
+                        message={logMessage} error={logError} draftStatus={isSavedEditor ? undefined : draftSaveStatus} onSave={() => void saveSnapshot(false)} onSaveNew={() => void saveSnapshot(true)}
+                        onReset={() => void startEmptyDraft()} onBack={() => leaveEditor("/app/logs")} />
+                    {isWorkLogLoading && logError && <Button variant="outline" onClick={() => window.location.reload()} className="mb-4">다시 불러오기</Button>}
+                    {staleEdit && <button className="mb-4 text-sm text-blue-700 underline" onClick={() => { const url = URL.createObjectURL(new Blob([workLogCsv({ category: activeTabId as "behavior", data: staleEdit.data })], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href = url; a.download = `${staleEdit.title}-임시수정.csv`; a.click(); URL.revokeObjectURL(url); }}>이전 임시 수정 내보내기</button>}
+                    <fieldset disabled={isWorkLogLoading || logBusy || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} className="min-w-0 border-0 p-0 m-0">
+                        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900" aria-label="작성 설정과 가져오기">
+                            <label className="flex items-center gap-2 text-sm font-semibold">학생 수
+                                <select aria-label="학생 수" value={studentCount} disabled={isSubjectPlanImporting || students.some(s => s.isGenerating)} onChange={e => changeStudentCount(Number(e.target.value))} className="h-10 rounded-lg border border-slate-200 bg-transparent px-2 dark:border-slate-700">
+                                    {Array.from({ length: 40 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}명</option>)}
+                                </select>
+                            </label>
+                            <label className="flex items-center gap-2 text-sm font-semibold">목표 글자 수
+                                <select aria-label="목표 글자 수" value={charLimits[activeTabId]} onChange={e => setCharLimits(prev => ({ ...prev, [activeTabId]: Number(e.target.value) }))} className="h-10 rounded-lg border border-slate-200 bg-transparent px-2 dark:border-slate-700">
+                                    {[charLimits[activeTabId], 100, 200, 300, 400, 500, 600, 800, 1000].filter((value, i, all) => all.indexOf(value) === i).map(value => <option key={value} value={value}>{value}자</option>)}
+                                </select>
+                            </label>
+                            {students.some(student => student.selected) && <Button variant="ghost" onClick={handleResetSelection} className="rounded-xl">선택 해제</Button>}
+                            <input type="file" id="workspace-csv-upload" accept=".csv,text/csv" className="hidden" onChange={handleFileUpload} />
+                            <Button variant="outline" onClick={() => document.getElementById("workspace-csv-upload")?.click()} disabled={isSubjectPlanImporting} className="ml-auto gap-2 rounded-xl"><Upload className="size-4" />CSV 가져오기</Button>
+                            {activeTabId === "subject" && <>
+                                <input type="file" id="subject-plan-upload" accept=".hwp,.hwpx,.pdf" className="hidden" onChange={handleSubjectPlanUpload} />
+                                <Button onClick={() => document.getElementById("subject-plan-upload")?.click()} disabled={isSubjectPlanImporting} className="h-auto min-h-10 gap-2 whitespace-normal rounded-xl bg-indigo-600 px-4 py-2 text-left hover:bg-indigo-700">
+                                    {isSubjectPlanImporting ? <Loader2 className="size-4 shrink-0 animate-spin" /> : <FileSearch className="size-4 shrink-0" />}
+                                    {isSubjectPlanImporting ? "평가계획 분석 중…" : "평가계획 PDF·HWPX 가져오기"}
+                                </Button>
+                                {isSubjectPlanImporting && <Button variant="outline" onClick={cancelSubjectPlanImport}>분석 취소</Button>}
+                            </>}
+                        </div>
+                        {activeTabId === "behavior" ? (
+                            <BehaviorWorkspace
+                            polishAction={polishAction}
+                            students={students}
+                            setStudents={setStudents}
+                            isExpanded={isExpanded}
+                            setIsExpanded={setIsExpanded}
+                            charLimit={charLimits.behavior}
+                            handleAutoGenerateKeywords={handleAutoGenerateKeywords}
+                            handleGenerate={handleGenerate}
+                            handleReset={handleReset}
+                            handleResetAll={handleResetAll}
+                            handleResetKeywords={handleResetBehaviorKeywords}
+                            handleDeleteUnusedKeywords={handleDeleteUnusedBehaviorKeywords}
+                            handleSelectedGenerate={handleSelectedGenerate}
+                            handleAllGenerate={handleAllGenerate}
+                            toggleAllSelection={() => {
+                            const allSelected = students.every(s => s.selected);
+                            setStudents(prev => prev.map(s => ({ ...s, selected: !allSelected })));
+                            }}
+                            toggleStudentSelection={toggleStudentSelection}
+                            isAddingKeyword={isAddingKeyword}
+                            setIsAddingKeyword={setIsAddingKeyword}
+                            newKeywordInput={newKeywordInput}
+                            setNewKeywordInput={setNewKeywordInput}
+                            addCustomKeyword={addCustomKeyword}
+                            defaultKeywords={defaultKeywords}
+                            />
+                        ) : activeTabId === "subject" ? (
+                            <SubjectWorkspace
+                            savedEditor={isSavedEditor}
+                            polishAction={polishAction}
+                            students={students}
+                            setStudents={setStudents}
+                            globalConfig={subjectConfig}
+                            setGlobalConfig={setSubjectConfig}
+                            subjectLogs={subjectLogs}
+                            activeSubjectScopeKey={activeSubjectScopeKey}
+                            onSubjectScopeChange={handleSubjectScopeChange}
+                            onCreateSubjectLog={handleCreateSubjectLog}
+                            onDeleteSubjectLog={handleDeleteSubjectLog}
+                            onDeleteAllSubjectLogs={handleDeleteAllSubjectLogs}
+                            onReorderSubjectLogs={handleReorderSubjectLogs}
+                            handleGenerate={handleGenerate}
+                            handleAllGenerate={handleAllGenerate}
+                            handleSelectedGenerate={handleSelectedGenerate}
+                            handleResetAll={handleResetAll}
+                            toggleAllSelection={toggleAllSelection}
+                            toggleStudentSelection={toggleStudentSelection}
+                            isExpanded={isExpanded}
+                            setIsExpanded={setIsExpanded}
+                            />
+                        ) : activeTabId === "creative" ? (
+                            <CreativeActivityWorkspace
+                            polishAction={polishAction}
+                            students={students}
+                            setStudents={setStudents}
+                            handleGenerate={handleGenerate}
+                            handleAllGenerate={handleAllGenerate}
+                            handleSelectedGenerate={handleSelectedGenerate}
+                            handleResetAll={handleResetAll}
+                            toggleAllSelection={toggleAllSelection}
+                            toggleStudentSelection={toggleStudentSelection}
+                            studentCount={studentCount}
+                            charLimit={charLimits.creative}
+                            isExpanded={isExpanded}
+                            setIsExpanded={setIsExpanded}
+                            />
+                        ) : <PlaceholderWorkspace title={activeTab.title} onBack={() => changeCategory("behavior")} />}
+                    </fieldset>
+                    <p className="mt-5 text-xs leading-6 text-slate-500">나이스에 가져갈 기록은 먼저 작업로그에 저장하세요. <a href="https://chromewebstore.google.com/detail/forteacher-ai-neis-upload/kccpnhgkaombpfajdjgonenibmglpcmp?hl=ko" target="_blank" rel="noreferrer" className="underline underline-offset-4">크롬 확장 프로그램 설치</a></p>
                 </div>
             </main>
 
             {subjectPlanImport && (
                 <div className="fixed inset-0 z-[10000] bg-slate-950/50 px-4 py-6 flex items-center justify-center">
-                    <div className="w-full max-w-5xl max-h-[88vh] overflow-hidden rounded-[2rem] bg-white shadow-2xl border border-slate-200 flex flex-col">
-                        <div className="px-8 py-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div ref={planDialogRef} role="dialog" aria-modal="true" aria-labelledby="plan-import-heading" onKeyDown={event => {
+                        if (event.key === "Escape" && !isWorkLogLoading) { setSubjectPlanImport(null); setSelectedSubjectPlanIndexes([]); }
+                        if (event.key === "Tab") {
+                            const nodes = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]')).filter(node => node.getClientRects().length);
+                            const first = nodes[0], last = nodes[nodes.length - 1];
+                            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+                            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+                        }
+                    }} className="w-full max-w-5xl max-h-[88vh] overflow-hidden rounded-[2rem] bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
+                        <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="space-y-1">
-                                <div className="text-[11px] font-black text-indigo-500 tracking-widest uppercase">평가계획 불러오기</div>
-                                <h3 className="text-2xl font-black text-slate-900">가져온 교과</h3>
-                                <p className="text-sm font-medium text-slate-500">
-                                    적용할 교과를 선택하세요.
+                                <div className="text-[11px] font-black text-indigo-500 dark:text-indigo-400 tracking-widest uppercase">평가계획 불러오기</div>
+                                <h3 id="plan-import-heading" className="text-2xl font-black text-slate-900 dark:text-slate-100">가져온 교과</h3>
+                                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                                    {isSavedEditor ? "현재 저장본에 적용할 교과 하나를 선택하세요. 작성 문장과 메모는 유지됩니다." : "적용할 교과를 선택하세요. 선택한 교과마다 독립된 작업을 만들며 기존 교과는 유지됩니다."}
                                 </p>
                             </div>
                             <button
@@ -2166,15 +1728,15 @@ function DashboardPage() {
                                     setSubjectPlanImport(null);
                                     setSelectedSubjectPlanIndexes([]);
                                 }}
-                                className="size-11 rounded-xl bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 flex items-center justify-center transition-colors"
-                                title="닫기"
+                                className="size-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 flex items-center justify-center transition-colors"
+                                title="닫기" aria-label="평가계획 미리보기 닫기" disabled={isWorkLogLoading}
                             >
                                 <X className="size-5" />
                             </button>
                         </div>
 
                         {subjectPlanImport.warnings.length > 0 && (
-                            <div className="mx-8 mt-5 rounded-2xl border border-amber-100 bg-amber-50 px-5 py-4 text-xs font-bold leading-6 text-amber-700">
+                            <div className="mx-8 mt-5 rounded-2xl border border-amber-100 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 px-5 py-4 text-xs font-bold leading-6 text-amber-700 dark:text-amber-200">
                                 {subjectPlanImport.warnings.slice(0, 3).map((warning, index) => (
                                     <div key={`${warning}-${index}`}>{warning}</div>
                                 ))}
@@ -2190,8 +1752,8 @@ function DashboardPage() {
                                         className={cn(
                                             "w-full text-left rounded-2xl border p-5 transition-all",
                                             selected
-                                                ? "border-indigo-200 bg-indigo-50 shadow-sm"
-                                                : "border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50"
+                                                ? "border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 shadow-sm"
+                                                : "border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-200 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/70"
                                         )}
                                     >
                                         <div className="space-y-4">
@@ -2203,7 +1765,7 @@ function DashboardPage() {
                                                             onClick={() => toggleSubjectPlanSelection(index)}
                                                             className={cn(
                                                                 "size-7 rounded-lg border flex items-center justify-center shrink-0",
-                                                                selected ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-200 text-transparent"
+                                                                selected ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-transparent"
                                                             )}
                                                             aria-label={selected ? "선택 해제" : "선택"}
                                                         >
@@ -2216,7 +1778,7 @@ function DashboardPage() {
                                                                     value={subject.subjectName || ""}
                                                                     onChange={(event) => updateSubjectPlanSubject(index, "subjectName", event.target.value)}
                                                                     placeholder="교과명"
-                                                                    className="h-11 bg-white border-slate-200 text-base font-black text-slate-900"
+                                                                    className="h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-base font-black text-slate-900 dark:text-slate-100"
                                                                 />
                                                             </label>
                                                             <label className="space-y-1">
@@ -2225,7 +1787,7 @@ function DashboardPage() {
                                                                     value={subject.grade || ""}
                                                                     onChange={(event) => updateSubjectPlanSubject(index, "grade", event.target.value)}
                                                                     placeholder="학년"
-                                                                    className="h-11 bg-white border-slate-200 text-base font-black text-slate-900"
+                                                                    className="h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-base font-black text-slate-900 dark:text-slate-100"
                                                                 />
                                                             </label>
                                                             <div className="md:col-span-2 text-xs font-bold text-slate-400">
@@ -2234,7 +1796,7 @@ function DashboardPage() {
                                                         </div>
                                                     </div>
                                                 </div>
-                                            <div className="shrink-0 rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-500">
+                                            <div className="shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800 px-4 py-2 text-xs font-black text-slate-500 dark:text-slate-400">
                                                 {selected ? "선택됨" : "제외됨"}
                                             </div>
                                         </div>
@@ -2245,15 +1807,15 @@ function DashboardPage() {
                                                     return (
                                                         <div
                                                             key={`${assessment.area}-${assessmentIndex}`}
-                                                            className="rounded-xl bg-white/85 border border-slate-100 p-4 space-y-3"
+                                                            className="rounded-xl bg-white/85 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 p-4 space-y-3"
                                                         >
                                                         <label className="space-y-1 block">
-                                                            <span className="text-[11px] font-black text-indigo-600">영역</span>
+                                                            <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-300">영역</span>
                                                             <Input
                                                                 value={assessment.area || ""}
                                                                 onChange={(event) => updateSubjectPlanAssessment(index, assessmentIndex, "area", event.target.value)}
                                                                 placeholder={`평가 ${assessmentIndex + 1}`}
-                                                                className="h-10 bg-white border-slate-200 text-sm font-black text-indigo-700"
+                                                                className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-sm font-black text-indigo-700 dark:text-indigo-200"
                                                             />
                                                         </label>
                                                         <label className="space-y-1 block">
@@ -2263,7 +1825,7 @@ function DashboardPage() {
                                                                 onChange={(event) => updateSubjectPlanAssessment(index, assessmentIndex, "standard", event.target.value)}
                                                                 placeholder="성취기준"
                                                                 rows={2}
-                                                                className="w-full min-h-20 resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium leading-6 text-slate-700 outline-none transition-all focus-visible:border-indigo-300 focus-visible:ring-4 focus-visible:ring-indigo-100"
+                                                                className="w-full min-h-20 resize-y rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium leading-6 text-slate-700 dark:text-slate-200 outline-none transition-all focus-visible:border-indigo-300 focus-visible:ring-4 focus-visible:ring-indigo-100"
                                                             />
                                                         </label>
                                                         <div className="space-y-2">
@@ -2273,9 +1835,9 @@ function DashboardPage() {
                                                                     <label key={level} className="block space-y-1">
                                                                         <span className={cn(
                                                                             "inline-flex h-6 min-w-8 items-center justify-center rounded-lg px-2 text-[11px] font-black",
-                                                                            level === "상" && "bg-indigo-50 text-indigo-600",
-                                                                            level === "중" && "bg-slate-100 text-slate-600",
-                                                                            level === "하" && "bg-amber-50 text-amber-700"
+                                                                            level === "상" && "bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300",
+                                                                            level === "중" && "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
+                                                                            level === "하" && "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-200"
                                                                         )}>
                                                                             {level}
                                                                         </span>
@@ -2284,7 +1846,7 @@ function DashboardPage() {
                                                                             onChange={(event) => updateSubjectPlanCriteriaLevel(index, assessmentIndex, level, event.target.value)}
                                                                             placeholder={`${level} 수준 평가기준`}
                                                                             rows={3}
-                                                                            className="w-full min-h-24 resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium leading-6 text-slate-700 outline-none transition-all focus-visible:border-indigo-300 focus-visible:ring-4 focus-visible:ring-indigo-100"
+                                                                            className="w-full min-h-24 resize-y rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm font-medium leading-6 text-slate-700 dark:text-slate-200 outline-none transition-all focus-visible:border-indigo-300 focus-visible:ring-4 focus-visible:ring-indigo-100"
                                                                         />
                                                                     </label>
                                                                 ))}
@@ -2300,19 +1862,20 @@ function DashboardPage() {
                             })}
                         </div>
 
-                        <div className="px-8 py-6 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="text-sm font-black text-slate-500">
+                        <div className="px-8 py-6 border-t border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="text-sm font-black text-slate-500 dark:text-slate-400">
                                 {selectedSubjectPlanIndexes.length}개 교과 선택
                             </div>
                             <div className="flex gap-3">
                                 <Button
                                     type="button"
                                     variant="outline"
+                                    disabled={isWorkLogLoading}
                                     onClick={() => {
                                         setSubjectPlanImport(null);
                                         setSelectedSubjectPlanIndexes([]);
                                     }}
-                                    className="h-12 rounded-xl px-6 font-black border-slate-200 bg-white text-slate-500"
+                                    className="h-12 rounded-xl px-6 font-black border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400"
                                 >
                                     건너뛰기
                                 </Button>

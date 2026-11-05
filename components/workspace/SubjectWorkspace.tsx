@@ -19,6 +19,8 @@ import {
     ChevronUp,
     GripVertical
 } from "lucide-react";
+import { normalizeSchoolLevel } from "@/lib/subject-plan-values";
+import { downloadWorkspaceCsv } from "@/lib/workspace-csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -51,13 +53,13 @@ const Wrapper = ({ children, isExpanded, mounted }: WrapperProps) => {
     if (isExpanded && mounted) {
         return createPortal(
             <div className="fixed inset-0 z-[9999] isolate">
-                <div className="absolute inset-0 bg-white pointer-events-auto" />
+                <div className="absolute inset-0 bg-white dark:bg-slate-900 pointer-events-auto" />
                 {children}
             </div>,
             document.body
         );
     }
-    return <div className="space-y-8 mt-8 pb-20 transform-none">{children}</div>;
+    return <div className="space-y-5 transform-none">{children}</div>;
 };
 
 interface SubjectWorkspaceProps {
@@ -371,21 +373,20 @@ export const SubjectWorkspace = ({
     return (
         <Wrapper isExpanded={isExpanded} mounted={mounted}>
             <Card className={cn(
-                "p-10 border-0 bg-white shadow-2xl shadow-slate-200/50 space-y-8 transition-all duration-500",
-                isExpanded ? "fixed inset-4 z-[9999] rounded-[2rem] border border-indigo-100 shadow-primary/20 !transform-none overflow-hidden flex flex-col pointer-events-auto cursor-default p-6 space-y-0 gap-4" : "rounded-[3rem] overflow-hidden"
+                "gap-0 p-4 sm:p-5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm space-y-5 transition-all duration-500",
+                isExpanded ? "fixed inset-4 z-[9999] rounded-[2rem] border border-indigo-100 dark:border-indigo-900 shadow-primary/20 !transform-none overflow-hidden flex flex-col pointer-events-auto cursor-default p-6 space-y-0 gap-4" : "rounded-2xl overflow-hidden"
             )}>
                 {/* Header Section */}
                 {isExpanded && <div className="flex justify-end">{polishAction}</div>}
                 {!isExpanded && (
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
                     <div className="flex items-center gap-4">
-                        <div className="size-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                            <Zap className="size-7" />
+                        <div className="size-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center">
+                            <Zap className="size-5" />
                         </div>
                         <div>
-                            <h4 className="text-3xl font-black tracking-tight text-slate-900 flex items-center gap-3">
-                                학생별 AI Workspace
-                                <div className="px-3 py-1 bg-indigo-50 text-indigo-600 text-[10px] rounded-lg font-black tracking-widest leading-none">V1.0 PRO</div>
+                            <h4 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-3">
+                                학생별 기록
                             </h4>
                             <p className="text-sm text-slate-400 font-medium">성취수준을 바탕으로 생활기록부 작성을 시작하세요.</p>
                         </div>
@@ -394,38 +395,23 @@ export const SubjectWorkspace = ({
                         <div className="col-span-2 sm:col-span-1">{polishAction}</div>
                         <Button
                             variant="outline"
-                            className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 text-emerald-600 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
-                            onClick={() => {
-                                const headers = ["번호", ...globalConfig.assessments.map((_, i) => `평가${i + 1}`), "개별특이사항", "AI생성결과"];
-                                const rows = students.map(s => [
-                                    s.id,
-                                    ...globalConfig.assessments.map(a => s.subjectData?.assessments?.find(sa => sa.assessmentId === a.id)?.level || ""),
-                                    `"${(s.subjectData?.individualNote || "").replace(/"/g, '""')}"`,
-                                    `"${(s.aiResult || "").replace(/\n/g, " ").replace(/"/g, '""')}"`
-                                ]);
-                                const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n");
-                                const encodedUri = encodeURI(csvContent);
-                                const link = document.createElement("a");
-                                link.setAttribute("href", encodedUri);
-                                link.setAttribute("download", `교과세특_데이터_${new Date().toISOString().slice(0, 10)}.csv`);
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-                            }}
+                            className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
+                            onClick={() => downloadWorkspaceCsv("subject", students, globalConfig)}
                         >
                             내보내기 <Download className="size-4" />
                         </Button>
                         <Button
                             variant="outline"
-                            onClick={() => setIsExpanded(!isExpanded)}
-                            className="rounded-2xl h-11 px-5 border-slate-100 bg-slate-50 text-slate-500 hover:bg-slate-100 transition-all col-span-2 sm:col-span-1"
+                            aria-label={isExpanded ? "전체화면 닫기" : "전체화면으로 넓게 보기"}
+                        onClick={() => setIsExpanded(!isExpanded)}
+                            className="rounded-2xl h-11 px-5 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all col-span-2 sm:col-span-1"
                         >
                             {isExpanded ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
                         </Button>
                         {isExpanded && (
                             <Button
                                 onClick={() => setIsExpanded(false)}
-                                className="rounded-2xl size-11 p-0 bg-red-50 text-red-400 hover:bg-red-100"
+                                className="rounded-2xl size-11 p-0 bg-red-50 dark:bg-red-950/40 text-red-400 hover:bg-red-100"
                             >
                                 <X className="size-6" />
                             </Button>
@@ -435,15 +421,15 @@ export const SubjectWorkspace = ({
                 )}
 
                 {isExpanded && (
-                    <div className="flex items-center justify-between gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/70 px-5 py-4 shrink-0">
+                    <div className="flex items-center justify-between gap-4 rounded-2xl border border-indigo-100 dark:border-indigo-900 bg-indigo-50/70 dark:bg-indigo-950/50 px-5 py-4 shrink-0">
                         <div className="min-w-0">
-                            <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">학생별 개별 입력</div>
-                            <div className="truncate text-lg font-black text-slate-900">{currentSubjectLabel}</div>
+                            <div className="text-[10px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-widest">② 학생 평가·결과 입력</div>
+                            <div className="truncate text-lg font-black text-slate-900 dark:text-slate-100">{currentSubjectLabel}</div>
                         </div>
                         <Button
                             variant="outline"
                             onClick={() => setIsExpanded(false)}
-                            className="h-11 rounded-xl border-indigo-100 bg-white px-5 text-xs font-black text-indigo-600 hover:bg-indigo-100 gap-2 shrink-0"
+                            className="h-11 rounded-xl border-indigo-100 dark:border-indigo-900 bg-white dark:bg-slate-900 px-5 text-xs font-black text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 gap-2 shrink-0"
                         >
                             <Minimize2 className="size-4" /> 돌아가기
                         </Button>
@@ -451,22 +437,22 @@ export const SubjectWorkspace = ({
                 )}
 
                 {!isExpanded && !savedEditor && (
-                <div className="rounded-[2rem] bg-indigo-50/60 border border-indigo-100 p-5 space-y-4">
+                <div className="rounded-xl bg-indigo-50/60 dark:bg-indigo-950/50 border border-indigo-100 dark:border-indigo-900 p-3 space-y-2">
                     <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,680px)_1fr] gap-4 lg:items-end">
                         <div className="space-y-2 min-w-0 max-w-[680px]">
-                            <Label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-1">현재 교과</Label>
+                            <Label className="text-[10px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-widest px-1">현재 교과</Label>
                             <Input
                                 value={globalConfig.subjectName}
                                 onChange={(e) => setGlobalConfig(p => ({ ...p, subjectName: e.target.value }))}
                                 placeholder="교과명을 입력하세요"
-                                className="h-14 rounded-2xl bg-white border-indigo-100 px-5 text-lg font-black text-slate-800 placeholder:text-slate-300 shadow-sm focus-visible:ring-indigo-200 focus-visible:border-indigo-200"
+                                className="h-10 rounded-xl bg-white dark:bg-slate-900 border-indigo-100 dark:border-indigo-900 px-5 text-lg font-black text-slate-800 dark:text-slate-100 placeholder:text-slate-300 shadow-sm focus-visible:ring-indigo-200 focus-visible:border-indigo-200"
                             />
                         </div>
                         <div className="grid grid-cols-3 sm:flex sm:items-center sm:justify-end gap-2">
                             <Button
                                 variant="outline"
                                 onClick={onCreateSubjectLog}
-                                className="h-12 rounded-xl px-3 sm:px-5 border-indigo-100 bg-white text-indigo-600 hover:bg-indigo-100 font-black text-xs gap-2"
+                                className="h-10 rounded-xl px-3 sm:px-5 border-indigo-100 dark:border-indigo-900 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 font-black text-xs gap-2"
                             >
                                 새 교과 <Plus className="size-4" />
                             </Button>
@@ -475,7 +461,7 @@ export const SubjectWorkspace = ({
                                 onClick={() => onDeleteSubjectLog(activeSubjectScopeKey)}
                                 disabled={subjectLogs.length === 0}
                                 title="교과 삭제"
-                                className="h-12 rounded-xl px-3 sm:px-4 border-slate-200 bg-white text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 font-black text-xs gap-2 disabled:opacity-40"
+                                className="h-12 rounded-xl px-3 sm:px-4 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 hover:border-red-100 font-black text-xs gap-2 disabled:opacity-40"
                             >
                                 <Trash2 className="size-4" />
                                 삭제
@@ -485,7 +471,7 @@ export const SubjectWorkspace = ({
                                 onClick={onDeleteAllSubjectLogs}
                                 disabled={subjectLogs.length === 0 && globalConfig.assessments.length === 0 && !globalConfig.subjectName.trim()}
                                 title="전체삭제"
-                                className="h-12 rounded-xl px-3 sm:px-4 border-red-100 bg-white text-red-400 hover:bg-red-50 hover:text-red-600 hover:border-red-200 font-black text-xs gap-2 disabled:opacity-40"
+                                className="h-12 rounded-xl px-3 sm:px-4 border-red-100 bg-white dark:bg-slate-900 text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 hover:border-red-200 font-black text-xs gap-2 disabled:opacity-40"
                             >
                                 <Trash2 className="size-4" />
                                 전체삭제
@@ -522,7 +508,7 @@ export const SubjectWorkspace = ({
                                         isRealSubjectLog ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                                         isActive
                                             ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200"
-                                            : "bg-white border-indigo-100 text-slate-500 hover:border-indigo-200 hover:text-indigo-600",
+                                            : "bg-white dark:bg-slate-900 border-indigo-100 dark:border-indigo-900 text-slate-500 dark:text-slate-400 hover:border-indigo-200 dark:hover:border-indigo-800 hover:text-indigo-600 dark:hover:text-indigo-300",
                                         isDragging && "opacity-50",
                                         isDragOver && "ring-4 ring-indigo-100 border-indigo-300"
                                     )}
@@ -540,22 +526,22 @@ export const SubjectWorkspace = ({
                 )}
 
                 <Tabs value={isExpanded ? "individual" : activeInputTab} onValueChange={setActiveInputTab} className={cn(
-                    "space-y-8",
+                    "space-y-4",
                     isExpanded && "flex flex-col flex-1 min-h-0 space-y-0"
                 )}>
                     <TabsList className={cn(
-                        "grid grid-cols-2 w-full bg-slate-50 p-1.5 rounded-2xl border border-slate-100 h-auto",
+                        "grid grid-cols-2 w-full bg-slate-50 dark:bg-slate-800/70 p-1.5 rounded-2xl border border-slate-100 dark:border-slate-700 h-auto",
                         isExpanded && "hidden"
                     )}>
                         <TabsTrigger value="global" className="rounded-xl px-3 sm:px-8 font-black text-[12px] sm:text-[13px] tracking-tight data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all h-11">
-                            <Settings2 className="size-4 mr-2" /> 전체 정보 설정
+                            <Settings2 className="size-4 mr-2" /> ① 평가 기준 설정
                         </TabsTrigger>
                         <TabsTrigger value="individual" className="rounded-xl px-3 sm:px-8 font-black text-[12px] sm:text-[13px] tracking-tight data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all h-11">
-                            <Users className="size-4 mr-2" /> 학생별 개별 입력
+                            <Users className="size-4 mr-2" /> ② 학생 평가·결과 입력
                         </TabsTrigger>
                     </TabsList>
 
-                    {/* 전체 정보 설정 탭 */}
+                    {/* ① 평가 기준 설정 탭 */}
                     <TabsContent value="global" className={cn(
                         "space-y-10 focus:outline-none custom-scrollbar pb-40",
                         isExpanded ? "overflow-y-auto flex-1 h-full" : "h-auto"
@@ -563,11 +549,11 @@ export const SubjectWorkspace = ({
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
                             <div className="space-y-3">
                                 <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">학교급</Label>
-                                <Select value={globalConfig.schoolLevel} onValueChange={(val) => setGlobalConfig(p => ({ ...p, schoolLevel: val }))}>
-                                    <SelectTrigger className="h-12 rounded-xl bg-slate-50 border-slate-100 font-bold focus:ring-indigo-200 text-slate-600">
+                                <Select value={globalConfig.schoolLevel ? normalizeSchoolLevel(globalConfig.schoolLevel) : ""} onValueChange={(val) => setGlobalConfig(p => ({ ...p, schoolLevel: val }))}>
+                                    <SelectTrigger className="h-12 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-slate-100 dark:border-slate-700 font-bold focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
                                         <SelectValue placeholder="학교급 선택" />
                                     </SelectTrigger>
-                                    <SelectContent className="rounded-xl border-slate-100 shadow-2xl">
+                                    <SelectContent className="rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl">
                                         <SelectItem value="elementary" className="font-bold">초등학교</SelectItem>
                                         <SelectItem value="middle" className="font-bold">중학교</SelectItem>
                                         <SelectItem value="high" className="font-bold">고등학교</SelectItem>
@@ -577,10 +563,10 @@ export const SubjectWorkspace = ({
                             <div className="space-y-3">
                                 <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">학년</Label>
                                 <Select value={globalConfig.grade} onValueChange={(val) => setGlobalConfig(p => ({ ...p, grade: val }))}>
-                                    <SelectTrigger className="h-12 rounded-xl bg-slate-50 border-slate-100 font-bold focus:ring-indigo-200 text-slate-600">
+                                    <SelectTrigger className="h-12 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-slate-100 dark:border-slate-700 font-bold focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
                                         <SelectValue placeholder="학년 선택" />
                                     </SelectTrigger>
-                                    <SelectContent className="rounded-xl border-slate-100 shadow-2xl">
+                                    <SelectContent className="rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl">
                                         {[1, 2, 3, 4, 5, 6].map(g => (
                                             <SelectItem key={g} value={g.toString()} className="font-bold">{g}학년</SelectItem>
                                         ))}
@@ -593,14 +579,14 @@ export const SubjectWorkspace = ({
                                     value={globalConfig.subjectName}
                                     onChange={(e) => setGlobalConfig(p => ({ ...p, subjectName: e.target.value }))}
                                     placeholder="예: 국어, 수학, 통합교과(봄) 등"
-                                    className="h-12 rounded-xl bg-slate-50 border-slate-100 font-bold px-5 focus:border-indigo-300 shadow-inner border-none text-slate-700 placeholder:text-slate-300 placeholder:font-medium"
+                                    className="h-12 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-slate-100 dark:border-slate-700 font-bold px-5 focus:border-indigo-300 shadow-inner border-none text-slate-700 dark:text-slate-200 placeholder:text-slate-300 placeholder:font-medium"
                                 />
                             </div>
                             <div className="md:col-span-4 flex justify-end">
                                 <Button
                                     onClick={() => setGlobalConfig({ schoolLevel: "", grade: "", subjectName: "", assessments: [] })}
                                     variant="ghost"
-                                    className="h-8 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 font-bold gap-2 text-xs"
+                                    className="h-8 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 font-bold gap-2 text-xs"
                                 >
                                     <RotateCcw className="size-3" /> 입력 정보 초기화
                                 </Button>
@@ -610,14 +596,14 @@ export const SubjectWorkspace = ({
                         <div className="space-y-6 pb-20">
                             <div className="flex items-center justify-between px-2">
                                 <div className="flex items-center gap-3">
-                                    <Label className="text-xs font-black text-slate-900 uppercase tracking-wider">평가 영역 및 기준 설정</Label>
-                                    <Badge variant="secondary" className="bg-indigo-50 text-indigo-600 border-indigo-100 font-black px-2.5 py-0.5 rounded-lg">{globalConfig.assessments.length}</Badge>
+                                    <Label className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase tracking-wider">평가 영역 및 기준 설정</Label>
+                                    <Badge variant="secondary" className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 border-indigo-100 dark:border-indigo-900 font-black px-2.5 py-0.5 rounded-lg">{globalConfig.assessments.length}</Badge>
                                 </div>
                                 <Button
                                     variant="outline"
                                     size="sm"
                                     onClick={addAssessment}
-                                    className="rounded-2xl h-11 px-6 border-indigo-100 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-all font-black text-xs gap-2"
+                                    className="rounded-2xl h-11 px-6 border-indigo-100 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 transition-all font-black text-xs gap-2"
                                 >
                                     평가정보 추가 <Plus className="size-4" />
                                 </Button>
@@ -625,10 +611,10 @@ export const SubjectWorkspace = ({
 
                             <div className="grid grid-cols-1 gap-6">
                                 {globalConfig.assessments.map((assessment, index) => (
-                                    <Card key={assessment.id} className="relative overflow-visible border-slate-100 bg-white shadow-lg shadow-slate-200/40 hover:shadow-xl hover:shadow-indigo-100/50 hover:border-indigo-100 transition-all group/card rounded-[2.5rem]">
+                                    <Card key={assessment.id} className="relative overflow-visible border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg shadow-slate-200/40 hover:shadow-xl hover:shadow-indigo-100/50 hover:border-indigo-100 dark:hover:border-indigo-900 transition-all group/card rounded-[2.5rem]">
                                         <button
                                             onClick={() => removeAssessment(assessment.id)}
-                                            className="absolute -top-3 -right-3 size-10 rounded-full bg-white border border-slate-100 text-slate-300 flex items-center justify-center hover:bg-red-50 hover:border-red-100 hover:text-red-500 transition-all z-10 shadow-sm opacity-0 group-hover/card:opacity-100"
+                                            className="absolute -top-3 -right-3 size-10 rounded-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 text-slate-300 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-950/40 hover:border-red-100 hover:text-red-500 transition-all z-10 shadow-sm opacity-0 group-hover/card:opacity-100"
                                             title="평가정보 삭제"
                                         >
                                             <Trash2 className="size-4" />
@@ -643,27 +629,27 @@ export const SubjectWorkspace = ({
                                                         {index + 1}
                                                     </div>
                                                     <div className="flex-1 space-y-2">
-                                                        <Label className="text-[11px] font-black text-slate-900 uppercase tracking-[0.05em] ml-1">영역 (대단원)</Label>
+                                                        <Label className="text-[11px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-[0.05em] ml-1">영역 (대단원)</Label>
                                                         <Input
                                                             value={assessment.area}
                                                             onChange={(e) => updateAssessment(assessment.id, "area", e.target.value)}
                                                             placeholder="예: 듣기, 화법과 작문 등"
-                                                            className="h-12 rounded-xl bg-slate-50 font-bold px-4 focus:bg-white transition-all outline-none border-none shadow-inner text-lg text-slate-900 placeholder:text-slate-300"
+                                                            className="h-12 rounded-xl bg-slate-50 dark:bg-slate-800/70 font-bold px-4 focus:bg-white dark:focus:bg-slate-900 transition-all outline-none border-none shadow-inner text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-300"
                                                         />
                                                     </div>
                                                 </div>
 
                                                 {/* 핵심 역량 입력 */}
                                                 <div className="flex-1 space-y-2 w-full">
-                                                    <Label className="text-[11px] font-black text-slate-900 uppercase tracking-[0.05em] ml-1 flex items-center gap-2">
-                                                        <Target className="size-3.5 text-indigo-500" /> 관련 핵심 역량
+                                                    <Label className="text-[11px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-[0.05em] ml-1 flex items-center gap-2">
+                                                        <Target className="size-3.5 text-indigo-500 dark:text-indigo-400" /> 관련 핵심 역량
                                                     </Label>
-                                                    <div className="bg-white p-2 rounded-xl border-2 border-slate-100 focus-within:border-indigo-200 focus-within:shadow-md transition-all flex items-center gap-3 h-12">
+                                                    <div className="bg-white dark:bg-slate-900 p-2 rounded-xl border-2 border-slate-100 dark:border-slate-700 focus-within:border-indigo-200 focus-within:shadow-md transition-all flex items-center gap-3 h-12">
                                                         <input
                                                             value={assessment.competency}
                                                             onChange={(e) => updateAssessment(assessment.id, "competency", e.target.value)}
                                                             placeholder="예: 비판적 사고 역량, 의사소통 역량"
-                                                            className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-slate-900 placeholder:text-slate-300 h-full px-2"
+                                                            className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-300 h-full px-2"
                                                         />
                                                     </div>
                                                 </div>
@@ -671,20 +657,20 @@ export const SubjectWorkspace = ({
 
                                             {/* Row 2: Standard */}
                                             <div className="space-y-3">
-                                                <Label className="text-[11px] font-black text-slate-900 uppercase tracking-[0.05em] ml-1 flex items-center gap-2">
+                                                <Label className="text-[11px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-[0.05em] ml-1 flex items-center gap-2">
                                                     <span className="size-1.5 rounded-full bg-indigo-400"></span> 성취기준 (Standard)
                                                 </Label>
                                                 <textarea
                                                     value={assessment.standard}
                                                     onChange={(e) => updateAssessment(assessment.id, "standard", e.target.value)}
                                                     placeholder="예: [4국02-02] 문단과 글에서 중심 생각을 파악하고..."
-                                                    className="w-full min-h-[100px] p-6 rounded-[1.5rem] border-2 border-slate-100 bg-white text-sm font-medium leading-relaxed resize-none outline-none focus:border-indigo-200 focus:ring-0 transition-all placeholder:text-slate-300 text-slate-700"
+                                                    className="w-full min-h-[100px] p-6 rounded-[1.5rem] border-2 border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium leading-relaxed resize-none outline-none focus:border-indigo-200 dark:focus:border-indigo-800 focus:ring-0 transition-all placeholder:text-slate-300 text-slate-700 dark:text-slate-200"
                                                 />
                                             </div>
 
                                             {/* Row 3: Criteria */}
                                             <div className="space-y-3">
-                                                <Label className="text-[11px] font-black text-slate-900 uppercase tracking-[0.05em] ml-1 flex items-center gap-2">
+                                                <Label className="text-[11px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-[0.05em] ml-1 flex items-center gap-2">
                                                     <span className="size-1.5 rounded-full bg-emerald-400"></span> 평가기준 (Criteria)
                                                 </Label>
                                                 <div className="grid gap-3 lg:grid-cols-3">
@@ -695,9 +681,9 @@ export const SubjectWorkspace = ({
                                                             <label key={level} className="block space-y-2">
                                                                 <span className={cn(
                                                                     "inline-flex h-7 min-w-9 items-center justify-center rounded-xl px-3 text-[11px] font-black",
-                                                                    level === "상" && "bg-indigo-50 text-indigo-600",
-                                                                    level === "중" && "bg-slate-100 text-slate-600",
-                                                                    level === "하" && "bg-amber-50 text-amber-700"
+                                                                    level === "상" && "bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300",
+                                                                    level === "중" && "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
+                                                                    level === "하" && "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-200"
                                                                 )}>
                                                                     {level}
                                                                 </span>
@@ -705,7 +691,7 @@ export const SubjectWorkspace = ({
                                                                     value={criteriaLevels[level] || ""}
                                                                     onChange={(e) => updateAssessmentCriteriaLevel(assessment.id, level, e.target.value)}
                                                                     placeholder={`${level} 수준 평가기준`}
-                                                                    className="w-full min-h-[132px] resize-y rounded-[1.5rem] border-2 border-slate-100 bg-slate-50/50 px-5 py-4 text-sm font-medium leading-relaxed text-slate-700 outline-none transition-all placeholder:text-slate-300 focus:bg-white focus:border-emerald-200 focus:ring-0"
+                                                                    className="w-full min-h-[132px] resize-y rounded-[1.5rem] border-2 border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/70 px-5 py-4 text-sm font-medium leading-relaxed text-slate-700 dark:text-slate-200 outline-none transition-all placeholder:text-slate-300 focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-200 focus:ring-0"
                                                                 />
                                                             </label>
                                                         );
@@ -719,19 +705,19 @@ export const SubjectWorkspace = ({
                         </div>
                     </TabsContent>
 
-                    {/* 학생별 개별 입력 탭 */}
+                    {/* ② 학생 평가·결과 입력 탭 */}
                     <TabsContent value="individual" className={cn(
                         "space-y-6 focus:outline-none",
                         isExpanded && "flex-1 flex flex-col min-h-0"
                     )}>
                         <div
                             className={cn(
-                                "bg-slate-50 rounded-[2.5rem] border border-slate-100 overflow-auto custom-scrollbar relative",
+                                "bg-slate-50 dark:bg-slate-800/70 rounded-[2.5rem] border border-slate-100 dark:border-slate-700 overflow-auto custom-scrollbar relative",
                                 isExpanded ? "flex-1 h-full" : "h-[600px]"
                             )}>
                             <div className="w-fit min-w-full flex flex-col min-h-full">
                                 {/* Sticky Table Header */}
-                                <div className="sticky top-0 z-20 bg-slate-50 border-b border-slate-100 shadow-sm">
+                                <div className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-700 shadow-sm">
                                     <div
                                         className="grid gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 items-center"
                                         style={{ gridTemplateColumns: gridTemplateCols }}
@@ -740,7 +726,8 @@ export const SubjectWorkspace = ({
                                             <input
                                                 type="checkbox"
                                                 onChange={toggleAllSelection}
-                                                checked={students.length > 0 && students.every(s => s.selected)}
+                                                aria-label="모든 학생 선택"
+                                        checked={students.length > 0 && students.every(s => s.selected)}
                                                 className="size-5 rounded-lg border-slate-300 accent-indigo-500 cursor-pointer"
                                             />
                                         </div>
@@ -755,7 +742,7 @@ export const SubjectWorkspace = ({
                                                     <button
                                                         type="button"
                                                         title={`${a.area || `평가 ${i + 1}`} 일괄 입력`}
-                                                        className="min-w-0 rounded-xl bg-indigo-100/30 px-3 py-2 text-center text-indigo-600 transition-colors hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
+                                                        className="min-w-0 rounded-xl bg-indigo-100/30 dark:bg-indigo-950/70 px-3 py-2 text-center text-indigo-600 dark:text-indigo-300 transition-colors hover:bg-indigo-100 dark:hover:bg-indigo-950/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
                                                     >
                                                         <span className="flex min-w-0 items-center justify-center gap-1 whitespace-nowrap">
                                                             <span className="truncate">평가 {i + 1}</span>
@@ -766,9 +753,9 @@ export const SubjectWorkspace = ({
                                                         </span>
                                                     </button>
                                                 </PopoverTrigger>
-                                                <PopoverContent className="w-44 rounded-2xl border-indigo-100 p-2 shadow-xl z-[10000]" align="center">
+                                                <PopoverContent className="w-44 rounded-2xl border-indigo-100 dark:border-indigo-900 p-2 shadow-xl z-[10000]" align="center">
                                                     <div className="grid gap-1">
-                                                        <div className="border-b border-slate-100 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                                        <div className="border-b border-slate-100 dark:border-slate-700 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
                                                             {selectedStudentCount > 0 ? `${selectedStudentCount}명 선택` : "학생을 선택하세요"}
                                                         </div>
                                                         {(["상", "중", "하"] as const).map((level) => (
@@ -777,7 +764,7 @@ export const SubjectWorkspace = ({
                                                                 type="button"
                                                                 disabled={selectedStudentCount === 0}
                                                                 onClick={() => applyBulkAssessmentLevel(a.id, level)}
-                                                                className="flex h-9 w-full items-center rounded-xl px-3 text-left text-sm font-black text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                                                                className="flex h-9 w-full items-center rounded-xl px-3 text-left text-sm font-black text-slate-600 dark:text-slate-300 transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 dark:hover:text-indigo-300 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
                                                             >
                                                                 {level} 입력
                                                             </button>
@@ -786,7 +773,7 @@ export const SubjectWorkspace = ({
                                                             type="button"
                                                             disabled={selectedStudentCount === 0}
                                                             onClick={() => applyBulkAssessmentLevel(a.id, "")}
-                                                            className="flex h-9 w-full items-center rounded-xl px-3 text-left text-sm font-black text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                                                            className="flex h-9 w-full items-center rounded-xl px-3 text-left text-sm font-black text-slate-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
                                                         >
                                                             비우기
                                                         </button>
@@ -806,11 +793,11 @@ export const SubjectWorkspace = ({
                                         const isRowOpen = expandedRowId === student.id;
                                         return (
                                         <div
-                                            key={student.id}
+                                            key={student.id} data-student-id={student.id}
                                             className={cn(
                                                 "grid gap-6 px-8 rounded-[2rem] border transition-all items-start group/row",
                                                 isRowOpen ? "py-6" : "py-3.5",
-                                                student.selected ? "bg-indigo-50 border-indigo-200" : "bg-white border-slate-50 hover:bg-slate-50 hover:border-slate-100",
+                                                student.selected ? "bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800" : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:border-slate-100 dark:hover:border-slate-700",
                                                 isRowOpen && "ring-2 ring-indigo-400/30 border-indigo-300 shadow-xl shadow-indigo-100/40"
                                             )}
                                             style={{ gridTemplateColumns: gridTemplateCols }}
@@ -818,12 +805,13 @@ export const SubjectWorkspace = ({
                                             <div className="flex items-center justify-center pt-3">
                                                 <input
                                                     type="checkbox"
-                                                    checked={student.selected}
+                                                    aria-label={`${student.id}번 학생 선택`}
+                                            checked={student.selected}
                                                     onChange={() => toggleStudentSelection(student.id)}
                                                     className="size-5 rounded-lg border-slate-300 accent-indigo-500 cursor-pointer"
                                                 />
                                             </div>
-                                            <div className="text-lg font-black text-slate-900 text-center pt-2 whitespace-nowrap">{student.id}번</div>
+                                            <div className="text-lg font-black text-slate-900 dark:text-slate-100 text-center pt-2 whitespace-nowrap">{student.id}번</div>
 
                                             {/* Assessment Dropdowns */}
                                             {globalConfig.assessments.map((a) => {
@@ -837,13 +825,13 @@ export const SubjectWorkspace = ({
                                                                 handleLevelChange(student.id, a.id, level);
                                                             }}
                                                         >
-                                                            <SelectTrigger className="h-11 rounded-xl bg-slate-50 border-none shadow-inner font-bold text-xs">
+                                                            <SelectTrigger className="h-11 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-none shadow-inner font-bold text-xs">
                                                                 <SelectValue placeholder="평가" />
                                                             </SelectTrigger>
-                                                            <SelectContent className="z-[10080] rounded-xl border-slate-100 shadow-2xl">
+                                                            <SelectContent className="z-[10080] rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl">
                                                                 <SelectItem value="none" className="font-bold text-slate-300">미선택</SelectItem>
-                                                                <SelectItem value="상" className="font-bold text-indigo-600">상</SelectItem>
-                                                                <SelectItem value="중" className="font-bold text-slate-600">중</SelectItem>
+                                                                <SelectItem value="상" className="font-bold text-indigo-600 dark:text-indigo-300">상</SelectItem>
+                                                                <SelectItem value="중" className="font-bold text-slate-600 dark:text-slate-300">중</SelectItem>
                                                                 <SelectItem value="하" className="font-bold text-slate-400">하</SelectItem>
                                                             </SelectContent>
                                                         </Select>
@@ -855,29 +843,31 @@ export const SubjectWorkspace = ({
                                                 <textarea
                                                     value={student.subjectData?.individualNote || ""}
                                                     onChange={(e) => handleNoteChange(student.id, e.target.value)}
-                                                    placeholder="학생 관찰 특이사항..."
-                                                    className="w-full h-11 px-4 py-3 rounded-xl border-none bg-slate-50 text-[11px] font-medium placeholder:text-slate-300 focus:h-24 transition-all outline-none focus:bg-white shadow-inner resize-none"
+                                                    aria-label={`${student.id}번 학생 개별 특이사항`}
+                                                        placeholder="학생 관찰 특이사항..."
+                                                    className="w-full h-11 px-4 py-3 rounded-xl border-none bg-slate-50 dark:bg-slate-800/70 text-[11px] font-medium placeholder:text-slate-300 focus:h-24 transition-all outline-none focus:bg-white dark:focus:bg-slate-900 shadow-inner resize-none"
                                                 />
                                             </div>
 
-                                            <div className="relative group/txt pt-1">
+                                            <div className={cn("relative group/txt pt-1", isRowOpen && "col-span-full row-start-2 max-w-[calc(100vw-6rem)]")}>
                                                 <div
                                                     onClick={() => { if (!isRowOpen && !student.isGenerating) setExpandedRowId(student.id); }}
                                                     className={cn(
                                                         "rounded-2xl text-[12px] font-medium leading-[1.7] transition-all",
                                                         isRowOpen ? "p-5 min-h-[160px] shadow-inner" : "p-4 h-[88px] overflow-hidden cursor-pointer hover:ring-2 hover:ring-indigo-300/50",
-                                                        student.aiResult ? "bg-slate-50 text-slate-700 border border-slate-100 shadow-inner" : "bg-slate-50 border border-dashed border-slate-200 text-slate-300 italic"
+                                                        student.aiResult ? "bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border border-slate-100 dark:border-slate-700 shadow-inner" : "bg-slate-50 dark:bg-slate-800/70 border border-dashed border-slate-200 dark:border-slate-700 text-slate-300 italic"
                                                     )}
                                                 >
                                                     {student.isGenerating ? (
                                                         <div className="flex flex-col gap-2">
-                                                            <div className="h-2 w-full bg-slate-200 rounded-full animate-pulse" />
-                                                            <div className="h-2 w-4/5 bg-slate-200 rounded-full animate-pulse" />
+                                                            <div className="h-2 w-full bg-slate-200 dark:bg-slate-700 rounded-full animate-pulse" />
+                                                            <div className="h-2 w-4/5 bg-slate-200 dark:bg-slate-700 rounded-full animate-pulse" />
                                                         </div>
                                                     ) : isRowOpen ? (
                                                         <textarea
                                                             autoFocus
-                                                            value={student.aiResult}
+                                                            aria-label={`${student.id}번 학생 작성 결과`}
+                                                        value={student.aiResult}
                                                             placeholder="평가 선택 후 생성을 눌러주세요."
                                                             onChange={(e) => {
                                                                 const newVal = e.target.value;
@@ -895,7 +885,7 @@ export const SubjectWorkspace = ({
                                                         title={isRowOpen ? "접기" : "펼쳐서 편집"}
                                                         className={cn(
                                                             "absolute top-2.5 right-2.5 size-8 rounded-lg border flex items-center justify-center shadow-xl transition-all hover:scale-110",
-                                                            isRowOpen ? "bg-indigo-600 text-white border-indigo-600 opacity-100" : "bg-white text-slate-400 border-slate-100 opacity-0 group-hover/txt:opacity-100 hover:text-indigo-600"
+                                                            isRowOpen ? "bg-indigo-600 text-white border-indigo-600 opacity-100" : "bg-white dark:bg-slate-900 text-slate-400 border-slate-100 dark:border-slate-700 opacity-0 group-hover/txt:opacity-100 hover:text-indigo-600 dark:hover:text-indigo-300"
                                                         )}
                                                     >
                                                         {isRowOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
@@ -903,14 +893,14 @@ export const SubjectWorkspace = ({
                                                 )}
                                             </div>
 
-                                            <div className="flex flex-col gap-2 pt-1">
+                                            <div className="flex flex-col gap-2 pt-1" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
                                                 <Button
                                                     onClick={() => handleGenerate(student.id)}
-                                                    disabled={student.isGenerating}
+                                                    disabled={student.isGenerating || !student.subjectData?.assessments.some(a => a.level && globalConfig.assessments.some(g => g.id === a.assessmentId))}
                                                     className={cn(
                                                         "w-full rounded-2xl font-black h-11 px-5 gap-2 text-[12px] transition-all shadow-lg",
                                                         student.aiResult
-                                                            ? "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
+                                                            ? "bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-200"
                                                             : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200/20"
                                                     )}
                                                 >
@@ -924,7 +914,7 @@ export const SubjectWorkspace = ({
                                                             aiResult: ""
                                                         } : s));
                                                     }}
-                                                    className="w-full h-10 rounded-2xl bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center gap-2 font-black text-[10px]"
+                                                    className="w-full h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 transition-all flex items-center justify-center gap-2 font-black text-[10px]"
                                                 >
                                                     <RotateCcw className="size-3" /> 초기화
                                                 </button>
@@ -936,32 +926,32 @@ export const SubjectWorkspace = ({
                             </div>
                         </div>
 
-                        <div className="flex items-center justify-between py-8 px-8 bg-slate-50/50 rounded-[3rem] border border-slate-100">
+                        <div className="flex flex-wrap items-center justify-between gap-3 py-4 px-4 bg-slate-50/50 dark:bg-slate-800/70 rounded-[3rem] border border-slate-100 dark:border-slate-700">
                             <div className="flex items-center gap-4">
-                                <div className="px-8 py-4 bg-white rounded-[1.5rem] text-sm font-black text-slate-600 border border-slate-200 shadow-sm flex items-center gap-3">
+                                <div className="px-3 py-2 bg-white dark:bg-slate-900 rounded-[1.5rem] text-sm font-black text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
                                     <div className="size-2.5 rounded-full bg-indigo-500 animate-pulse" />
                                     선택 학생 {selectedStudentCount}명
                                 </div>
 
                             </div>
-                            <div className="flex gap-4">
+                            <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
                                 <Button
                                     onClick={handleResetAll}
                                     variant="ghost"
-                                    className="rounded-2xl bg-white text-slate-500 font-black h-16 px-10 hover:bg-slate-100 border border-slate-200 shadow-sm transition-all"
+                                    className="rounded-2xl bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-black h-11 px-4 sm:px-6 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all"
                                 >
                                     전체 초기화
                                 </Button>
                                 <Button
                                     onClick={handleSelectedGenerate}
                                     variant="outline"
-                                    className="rounded-2xl border-2 border-slate-900 text-slate-900 font-black h-16 px-10 hover:bg-slate-50 shadow-sm gap-3 transition-all"
+                                    className="rounded-2xl border-2 border-slate-900 text-slate-900 dark:text-slate-100 font-black h-11 px-4 sm:px-6 hover:bg-slate-50 dark:hover:bg-slate-800/70 shadow-sm gap-3 transition-all"
                                 >
                                     <UserCheck className="size-5" /> 선택 생성
                                 </Button>
                                 <Button
                                     onClick={handleAllGenerate}
-                                    className="rounded-2xl bg-slate-900 text-white font-black h-16 px-12 hover:bg-slate-800 shadow-2xl shadow-slate-300 gap-4 text-lg transition-all"
+                                    className="rounded-2xl bg-slate-900 text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-800 shadow-2xl shadow-slate-300 gap-4 text-lg transition-all"
                                 >
                                     <Zap className="size-5 text-indigo-400" /> 전체 생성
                                 </Button>
