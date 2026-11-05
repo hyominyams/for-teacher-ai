@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { importWorkspaceCsv } from "@/lib/workspace-csv";
 import { supabase } from "@/lib/supabase";
+import { creditAIFetch } from "@/lib/credit-client";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
 import { WorkLogSessionBar } from "@/components/workspace/WorkLogSessionBar";
 import { getSavedWorkLog, workLogRequest, WorkLogError } from "@/lib/work-log-client";
@@ -365,7 +366,7 @@ function DashboardPage() {
         let body = options.body;
         if (requestedLogId && body instanceof FormData) body.set("workLogId", requestedLogId);
         else if (requestedLogId && typeof body === "string") body = JSON.stringify({ ...JSON.parse(body), workLogId: requestedLogId });
-        const response = await fetch(url, { ...options, body, signal, headers: { ...options.headers, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) } });
+        const response = await creditAIFetch(url, { ...options, body, signal, headers: { ...options.headers, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) } });
         if (!response.ok) {
             const failure = await response.clone().json().catch(() => ({}));
             if (epoch === workEpoch.current) setLogError(failure.error || "AI 요청을 처리하지 못했습니다.");
@@ -1285,7 +1286,7 @@ function DashboardPage() {
             const { data: { session } } = await supabase.auth.getSession();
             if (requestedLogId) formData.append("workLogId", requestedLogId);
             if (epoch !== workEpoch.current) return;
-            const response = await fetch("/api/subject-plan/parse", {
+            const response = await creditAIFetch("/api/subject-plan/parse", {
                 method: "POST", body: formData, signal,
                 headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
             });

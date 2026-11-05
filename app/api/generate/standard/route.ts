@@ -1,29 +1,17 @@
+import { callBudget, completionText, creditFailure, creditUser, CreditError, readAIJson, runCreditJob } from "@/lib/server/credits";
 import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { OpenAI } from "openai";
-import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
-const getErrorMessage = (error: unknown) => {
-    if (error instanceof Error) {
-        return error.message;
-    }
-
-    return "성취기준 생성 중 오류가 발생했습니다.";
-};
+export const maxDuration = 90;
 
 export async function POST(req: Request) {
     try {
-        const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) {
-            return NextResponse.json(
-                { error: "OPENAI_API_KEY가 설정되어 있지 않습니다. .env.local에 키를 추가하고 dev 서버를 재시작해주세요." },
-                { status: 503 }
-            );
-        }
-        const openai = new OpenAI({ apiKey });
-
-        const { schoolLevel, grade, subjectName, area, criteria, competency, workLogId } = await req.json();
+        const user = await creditUser(req);
+        const raw = await readAIJson(req);
+        const { schoolLevel, grade, subjectName, area, criteria, competency, workLogId } = raw;
+        if (typeof subjectName !== "string" || !subjectName.trim()) throw new CreditError("INVALID_INPUT", "교과명을 확인해주세요.");
         try { await assertEditableWorkLog(req, workLogId); } catch (error) { return workLogFailure(error); }
 
         // 1. 성취기준 데이터 파일 읽기
@@ -84,21 +72,23 @@ export async function POST(req: Request) {
             .replace("[COMPETENCY]", competency || "")
             .replace("[SUBJECT_STANDARDS_LIST]", standardsListText);
 
-        const response = await openai.chat.completions.create({
+        const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
             model: "gpt-5-nano",
+            reasoning_effort: "minimal",
+            max_completion_tokens: 4096,
+            response_format: { type: "json_object" },
             messages: [
                 { role: "developer", content: "당신은 대한민국 교육과정과 성취기준 전문가입니다. 반드시 제공된 목록에서만 답변하세요." },
                 { role: "user", content: prompt }
             ],
-            temperature: 0.7,
+
+        };
+        return await runCreditJob(req, user, "standard", raw, [callBudget(params)], async complete => {
+            const parsed = JSON.parse(completionText(await complete(params)));
+            if (typeof parsed.standard !== "string" || !parsed.standard.trim()) throw new CreditError("AI_INCOMPLETE", "성취기준을 찾지 못했습니다. 크레딧은 차감하지 않습니다.", 502);
+            return { standard: parsed.standard };
         });
-
-        const content = response.choices[0].message.content?.trim();
-        const parsed = JSON.parse(content || "{}");
-
-        return NextResponse.json({ standard: parsed.standard });
     } catch (error: unknown) {
-        console.error("Standard Generation Error:", error);
-        return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+        return creditFailure(error);
     }
 }

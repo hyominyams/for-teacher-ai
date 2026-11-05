@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import { ModeToggle } from "@/components/mode-toggle"
+import { CreditBalance } from "@/components/credits/CreditBalance"
 import { DEMO_AUTO_LOGIN_KEY } from "@/lib/auth-storage"
 
 export function NavbarMain() {
@@ -77,6 +78,7 @@ export function NavbarMain() {
     const navItems = [
         { name: "대시보드", href: "/app", icon: LayoutDashboard },
         { name: "작업로그", href: "/app/logs" },
+        { name: "크레딧", href: "/app/credits" },
     ]
 
     return (
@@ -88,7 +90,7 @@ export function NavbarMain() {
                     : "bg-transparent"
             )}
         >
-            <div className="container mx-auto h-full px-6 md:px-12 flex items-center justify-between">
+            <div className="container mx-auto h-full px-6 xl:px-12 flex items-center justify-between">
                 <Link href="/app" className="flex items-center gap-2 group tracking-tighter">
                     <span className="text-xl md:text-2xl font-black text-foreground group-hover:opacity-70 transition-all duration-300">
                         FOR TEACHER <span className="text-primary italic">AI</span>
@@ -98,7 +100,7 @@ export function NavbarMain() {
                     </span>
                 </Link>
 
-                <nav className="hidden md:flex items-center gap-10">
+                <nav className="hidden md:flex items-center gap-2 xl:gap-8">
                     {navItems.map((item) => (
                         <Link
                             key={item.href}
@@ -119,9 +121,10 @@ export function NavbarMain() {
                     ))}
                 </nav>
 
-                <div className="hidden md:flex items-center gap-4">
+                <div className="hidden md:flex items-center gap-2">
+                    <CreditBalance />
                     <ModeToggle />
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-black/5 border border-black/5">
+                    <div className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-full bg-black/5 border border-black/5">
                         <User className="size-4 text-primary" />
                         <span className="text-xs font-bold text-foreground">
                             {userName ? `${userName} 선생님` : "선생님"}
@@ -167,6 +170,7 @@ export function NavbarMain() {
                             {item.name}
                         </Link>
                     ))}
+                    <CreditBalance />
                     <div className="h-px bg-black/5 w-full" />
                     <Button
                         variant="outline"

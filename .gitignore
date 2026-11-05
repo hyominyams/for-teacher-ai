@@ -17,6 +17,7 @@
 /.playwright-cli/
 /output/playwright/
 /output/class-polish/
+/output/credits/
 
 # next.js
 /.next/

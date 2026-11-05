@@ -1,3 +1,4 @@
+import { callBudget, completionText, creditFailure, creditUser, CreditError, runCreditJob } from "@/lib/server/credits";
 import { normalizeGrade, normalizeSchoolLevel } from "@/lib/subject-plan-values";
 import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { OpenAI } from "openai";
@@ -60,10 +61,7 @@ const subjectPlanSchema = {
     required: ["subjects"],
 } as const;
 
-const getErrorMessage = (error: unknown) => {
-    if (error instanceof Error) return error.message;
-    return "평가계획을 읽을 수 없습니다.";
-};
+
 
 const getExtension = (filename: string) => {
     const match = filename.toLowerCase().match(/\.[^.]+$/);
@@ -181,14 +179,7 @@ ${markdown.slice(0, 60000)}
 
 export async function POST(req: Request) {
     try {
-        const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) {
-            return NextResponse.json(
-                { error: "OPENAI_API_KEY가 설정되어 있지 않습니다. .env.local에 키를 추가하고 dev 서버를 재시작해주세요." },
-                { status: 503 }
-            );
-        }
-
+        const user = await creditUser(req);
         const formData = await req.formData();
         try { await assertEditableWorkLog(req, formData.get("workLogId")); } catch (error) { return workLogFailure(error); }
         const file = formData.get("file");
@@ -246,10 +237,10 @@ export async function POST(req: Request) {
             );
         }
 
-        const openai = new OpenAI({ apiKey });
-        const response = await openai.chat.completions.create({
+        const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
             model: "gpt-6-luna",
             reasoning_effort: "none",
+            max_completion_tokens: 32768,
             messages: [
                 {
                     role: "system",
@@ -266,25 +257,14 @@ export async function POST(req: Request) {
                     schema: subjectPlanSchema,
                 },
             },
-        });
-
-        const content = response.choices[0].message.content;
-        const parsed = JSON.parse(content || "{\"subjects\":[]}") as SubjectPlanExtraction;
-        const subjects = normalizeSubjects(parsed, hints);
-
-        if (!subjects.length) {
-            return NextResponse.json(
-                { error: "평가 영역, 성취기준, 평가기준을 찾지 못했습니다." },
-                { status: 400 }
-            );
-        }
-
-        return NextResponse.json({
-            subjects,
-            warnings: parseWarnings,
+        };
+        return await runCreditJob(req, user, "subject_plan", { markdown, hints, workLogId: formData.get("workLogId") }, [callBudget(params)], async complete => {
+            const parsed = JSON.parse(completionText(await complete(params))) as SubjectPlanExtraction;
+            const subjects = normalizeSubjects(parsed, hints);
+            if (!subjects.length) throw new CreditError("AI_INCOMPLETE", "평가 영역, 성취기준, 평가기준을 찾지 못했습니다. 크레딧은 차감하지 않습니다.", 400);
+            return { subjects, warnings: parseWarnings };
         });
     } catch (error: unknown) {
-        console.error("Subject Plan Parse Error:", error);
-        return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+        return creditFailure(error);
     }
 }
