@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import { LayoutDashboard } from "lucide-react"
 import { ModeToggle } from "@/components/mode-toggle"
+import { NavbarFrame } from "./NavbarFrame"
 
 export function NavbarLanding() {
     const [isScrolled, setIsScrolled] = React.useState(false)
@@ -56,14 +57,14 @@ export function NavbarLanding() {
                     : "bg-transparent py-6"
             )}
         >
-            <div className="container mx-auto px-6 md:px-12 flex items-center justify-between">
-                <Link href={isLoggedIn ? "/app" : "/"} className="flex items-center gap-2 group tracking-tighter">
+            <NavbarFrame>
+                <Link href={isLoggedIn ? "/app" : "/"} className="flex shrink-0 items-center gap-2 group tracking-tighter">
                     <span className="text-xl md:text-2xl font-black text-foreground group-hover:opacity-70 transition-all duration-300">
                         FOR TEACHER <span className="text-primary italic">AI</span>
                     </span>
                 </Link>
 
-                <nav className="hidden md:flex items-center gap-12">
+                <nav className="hidden lg:flex shrink-0 items-center gap-6 xl:gap-12">
                     {navItems.map((item) => (
                         <Link
                             key={item.href}
@@ -76,7 +77,7 @@ export function NavbarLanding() {
                     ))}
                 </nav>
 
-                <div className="hidden md:flex items-center gap-8">
+                <div className="hidden lg:flex shrink-0 items-center gap-4 xl:gap-8">
                     <ModeToggle />
                     {isLoggedIn ? (
                         <Button variant="default" className="shadow-[0_10px_30px_rgba(var(--primary-rgb),0.3)] rounded-full font-bold px-8 h-12 text-sm gap-2" asChild>
@@ -97,16 +98,20 @@ export function NavbarLanding() {
                 </div>
 
                 <button
-                    className="md:hidden p-2 text-muted-foreground hover:bg-white/5 rounded-full transition-all"
+                    className="lg:hidden p-2 text-muted-foreground hover:bg-white/5 rounded-full transition-all"
+                    aria-label={isMobileMenuOpen ? "메뉴 닫기" : "메뉴 열기"}
+                    aria-expanded={isMobileMenuOpen}
+                    aria-controls="landing-mobile-menu"
                     onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 >
                     {isMobileMenuOpen ? <X className="size-6" /> : <Menu className="size-6" />}
                 </button>
-            </div>
+            </NavbarFrame>
 
             <div
+                id="landing-mobile-menu"
                 className={cn(
-                    "md:hidden absolute top-full left-4 right-4 bg-background/80 backdrop-blur-3xl border border-white/10 rounded-[2rem] mt-4 transition-all duration-500 shadow-2xl overflow-hidden",
+                    "lg:hidden absolute top-full left-4 right-4 bg-background/80 backdrop-blur-3xl border border-white/10 rounded-[2rem] mt-4 transition-all duration-500 shadow-2xl overflow-hidden",
                     isMobileMenuOpen ? "max-h-[80vh] opacity-100 p-8" : "max-h-0 opacity-0 p-0"
                 )}
             >

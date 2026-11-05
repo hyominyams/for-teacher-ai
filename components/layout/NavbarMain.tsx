@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import { ModeToggle } from "@/components/mode-toggle"
 import { CreditBalance } from "@/components/credits/CreditBalance"
+import { NavbarFrame } from "./NavbarFrame"
 import { DEMO_AUTO_LOGIN_KEY } from "@/lib/auth-storage"
 
 export function NavbarMain() {
@@ -90,8 +91,8 @@ export function NavbarMain() {
                     : "bg-transparent"
             )}
         >
-            <div className="container mx-auto h-full px-6 xl:px-12 flex items-center justify-between">
-                <Link href="/app" className="flex items-center gap-2 group tracking-tighter">
+            <NavbarFrame className="h-full">
+                <Link href="/app" className="flex shrink-0 items-center gap-2 group tracking-tighter">
                     <span className="text-xl md:text-2xl font-black text-foreground group-hover:opacity-70 transition-all duration-300">
                         FOR TEACHER <span className="text-primary italic">AI</span>
                     </span>
@@ -100,7 +101,7 @@ export function NavbarMain() {
                     </span>
                 </Link>
 
-                <nav className="hidden md:flex items-center gap-2 xl:gap-8">
+                <nav className="hidden lg:flex shrink-0 items-center gap-6 xl:gap-10">
                     {navItems.map((item) => (
                         <Link
                             key={item.href}
@@ -121,12 +122,12 @@ export function NavbarMain() {
                     ))}
                 </nav>
 
-                <div className="hidden md:flex items-center gap-2">
+                <div className="hidden lg:flex shrink-0 items-center gap-2 xl:gap-4">
                     <CreditBalance />
                     <ModeToggle />
                     <div className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-full bg-black/5 border border-black/5">
                         <User className="size-4 text-primary" />
-                        <span className="text-xs font-bold text-foreground">
+                        <span className="max-w-24 xl:max-w-40 truncate text-xs font-bold text-foreground">
                             {userName ? `${userName} 선생님` : "선생님"}
                         </span>
                     </div>
@@ -143,16 +144,20 @@ export function NavbarMain() {
                 </div>
 
                 <button
-                    className="md:hidden p-2 text-muted-foreground hover:bg-black/5 rounded-full transition-all"
+                    className="lg:hidden p-2 text-muted-foreground hover:bg-black/5 rounded-full transition-all"
+                    aria-label={isMobileMenuOpen ? "메뉴 닫기" : "메뉴 열기"}
+                    aria-expanded={isMobileMenuOpen}
+                    aria-controls="app-mobile-menu"
                     onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 >
                     {isMobileMenuOpen ? <X className="size-6" /> : <Menu className="size-6" />}
                 </button>
-            </div>
+            </NavbarFrame>
 
             <div
+                id="app-mobile-menu"
                 className={cn(
-                    "md:hidden absolute top-full left-4 right-4 bg-white/95 backdrop-blur-3xl border border-black/5 rounded-[2rem] mt-4 transition-all duration-500 shadow-2xl overflow-hidden",
+                    "lg:hidden absolute top-full left-4 right-4 bg-white/95 dark:bg-slate-950/95 backdrop-blur-3xl border border-black/5 dark:border-white/10 rounded-[2rem] mt-4 transition-all duration-500 shadow-2xl overflow-hidden",
                     isMobileMenuOpen ? "max-h-[80vh] opacity-100 p-8" : "max-h-0 opacity-0 p-0"
                 )}
             >

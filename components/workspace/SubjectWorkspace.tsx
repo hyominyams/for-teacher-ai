@@ -436,50 +436,71 @@ export const SubjectWorkspace = ({
                     </div>
                 )}
 
-                {!isExpanded && !savedEditor && (
-                <div className="rounded-xl bg-indigo-50/60 dark:bg-indigo-950/50 border border-indigo-100 dark:border-indigo-900 p-3 space-y-2">
-                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,680px)_1fr] gap-4 lg:items-end">
-                        <div className="space-y-2 min-w-0 max-w-[680px]">
-                            <Label className="text-[10px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-widest px-1">현재 교과</Label>
+                {!isExpanded && (
+                <section aria-label="교과 기본정보와 교과 선택" className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-3 dark:border-indigo-900 dark:bg-indigo-950/30 sm:p-4">
+                    <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[144px_112px_minmax(0,1fr)] lg:grid-cols-[144px_112px_minmax(0,1fr)_auto]">
+                        <div className="min-w-0 space-y-1.5">
+                            <Label htmlFor="subject-school-level" className="text-xs font-semibold text-slate-500 dark:text-slate-400">학교급</Label>
+                            <Select value={globalConfig.schoolLevel ? normalizeSchoolLevel(globalConfig.schoolLevel) : ""} onValueChange={(val) => setGlobalConfig(p => ({ ...p, schoolLevel: val }))}>
+                                <SelectTrigger id="subject-school-level" className="w-full data-[size=default]:h-11 h-11 rounded-xl bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700 font-bold focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
+                                    <SelectValue placeholder="학교급 선택" />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl">
+                                    <SelectItem value="elementary" className="font-bold">초등학교</SelectItem>
+                                    <SelectItem value="middle" className="font-bold">중학교</SelectItem>
+                                    <SelectItem value="high" className="font-bold">고등학교</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="min-w-0 space-y-1.5">
+                            <Label htmlFor="subject-grade" className="text-xs font-semibold text-slate-500 dark:text-slate-400">학년</Label>
+                            <Select value={globalConfig.grade} onValueChange={(val) => setGlobalConfig(p => ({ ...p, grade: val }))}>
+                                <SelectTrigger id="subject-grade" className="w-full data-[size=default]:h-11 h-11 rounded-xl bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700 font-bold focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
+                                    <SelectValue placeholder="학년 선택" />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl">
+                                    {[1, 2, 3, 4, 5, 6].map(g => (
+                                        <SelectItem key={g} value={g.toString()} className="font-bold">{g}학년</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="col-span-2 min-w-0 space-y-1.5 sm:col-span-1">
+                            <Label htmlFor="subject-name" className="text-xs font-semibold text-slate-500 dark:text-slate-400">교과명</Label>
                             <Input
+                                id="subject-name"
                                 value={globalConfig.subjectName}
                                 onChange={(e) => setGlobalConfig(p => ({ ...p, subjectName: e.target.value }))}
-                                placeholder="교과명을 입력하세요"
-                                className="h-10 rounded-xl bg-white dark:bg-slate-900 border-indigo-100 dark:border-indigo-900 px-5 text-lg font-black text-slate-800 dark:text-slate-100 placeholder:text-slate-300 shadow-sm focus-visible:ring-indigo-200 focus-visible:border-indigo-200"
+                                placeholder="예: 국어, 수학, 통합교과(봄) 등"
+                                className="h-11 rounded-xl bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700 font-bold px-5 focus:border-indigo-300 shadow-inner border-none text-slate-700 dark:text-slate-200 placeholder:text-slate-300 placeholder:font-medium"
                             />
                         </div>
-                        <div className="grid grid-cols-3 sm:flex sm:items-center sm:justify-end gap-2">
-                            <Button
-                                variant="outline"
-                                onClick={onCreateSubjectLog}
-                                className="h-10 rounded-xl px-3 sm:px-5 border-indigo-100 dark:border-indigo-900 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 font-black text-xs gap-2"
-                            >
-                                새 교과 <Plus className="size-4" />
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => onDeleteSubjectLog(activeSubjectScopeKey)}
-                                disabled={subjectLogs.length === 0}
-                                title="교과 삭제"
-                                className="h-12 rounded-xl px-3 sm:px-4 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 hover:border-red-100 font-black text-xs gap-2 disabled:opacity-40"
-                            >
-                                <Trash2 className="size-4" />
-                                삭제
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={onDeleteAllSubjectLogs}
-                                disabled={subjectLogs.length === 0 && globalConfig.assessments.length === 0 && !globalConfig.subjectName.trim()}
-                                title="전체삭제"
-                                className="h-12 rounded-xl px-3 sm:px-4 border-red-100 bg-white dark:bg-slate-900 text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 hover:border-red-200 font-black text-xs gap-2 disabled:opacity-40"
-                            >
-                                <Trash2 className="size-4" />
-                                전체삭제
-                            </Button>
-                        </div>
+                        {!savedEditor && (
+                            <div className="col-span-2 flex items-center gap-2 sm:col-span-3 lg:col-span-1">
+                                <Button variant="outline" onClick={onCreateSubjectLog} className="h-11 rounded-xl border-indigo-100 bg-white px-4 text-xs font-bold text-indigo-600 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-indigo-950/70">
+                                    <Plus className="mr-1.5 size-4" /> 새 교과
+                                </Button>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button variant="outline" className="h-11 rounded-xl border-indigo-100 bg-white px-4 text-xs font-bold text-slate-600 dark:border-indigo-900 dark:bg-slate-900 dark:text-slate-300">
+                                            교과 관리 <ChevronDown className="ml-1.5 size-3.5" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent align="end" className="w-56 rounded-2xl border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+                                        <p className="px-3 py-2 text-xs font-semibold text-slate-500">교과 삭제</p>
+                                        <Button variant="ghost" onClick={() => onDeleteSubjectLog(activeSubjectScopeKey)} disabled={subjectLogs.length === 0} className="h-11 w-full justify-start gap-2 rounded-xl text-sm text-slate-600 dark:text-slate-300">
+                                            <Trash2 className="size-4" /> 현재 교과 삭제
+                                        </Button>
+                                        <Button variant="ghost" onClick={onDeleteAllSubjectLogs} disabled={subjectLogs.length === 0 && globalConfig.assessments.length === 0 && !globalConfig.subjectName.trim()} className="h-11 w-full justify-start gap-2 rounded-xl text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">
+                                            <Trash2 className="size-4" /> 전체 교과 삭제
+                                        </Button>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+                        )}
                     </div>
-
-                    <div className="flex flex-nowrap gap-2 overflow-x-auto overflow-y-hidden custom-scrollbar pb-1 pr-1">
+                    {!savedEditor && (
+                    <div role="group" aria-label="교과 선택 · 드래그해서 순서 변경" className="flex flex-nowrap gap-2 overflow-x-auto overflow-y-hidden border-t border-indigo-100 pt-3 custom-scrollbar pb-1 pr-1 dark:border-indigo-900">
                         {subjectSelectItems.map(log => {
                             const isActive = log.scopeKey === activeSubjectScopeKey;
                             const isRealSubjectLog = subjectLogs.some(subjectLog => subjectLog.scopeKey === log.scopeKey);
@@ -522,7 +543,8 @@ export const SubjectWorkspace = ({
                             );
                         })}
                     </div>
-                </div>
+                    )}
+                </section>
                 )}
 
                 <Tabs value={isExpanded ? "individual" : activeInputTab} onValueChange={setActiveInputTab} className={cn(
@@ -543,70 +565,32 @@ export const SubjectWorkspace = ({
 
                     {/* ① 평가 기준 설정 탭 */}
                     <TabsContent value="global" className={cn(
-                        "space-y-10 focus:outline-none custom-scrollbar pb-40",
+                        "space-y-6 focus:outline-none custom-scrollbar pb-40",
                         isExpanded ? "overflow-y-auto flex-1 h-full" : "h-auto"
                     )}>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-                            <div className="space-y-3">
-                                <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">학교급</Label>
-                                <Select value={globalConfig.schoolLevel ? normalizeSchoolLevel(globalConfig.schoolLevel) : ""} onValueChange={(val) => setGlobalConfig(p => ({ ...p, schoolLevel: val }))}>
-                                    <SelectTrigger className="h-12 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-slate-100 dark:border-slate-700 font-bold focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
-                                        <SelectValue placeholder="학교급 선택" />
-                                    </SelectTrigger>
-                                    <SelectContent className="rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl">
-                                        <SelectItem value="elementary" className="font-bold">초등학교</SelectItem>
-                                        <SelectItem value="middle" className="font-bold">중학교</SelectItem>
-                                        <SelectItem value="high" className="font-bold">고등학교</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-3">
-                                <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">학년</Label>
-                                <Select value={globalConfig.grade} onValueChange={(val) => setGlobalConfig(p => ({ ...p, grade: val }))}>
-                                    <SelectTrigger className="h-12 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-slate-100 dark:border-slate-700 font-bold focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
-                                        <SelectValue placeholder="학년 선택" />
-                                    </SelectTrigger>
-                                    <SelectContent className="rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl">
-                                        {[1, 2, 3, 4, 5, 6].map(g => (
-                                            <SelectItem key={g} value={g.toString()} className="font-bold">{g}학년</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="md:col-span-2 space-y-3">
-                                <Label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">교과명</Label>
-                                <Input
-                                    value={globalConfig.subjectName}
-                                    onChange={(e) => setGlobalConfig(p => ({ ...p, subjectName: e.target.value }))}
-                                    placeholder="예: 국어, 수학, 통합교과(봄) 등"
-                                    className="h-12 rounded-xl bg-slate-50 dark:bg-slate-800/70 border-slate-100 dark:border-slate-700 font-bold px-5 focus:border-indigo-300 shadow-inner border-none text-slate-700 dark:text-slate-200 placeholder:text-slate-300 placeholder:font-medium"
-                                />
-                            </div>
-                            <div className="md:col-span-4 flex justify-end">
-                                <Button
-                                    onClick={() => setGlobalConfig({ schoolLevel: "", grade: "", subjectName: "", assessments: [] })}
-                                    variant="ghost"
-                                    className="h-8 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 font-bold gap-2 text-xs"
-                                >
-                                    <RotateCcw className="size-3" /> 입력 정보 초기화
-                                </Button>
-                            </div>
-                        </div>
-
                         <div className="space-y-6 pb-20">
-                            <div className="flex items-center justify-between px-2">
+                            <div className="flex flex-wrap items-center justify-between gap-3 px-1">
                                 <div className="flex items-center gap-3">
                                     <Label className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase tracking-wider">평가 영역 및 기준 설정</Label>
                                     <Badge variant="secondary" className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 border-indigo-100 dark:border-indigo-900 font-black px-2.5 py-0.5 rounded-lg">{globalConfig.assessments.length}</Badge>
                                 </div>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={addAssessment}
-                                    className="rounded-2xl h-11 px-6 border-indigo-100 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 transition-all font-black text-xs gap-2"
-                                >
-                                    평가정보 추가 <Plus className="size-4" />
-                                </Button>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                        onClick={() => setGlobalConfig({ schoolLevel: "", grade: "", subjectName: "", assessments: [] })}
+                                        variant="ghost"
+                                        className="h-11 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 font-bold gap-2 text-xs"
+                                    >
+                                        <RotateCcw className="size-3" /> 입력 정보 초기화
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={addAssessment}
+                                        className="rounded-2xl h-11 px-6 border-indigo-100 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 transition-all font-black text-xs gap-2"
+                                    >
+                                        평가정보 추가 <Plus className="size-4" />
+                                    </Button>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-1 gap-6">
