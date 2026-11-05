@@ -34,7 +34,7 @@ export function parseSavedLogInput(value: unknown, update = false) {
 }
 
 export function defaultWorkTitle(category: WorkCategory, subject = "", now = new Date()) {
-    const date = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(now);
+    const date = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
     return `${subject.trim() || WORK_CATEGORIES[category]} · ${date}`;
 }
 // JSONB may reorder object keys. Arrays keep their order; storage order must not

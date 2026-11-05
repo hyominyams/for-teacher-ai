@@ -283,10 +283,10 @@ export const CreativeActivityWorkspace = ({
                                                 ));
                                             }}
                                         >
-                                            <SelectTrigger aria-label={`${student.id}번 학생 임원 직책`} className="w-full h-10 rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-bold text-xs ring-0 focus:ring-1 focus:ring-amber-200">
+                                            <SelectTrigger aria-label={`${student.id}번 학생 임원 직책`} className="w-full h-10 rounded-[12px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-bold text-xs ring-0 focus:ring-1 focus:ring-amber-200">
                                                 <SelectValue placeholder="임원아님" />
                                             </SelectTrigger>
-                                            <SelectContent className="rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl z-[10000]">
+                                            <SelectContent className="rounded-[12px] border-slate-100 dark:border-slate-700 shadow-lg z-[10000]">
                                                 {[...new Set([...OFFICER_ROLES, "회장", "부회장", student.officerRole].filter((role): role is string => Boolean(role)))].map(role => (
                                                     <SelectItem key={role} value={role} className="rounded-lg font-bold text-xs py-2.5">{role}</SelectItem>
                                                 ))}
@@ -663,7 +663,7 @@ const AutoDistributeEvents = ({
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-2">
                             <Select value={randomCount} onValueChange={setRandomCount}>
-                                <SelectTrigger className="h-9 w-20 rounded-xl border-amber-100 dark:border-amber-900 bg-white dark:bg-slate-900 text-xs font-black text-amber-700 dark:text-amber-200">
+                                <SelectTrigger className="h-9 w-20 rounded-[12px] border-amber-100 dark:border-amber-900 bg-white dark:bg-slate-900 text-xs font-black text-amber-700 dark:text-amber-200">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent className="z-[10080]">
