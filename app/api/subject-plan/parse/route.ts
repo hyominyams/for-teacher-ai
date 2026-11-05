@@ -1,3 +1,4 @@
+import { normalizeGrade, normalizeSchoolLevel } from "@/lib/subject-plan-values";
 import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { OpenAI } from "openai";
 import { NextResponse } from "next/server";
@@ -5,6 +6,7 @@ import { parse } from "kordoc";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject } from "@/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".pdf"]);
@@ -24,7 +26,7 @@ const subjectPlanSchema = {
                 additionalProperties: false,
                 properties: {
                     subjectName: { type: "string" },
-                    schoolLevel: { type: "string" },
+                    schoolLevel: { type: "string", enum: ["elementary", "middle", "high"] },
                     grade: { type: "string" },
                     assessments: {
                         type: "array",
@@ -136,8 +138,8 @@ const normalizeSubjects = (
     return (extraction.subjects || [])
         .map((subject) => {
             const subjectName = cleanText(subject.subjectName, hints.subjectName || "가져온 교과");
-            const schoolLevel = cleanText(subject.schoolLevel, hints.schoolLevel || "elementary");
-            const grade = cleanText(subject.grade, hints.grade || "1").replace(/학년/g, "").trim() || hints.grade || "1";
+            const schoolLevel = normalizeSchoolLevel(subject.schoolLevel, hints.schoolLevel);
+            const grade = normalizeGrade(subject.grade, schoolLevel, hints.grade);
             const assessments = (subject.assessments || [])
                 .map((assessment) => ({
                     area: cleanText(assessment.area, "평가"),
@@ -163,6 +165,7 @@ const buildPrompt = (markdown: string, hints: { schoolLevel: string; grade: stri
 - 평가기준이 상/중/하로 나뉘어 있으면 criteria에는 한 문자열 안에 줄바꿈으로 유지하고, criteriaLevels.상/중/하에 각각 분리합니다.
 - 평가기준이 3개 문장이나 3개 행으로 제시되어 있고 수준명이 생략되어 있으면 위에서부터 상, 중, 하로 판단해 criteriaLevels에 넣습니다.
 - 수준별 평가기준이 아니면 criteriaLevels.상/중/하에는 빈 문자열을 넣습니다.
+- 학교급(schoolLevel)은 초등학교 elementary, 중학교 middle, 고등학교 high 코드로 반환합니다. 학년(grade)은 학년 숫자만 반환합니다.
 - 교과명, 학교급, 학년이 문서에 없으면 힌트 값을 사용합니다.
 - 확실하지 않은 핵심역량은 빈 문자열로 둡니다.
 - 성취기준 또는 평가기준이 없는 평가는 제외합니다.

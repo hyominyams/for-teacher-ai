@@ -4,7 +4,6 @@ import React, { useState, useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
     Zap,
-    Layout,
     X,
     Plus,
     Search,
@@ -20,6 +19,7 @@ import {
     ListPlus
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { downloadWorkspaceCsv } from "@/lib/workspace-csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -51,13 +51,13 @@ const Wrapper = ({ children, isExpanded, mounted }: WrapperProps) => {
     if (isExpanded && mounted) {
         return createPortal(
             <div className="fixed inset-0 z-[9999] isolate">
-                <div className="absolute inset-0 bg-white pointer-events-auto" />
+                <div className="absolute inset-0 bg-white dark:bg-slate-900 pointer-events-auto" />
                 {children}
             </div>,
             document.body
         );
     }
-    return <div className="space-y-8 mt-8 pb-20 transform-none">{children}</div>;
+    return <div className="space-y-5 transform-none">{children}</div>;
 };
 
 interface CreativeActivityWorkspaceProps {
@@ -86,8 +86,6 @@ export const CreativeActivityWorkspace = ({
     handleResetAll,
     toggleAllSelection,
     toggleStudentSelection,
-    studentCount,
-    charLimit,
     isExpanded,
     setIsExpanded
 }: CreativeActivityWorkspaceProps) => {
@@ -127,20 +125,19 @@ export const CreativeActivityWorkspace = ({
     return (
         <Wrapper isExpanded={isExpanded} mounted={mounted}>
             <Card className={cn(
-                "p-10 border-0 bg-white shadow-2xl shadow-slate-200/50 space-y-8 transition-all duration-500 relative",
-                isExpanded ? "fixed inset-4 z-[9999] rounded-[3rem] border border-blue-100 shadow-primary/20 !transform-none overflow-y-auto overscroll-contain pointer-events-auto cursor-default" : "rounded-[3rem] overflow-hidden"
+                "gap-0 p-4 sm:p-5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm space-y-5 transition-all duration-500 relative",
+                isExpanded ? "fixed inset-4 z-[9999] rounded-[3rem] border border-blue-100 dark:border-blue-900 shadow-primary/20 !transform-none overflow-y-auto overscroll-contain pointer-events-auto cursor-default" : "rounded-2xl overflow-hidden"
             )}>
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
                     <div className="flex items-center gap-4">
-                        <div className="size-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                            <Zap className="size-7" />
+                        <div className="size-10 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 flex items-center justify-center">
+                            <Zap className="size-5" />
                         </div>
                         <div>
-                            <h4 className="text-3xl font-black tracking-tight text-slate-900 flex items-center gap-3">
-                                학생별 AI Workspace
-                                <div className="px-3 py-1 bg-amber-50 text-amber-600 text-[10px] rounded-lg font-black tracking-widest leading-none">V1.0 PRO</div>
+                            <h4 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-3">
+                                학생별 기록
                             </h4>
-                            <p className="text-sm text-slate-400 font-medium">참여행사를 기반으로 생활기록부 작성을 시작하세요.</p>
+                            <p className="text-sm text-slate-400 font-medium">활동 선택 → 임원·기간 입력 → 학생별 또는 선택·전체 생성</p>
                         </div>
                     </div>
                     <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 w-full xl:w-auto">
@@ -149,31 +146,15 @@ export const CreativeActivityWorkspace = ({
                         <BulkEventAdd students={students} setStudents={setStudents} />
                         <Button
                             variant="outline"
-                            onClick={() => {
-                                const headers = ["번호", "참여 행사", "임원여부", "임원기간", "AI생성결과"];
-                                const rows = students.map(s => [
-                                    s.id,
-                                    `"${(s.participatedEvents || []).join(", ")}"`,
-                                    `"${s.officerRole}"`,
-                                    `"${s.officerPeriod || ""}"`,
-                                    `"${(s.aiResult || "").replace(/\n/g, " ").replace(/"/g, '""')}"`
-                                ]);
-                                const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n");
-                                const encodedUri = encodeURI(csvContent);
-                                const link = document.createElement("a");
-                                link.setAttribute("href", encodedUri);
-                                link.setAttribute("download", `창체_데이터_${new Date().toISOString().slice(0, 10)}.csv`);
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-                            }}
-                            className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 text-emerald-600 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
+                            onClick={() => downloadWorkspaceCsv("creative", students)}
+                            className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
                         >
                             내보내기 <Download className="size-4" />
                         </Button>
                         <Button
-                            onClick={() => setIsExpanded(!isExpanded)}
-                            className="rounded-2xl h-11 px-5 border-slate-100 bg-slate-50 text-slate-500 hover:bg-slate-100 transition-all w-full sm:w-auto"
+                            aria-label={isExpanded ? "전체화면 닫기" : "전체화면으로 넓게 보기"}
+                        onClick={() => setIsExpanded(!isExpanded)}
+                            className="rounded-2xl h-11 px-5 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all w-full sm:w-auto"
                             variant="ghost"
                         >
                             {isExpanded ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
@@ -181,7 +162,7 @@ export const CreativeActivityWorkspace = ({
                         {isExpanded && (
                             <Button
                                 onClick={() => setIsExpanded(false)}
-                                className="rounded-2xl size-11 p-0 bg-red-50 text-red-500 hover:bg-red-100"
+                                className="rounded-2xl size-11 p-0 bg-red-50 dark:bg-red-950/40 text-red-500 hover:bg-red-100"
                             >
                                 <X className="size-5" />
                             </Button>
@@ -190,17 +171,18 @@ export const CreativeActivityWorkspace = ({
                 </div>
 
                 <div
-                    className="bg-amber-100/10 rounded-[2.5rem] border border-slate-100 overflow-auto custom-scrollbar relative"
+                    className="bg-amber-100/10 dark:bg-amber-950/60 rounded-[2.5rem] border border-slate-100 dark:border-slate-700 overflow-auto custom-scrollbar relative"
                     style={{ height: isExpanded ? "calc(100vh - 400px)" : "600px" }}
                 >
                     <div className="w-fit min-w-full flex flex-col min-h-full">
                         {/* Sticky Table Header */}
-                        <div className="sticky top-0 z-20 bg-slate-50 border-b border-slate-100 shadow-sm">
+                        <div className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-700 shadow-sm">
                             <div className="grid grid-cols-[40px_60px_minmax(180px,1.2fr)_120px_130px_minmax(280px,2fr)_120px] gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 items-center">
                                 <div className="flex items-center justify-center">
                                     <input
                                         type="checkbox"
                                         onChange={toggleAllSelection}
+                                        aria-label="모든 학생 선택"
                                         checked={students.length > 0 && students.every(s => s.selected)}
                                         className="size-5 rounded-lg border-slate-300 accent-amber-500 cursor-pointer"
                                     />
@@ -223,21 +205,22 @@ export const CreativeActivityWorkspace = ({
                                 const visibleEvents = isEventRowOpen ? participatedEvents : participatedEvents.slice(0, EVENT_PREVIEW_LIMIT);
                                 const hiddenEventCount = participatedEvents.length - visibleEvents.length;
                                 return (
-                                <div key={student.id} className={cn(
+                                <div key={student.id} data-student-id={student.id} className={cn(
                                     "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_120px_130px_minmax(280px,2fr)_120px] gap-6 px-8 rounded-[2rem] border transition-all items-start group/row",
                                     isRowOpen ? "py-6" : "py-3.5",
-                                    student.selected ? "bg-amber-50/50 border-amber-200" : "bg-white border-slate-50 hover:bg-slate-50 hover:border-slate-100",
+                                    student.selected ? "bg-amber-50/50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800" : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:border-slate-100 dark:hover:border-slate-700",
                                     isRowOpen && "ring-2 ring-amber-400/30 border-amber-300 shadow-xl shadow-amber-100/40"
                                 )}>
                                     <div className="flex items-center justify-center pt-3">
                                         <input
                                             type="checkbox"
+                                            aria-label={`${student.id}번 학생 선택`}
                                             checked={student.selected}
                                             onChange={() => toggleStudentSelection(student.id)}
                                             className="size-5 rounded-lg border-slate-300 accent-amber-500 cursor-pointer"
                                         />
                                     </div>
-                                    <div className="text-lg font-black text-slate-900 text-center pt-2 whitespace-nowrap">{student.id}번</div>
+                                    <div className="text-lg font-black text-slate-900 dark:text-slate-100 text-center pt-2 whitespace-nowrap">{student.id}번</div>
 
                                     <div className="flex flex-wrap gap-2 pt-1">
                                         <AnimatePresence mode="popLayout">
@@ -248,7 +231,7 @@ export const CreativeActivityWorkspace = ({
                                                     exit={{ scale: 0.8, opacity: 0 }}
                                                     key={ev}
                                                 >
-                                                    <Badge variant="secondary" className="pl-3 pr-1 py-1 rounded-lg bg-amber-50 text-amber-700 border-amber-100 font-bold group/tag">
+                                                    <Badge variant="secondary" className="pl-3 pr-1 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-200 border-amber-100 dark:border-amber-900 font-bold group/tag">
                                                         {ev}
                                                         <button
                                                             onClick={() => {
@@ -256,7 +239,7 @@ export const CreativeActivityWorkspace = ({
                                                                     ...s, participatedEvents: s.participatedEvents?.filter(e => e !== ev)
                                                                 } : s));
                                                             }}
-                                                            className="size-5 rounded-md hover:bg-amber-100 flex items-center justify-center text-amber-400 hover:text-amber-800 transition-all ml-1"
+                                                            className="size-5 rounded-md hover:bg-amber-100 dark:hover:bg-amber-950/60 flex items-center justify-center text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 transition-all ml-1"
                                                         >
                                                             <X className="size-3" />
                                                         </button>
@@ -268,7 +251,7 @@ export const CreativeActivityWorkspace = ({
                                             <button
                                                 type="button"
                                                 onClick={() => toggleEventRow(student.id)}
-                                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[11px] font-black text-slate-500 transition-all hover:border-amber-200 hover:bg-amber-50 hover:text-amber-600"
+                                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-2.5 text-[11px] font-black text-slate-500 dark:text-slate-400 transition-all hover:border-amber-200 dark:hover:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:text-amber-600 dark:hover:text-amber-300"
                                             >
                                                 더보기 {hiddenEventCount}
                                                 <ChevronDown className="size-3.5" />
@@ -278,7 +261,7 @@ export const CreativeActivityWorkspace = ({
                                             <button
                                                 type="button"
                                                 onClick={() => toggleEventRow(student.id)}
-                                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-100 bg-amber-50 px-2.5 text-[11px] font-black text-amber-700 transition-all hover:bg-amber-100"
+                                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-100 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 px-2.5 text-[11px] font-black text-amber-700 dark:text-amber-200 transition-all hover:bg-amber-100 dark:hover:bg-amber-950/60"
                                             >
                                                 접기
                                                 <ChevronUp className="size-3.5" />
@@ -300,11 +283,11 @@ export const CreativeActivityWorkspace = ({
                                                 ));
                                             }}
                                         >
-                                            <SelectTrigger className="w-full h-10 rounded-xl bg-white border-slate-200 font-bold text-xs ring-0 focus:ring-1 focus:ring-amber-200">
+                                            <SelectTrigger aria-label={`${student.id}번 학생 임원 직책`} className="w-full h-10 rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-bold text-xs ring-0 focus:ring-1 focus:ring-amber-200">
                                                 <SelectValue placeholder="임원아님" />
                                             </SelectTrigger>
-                                            <SelectContent className="rounded-xl border-slate-100 shadow-2xl z-[10000]">
-                                                {["임원아님", "반장", "부반장", "회장", "부회장", "전교회장", "전교부회장"].map(role => (
+                                            <SelectContent className="rounded-xl border-slate-100 dark:border-slate-700 shadow-2xl z-[10000]">
+                                                {[...new Set([...OFFICER_ROLES, "회장", "부회장", student.officerRole].filter((role): role is string => Boolean(role)))].map(role => (
                                                     <SelectItem key={role} value={role} className="rounded-lg font-bold text-xs py-2.5">{role}</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -314,35 +297,37 @@ export const CreativeActivityWorkspace = ({
                                     <div className="pt-1">
                                         <input
                                             type="text"
-                                            placeholder="예: 25.03~"
+                                            placeholder="예: 2026.03.01.~08.31."
+                                            aria-label={`${student.id}번 학생 임원 기간`}
                                             value={student.officerPeriod || ""}
                                             disabled={(student.officerRole || "임원아님") === "임원아님"}
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 setStudents(prev => prev.map(s => s.id === student.id ? { ...s, officerPeriod: val } : s));
                                             }}
-                                            className="w-full h-10 px-4 rounded-xl border border-slate-200 bg-white text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all disabled:bg-slate-50 disabled:border-slate-100 disabled:text-slate-300"
+                                            className="w-full h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all disabled:bg-slate-50 dark:disabled:bg-slate-800 disabled:border-slate-100 disabled:text-slate-300"
                                         />
                                     </div>
 
-                                    <div className="relative group/txt pt-1">
+                                    <div className={cn("relative group/txt pt-1", isRowOpen && "col-span-full row-start-2 max-w-[calc(100vw-6rem)]")}>
                                         <div
                                             onClick={() => { if (!isRowOpen && !student.isGenerating) setExpandedRowId(student.id); }}
                                             className={cn(
                                                 "rounded-2xl text-[12px] font-medium leading-[1.7] transition-all",
                                                 isRowOpen ? "p-5 min-h-[180px]" : "p-4 h-[100px] overflow-hidden cursor-pointer hover:ring-2 hover:ring-amber-300/50",
-                                                student.aiResult ? "bg-slate-50 text-slate-700 border border-slate-100" : "bg-slate-50/50 text-slate-300 italic border border-dashed border-slate-200"
+                                                student.aiResult ? "bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border border-slate-100 dark:border-slate-700" : "bg-slate-50/50 dark:bg-slate-800/70 text-slate-300 italic border border-dashed border-slate-200 dark:border-slate-700"
                                             )}
                                         >
                                             {student.isGenerating ? (
                                                 <div className="flex flex-col gap-2.5">
-                                                    <div className="h-2 w-full bg-slate-200 rounded-full animate-pulse" />
-                                                    <div className="h-2 w-4/5 bg-slate-200 rounded-full animate-pulse" />
+                                                    <div className="h-2 w-full bg-slate-200 dark:bg-slate-700 rounded-full animate-pulse" />
+                                                    <div className="h-2 w-4/5 bg-slate-200 dark:bg-slate-700 rounded-full animate-pulse" />
                                                 </div>
                                             ) : isRowOpen ? (
                                                 <textarea
                                                     autoFocus
-                                                    value={student.aiResult}
+                                                    aria-label={`${student.id}번 학생 작성 결과`}
+                                                        value={student.aiResult}
                                                     placeholder="참여 행사를 클릭하고 생성을 눌러주세요."
                                                     onChange={(e) => {
                                                         const newVal = e.target.value;
@@ -360,7 +345,7 @@ export const CreativeActivityWorkspace = ({
                                                 title={isRowOpen ? "접기" : "펼쳐서 편집"}
                                                 className={cn(
                                                     "absolute top-2.5 right-2.5 size-8 rounded-lg shadow-lg border flex items-center justify-center cursor-pointer transition-all hover:scale-110",
-                                                    isRowOpen ? "bg-amber-500 text-white border-amber-500 opacity-100" : "bg-white text-slate-400 border-slate-100 opacity-0 group-hover/txt:opacity-100 hover:text-amber-500"
+                                                    isRowOpen ? "bg-amber-500 text-white border-amber-500 opacity-100" : "bg-white dark:bg-slate-900 text-slate-400 border-slate-100 dark:border-slate-700 opacity-0 group-hover/txt:opacity-100 hover:text-amber-500 dark:hover:text-amber-400"
                                                 )}
                                             >
                                                 {isRowOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
@@ -368,14 +353,14 @@ export const CreativeActivityWorkspace = ({
                                         )}
                                     </div>
 
-                                    <div className="flex flex-col gap-2 pt-1 min-w-[100px]">
+                                    <div className="flex flex-col gap-2 pt-1 min-w-[100px]" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
                                         <Button
                                             onClick={() => handleGenerate(student.id)}
                                             disabled={student.isGenerating || (student.participatedEvents?.length || 0) === 0}
                                             className={cn(
                                                 "w-full rounded-2xl font-black h-12 px-5 gap-2 text-[13px] transition-all shadow-lg",
                                                 student.aiResult
-                                                    ? "bg-amber-100 text-amber-600 hover:bg-amber-200 shadow-amber-100"
+                                                    ? "bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 hover:bg-amber-200 shadow-amber-100"
                                                     : "bg-amber-500 text-white hover:bg-amber-600 shadow-amber-200/20"
                                             )}
                                         >
@@ -391,7 +376,7 @@ export const CreativeActivityWorkspace = ({
                                                     aiResult: ""
                                                 } : s));
                                             }}
-                                            className="w-full h-11 rounded-2xl bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center gap-2 font-black text-[11px]"
+                                            className="w-full h-11 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 transition-all flex items-center justify-center gap-2 font-black text-[11px]"
                                         >
                                             <RotateCcw className="size-3" /> 초기화
                                         </button>
@@ -402,31 +387,31 @@ export const CreativeActivityWorkspace = ({
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center justify-between py-8 px-6 bg-slate-50/50 rounded-[2.5rem] border border-slate-100">
+                <div className="flex flex-wrap items-center justify-between gap-3 py-4 px-4 bg-slate-50/50 dark:bg-slate-800/70 rounded-[2.5rem] border border-slate-100 dark:border-slate-700">
                     <div className="flex items-center gap-4">
-                        <div className="px-6 py-3 bg-white rounded-2xl text-sm font-black text-slate-600 border border-slate-200 shadow-sm flex items-center gap-3">
+                        <div className="px-3 py-2 bg-white dark:bg-slate-900 rounded-2xl text-sm font-black text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
                             <div className="size-2 rounded-full bg-amber-500 animate-pulse" />
-                            {students.filter(s => s.selected).length} Students Focused
+                            {students.filter(s => s.selected).length}명 선택됨
                         </div>
                     </div>
-                    <div className="flex gap-4">
+                    <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
                         <Button
                             onClick={handleResetAll}
                             variant="ghost"
-                            className="rounded-2xl bg-white text-slate-500 font-black h-16 px-10 hover:bg-slate-100 border border-slate-200 shadow-sm transition-all"
+                            className="rounded-2xl bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-black h-11 px-4 sm:px-6 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all"
                         >
                             전체 초기화
                         </Button>
                         <Button
                             onClick={handleSelectedGenerate}
                             variant="outline"
-                            className="rounded-2xl border-2 border-slate-900 text-slate-900 font-black h-16 px-10 hover:bg-slate-50 shadow-sm gap-3 transition-all"
+                            className="rounded-2xl border-2 border-slate-900 text-slate-900 dark:text-slate-100 font-black h-11 px-4 sm:px-6 hover:bg-slate-50 dark:hover:bg-slate-800/70 shadow-sm gap-3 transition-all"
                         >
                             <UserCheck className="size-5" /> 선택 생성
                         </Button>
                         <Button
                             onClick={handleAllGenerate}
-                            className="rounded-2xl bg-slate-900 text-white font-black h-16 px-12 hover:bg-slate-800 shadow-2xl shadow-slate-300 gap-4 text-lg transition-all"
+                            className="rounded-2xl bg-slate-900 text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-800 shadow-2xl shadow-slate-300 gap-4 text-lg transition-all"
                         >
                             <Zap className="size-5 text-amber-400" /> 전체 생성
                         </Button>
@@ -588,14 +573,14 @@ const AutoDistributeEvents = ({
             <PopoverTrigger asChild>
                 <Button
                     variant="outline"
-                    className="rounded-2xl h-11 px-6 font-bold border-amber-100 bg-amber-50 text-amber-600 gap-2 hover:bg-amber-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
+                    className="rounded-2xl h-11 px-6 font-bold border-amber-100 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 gap-2 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
                 >
-                    행사 자동배정 <Sparkles className="size-4" />
+                    활동 자동배정 <Sparkles className="size-4" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[420px] p-0 rounded-2xl border-slate-100 shadow-2xl overflow-hidden z-[10050]" align="end">
-                <div className="p-4 bg-slate-50 border-b border-slate-100">
-                    <div className="text-sm font-black text-slate-700">행사 자동배정</div>
+            <PopoverContent className="w-[420px] p-0 rounded-2xl border-slate-100 dark:border-slate-700 shadow-2xl overflow-hidden z-[10050]" align="end">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-700">
+                    <div className="text-sm font-black text-slate-700 dark:text-slate-200">활동 자동배정</div>
                     <p className="text-[11px] text-slate-400 font-medium mt-1 leading-relaxed">
                         학교 행사명으로 선택 학생의 참여 행사를 채웁니다.
                     </p>
@@ -612,7 +597,7 @@ const AutoDistributeEvents = ({
                             }
                         }}
                         placeholder="예: 시업식, 학급자치회, 과학의 달, 운동회, 현장체험학습"
-                        className="w-full h-28 px-4 py-3 rounded-xl border border-slate-200 bg-white text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all resize-none leading-relaxed"
+                        className="w-full h-28 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all resize-none leading-relaxed"
                     />
 
                     <div className="grid grid-cols-3 gap-2">
@@ -629,7 +614,7 @@ const AutoDistributeEvents = ({
                                     "h-10 rounded-xl border text-xs font-black transition-all",
                                     countMode === option.value
                                         ? "bg-amber-500 border-amber-500 text-white"
-                                        : "bg-white border-slate-200 text-slate-500 hover:border-amber-200 hover:text-amber-600"
+                                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-amber-200 dark:hover:border-amber-800 hover:text-amber-600 dark:hover:text-amber-300"
                                 )}
                             >
                                 {option.label}
@@ -637,21 +622,21 @@ const AutoDistributeEvents = ({
                         ))}
                     </div>
                     {countMode === "custom" && (
-                        <label className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/50 px-4 py-3">
-                            <span className="text-xs font-black text-amber-700">학생당 배정 개수</span>
+                        <label className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/40 px-4 py-3">
+                            <span className="text-xs font-black text-amber-700 dark:text-amber-200">학생당 배정 개수</span>
                             <input
                                 type="number"
                                 min={1}
                                 max={20}
                                 value={customCount}
                                 onChange={(event) => setCustomCount(event.target.value)}
-                                className="h-9 w-24 rounded-lg border border-amber-100 bg-white px-3 text-right text-xs font-black text-amber-700 outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
+                                className="h-9 w-24 rounded-lg border border-amber-100 dark:border-amber-900 bg-white dark:bg-slate-900 px-3 text-right text-xs font-black text-amber-700 dark:text-amber-200 outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
                             />
                         </label>
                     )}
 
-                    <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 cursor-pointer">
-                        <span className="text-xs font-black text-slate-600">기존 행사 비우기</span>
+                    <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-4 py-3 cursor-pointer">
+                        <span className="text-xs font-black text-slate-600 dark:text-slate-300">기존 행사 비우기</span>
                         <input
                             type="checkbox"
                             checked={replaceExisting}
@@ -663,7 +648,7 @@ const AutoDistributeEvents = ({
                     {parsedEvents.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
                             {parsedEvents.map((event, index) => (
-                                <Badge key={`${event}-${index}`} variant="secondary" className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border-amber-100 font-bold text-[11px]">
+                                <Badge key={`${event}-${index}`} variant="secondary" className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-200 border-amber-100 dark:border-amber-900 font-bold text-[11px]">
                                     {event}
                                 </Badge>
                             ))}
@@ -672,13 +657,13 @@ const AutoDistributeEvents = ({
 
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
                         <div className="text-[11px] font-bold text-slate-400">
-                            <span className="text-amber-600">{selectedCount}명</span>
+                            <span className="text-amber-600 dark:text-amber-300">{selectedCount}명</span>
                             <span className="mx-1">/</span>
-                            <span className="text-amber-600">{parsedEvents.length}개 행사</span>
+                            <span className="text-amber-600 dark:text-amber-300">{parsedEvents.length}개 행사</span>
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-2">
                             <Select value={randomCount} onValueChange={setRandomCount}>
-                                <SelectTrigger className="h-9 w-20 rounded-xl border-amber-100 bg-white text-xs font-black text-amber-700">
+                                <SelectTrigger className="h-9 w-20 rounded-xl border-amber-100 dark:border-amber-900 bg-white dark:bg-slate-900 text-xs font-black text-amber-700 dark:text-amber-200">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent className="z-[10080]">
@@ -694,7 +679,7 @@ const AutoDistributeEvents = ({
                                 variant="outline"
                                 onClick={handleRandomAdd}
                                 disabled={isRandomLoading}
-                                className="rounded-xl h-9 px-4 font-black text-xs border-amber-100 bg-white text-amber-700 hover:bg-amber-50 gap-2"
+                                className="rounded-xl h-9 px-4 font-black text-xs border-amber-100 dark:border-amber-900 bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 gap-2"
                             >
                                 행사랜덤추가 <Sparkles className={cn("size-3.5", isRandomLoading && "animate-spin")} />
                             </Button>
@@ -749,14 +734,14 @@ const BulkEventAdd = ({
             <PopoverTrigger asChild>
                 <Button
                     variant="outline"
-                    className="rounded-2xl h-11 px-6 font-bold border-blue-100 bg-blue-50 text-blue-600 gap-2 hover:bg-blue-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
+                    className="rounded-2xl h-11 px-6 font-bold border-blue-100 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-300 gap-2 hover:bg-blue-100 dark:hover:bg-blue-950/70 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
                 >
-                    행사 일괄추가 <ListPlus className="size-4" />
+                    선택 학생 활동 일괄추가 <ListPlus className="size-4" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-96 p-0 rounded-2xl border-slate-100 shadow-2xl overflow-hidden z-[10050]" align="end">
-                <div className="p-4 bg-slate-50 border-b border-slate-100">
-                    <div className="text-sm font-black text-slate-700">행사 일괄추가</div>
+            <PopoverContent className="w-96 p-0 rounded-2xl border-slate-100 dark:border-slate-700 shadow-2xl overflow-hidden z-[10050]" align="end">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-700">
+                    <div className="text-sm font-black text-slate-700 dark:text-slate-200">선택 학생 활동 일괄추가</div>
                     <p className="text-[11px] text-slate-400 font-medium mt-1 leading-relaxed">
                         쉼표로 구분한 행사명을 선택 학생에게 추가합니다.
                     </p>
@@ -773,12 +758,12 @@ const BulkEventAdd = ({
                             }
                         }}
                         placeholder="예: 시업식, 방학식, 운동회"
-                        className="w-full h-24 px-4 py-3 rounded-xl border border-slate-200 bg-white text-xs font-bold placeholder:text-slate-300 focus:border-blue-400 outline-none transition-all resize-none leading-relaxed"
+                        className="w-full h-24 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold placeholder:text-slate-300 focus:border-blue-400 outline-none transition-all resize-none leading-relaxed"
                     />
                     {parsedEvents.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                             {parsedEvents.map((ev, i) => (
-                                <Badge key={`${ev}-${i}`} variant="secondary" className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-600 border-blue-100 font-bold text-[11px]">
+                                <Badge key={`${ev}-${i}`} variant="secondary" className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-300 border-blue-100 dark:border-blue-900 font-bold text-[11px]">
                                     {ev}
                                 </Badge>
                             ))}
@@ -786,7 +771,7 @@ const BulkEventAdd = ({
                     )}
                     <div className="flex items-center justify-between pt-1">
                         <div className="text-[11px] font-bold text-slate-400">
-                            선택된 학생 <span className="text-blue-600">{selectedCount}명</span>에게 추가
+                            선택된 학생 <span className="text-blue-600 dark:text-blue-300">{selectedCount}명</span>에게 추가
                         </div>
                         <Button
                             onClick={handleAdd}
@@ -819,20 +804,20 @@ const EventPicker = ({
     return (
         <Popover>
             <PopoverTrigger asChild>
-                <button className="h-8 w-8 rounded-lg border-2 border-dashed border-slate-200 flex items-center justify-center text-slate-400 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-500 transition-all group">
-                    <Plus className="size-4" />
+                <button type="button" aria-label={`${studentId}번 학생 활동 선택`} className="h-9 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 px-3 flex items-center justify-center gap-1.5 text-xs font-bold text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-all">
+                    <Plus className="size-4" />활동 선택
                 </button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 p-0 rounded-2xl border-slate-100 shadow-2xl overflow-hidden z-[10050]" align="start">
-                <div className="p-4 bg-slate-50 border-b border-slate-100">
+            <PopoverContent className="w-80 p-0 rounded-2xl border-slate-100 dark:border-slate-700 shadow-2xl overflow-hidden z-[10050]" align="start">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-700">
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
                         <input
                             autoFocus
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="행사명 검색..."
-                            className="w-full h-9 pl-9 pr-4 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-amber-400 transition-all"
+                            placeholder="활동 검색 또는 직접 입력" aria-label={`${studentId}번 학생 활동 검색 또는 직접 입력`}
+                            className="w-full h-9 pl-9 pr-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold outline-none focus:border-amber-400 transition-all"
                         />
                     </div>
                 </div>
@@ -882,11 +867,11 @@ const EventPicker = ({
                                                 }}
                                                 className={cn(
                                                     "w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-between group/item",
-                                                    isSelected ? "bg-amber-50 text-amber-600" : "hover:bg-slate-50 text-slate-600"
+                                                    isSelected ? "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300" : "hover:bg-slate-50 dark:hover:bg-slate-800/70 text-slate-600 dark:text-slate-300"
                                                 )}
                                             >
                                                 {e}
-                                                {isSelected ? <CheckCircle2 className="size-3.5 text-amber-500" /> : <Plus className="size-3.5 opacity-0 group-hover/item:opacity-100 text-slate-300" />}
+                                                {isSelected ? <CheckCircle2 className="size-3.5 text-amber-500 dark:text-amber-400" /> : <Plus className="size-3.5 opacity-0 group-hover/item:opacity-100 text-slate-300" />}
                                             </button>
                                         );
                                     })}

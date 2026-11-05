@@ -17,6 +17,7 @@ import {
     Zap,
     CheckCircle2
 } from "lucide-react";
+import { downloadWorkspaceCsv } from "@/lib/workspace-csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -61,7 +62,6 @@ export const BehaviorWorkspace = ({
     setStudents,
     isExpanded,
     setIsExpanded,
-    charLimit,
     handleAutoGenerateKeywords,
     handleGenerate,
     handleReset,
@@ -96,18 +96,17 @@ export const BehaviorWorkspace = ({
 
     return (
         <Card className={cn(
-            "p-10 border-0 bg-white dark:bg-slate-900 shadow-2xl shadow-slate-200/50 dark:shadow-none space-y-8 overflow-hidden transition-all duration-500 dark:border dark:border-slate-800",
-            isExpanded ? "fixed inset-4 z-[200] rounded-[3rem] border border-blue-100 dark:border-slate-700 shadow-primary/20" : "rounded-[3rem]"
+            "gap-0 p-4 sm:p-5 border border-slate-200 bg-white dark:bg-slate-900 shadow-sm dark:shadow-none space-y-5 overflow-hidden transition-all duration-500 dark:border dark:border-slate-800",
+            isExpanded ? "fixed inset-4 z-[200] rounded-[3rem] border border-blue-100 dark:border-slate-700 shadow-primary/20" : "rounded-2xl"
         )}>
             <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
-                    <div className="size-14 rounded-2xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                        <UserCheck className="size-7" />
+                    <div className="size-10 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                        <UserCheck className="size-5" />
                     </div>
                     <div>
-                        <h4 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
-                            학생별 AI Workspace
-                            <div className="px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[10px] rounded-lg font-black tracking-widest leading-none">V2.9 PRO</div>
+                        <h4 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
+                            학생별 기록
                         </h4>
                         <p className="text-sm text-slate-400 dark:text-slate-500 font-medium">키워드를 기반으로 생활기록부 작성을 시작하세요.</p>
                     </div>
@@ -123,27 +122,13 @@ export const BehaviorWorkspace = ({
                     </Button>
                     <Button
                         variant="outline"
-                        onClick={() => {
-                            const headers = ["번호", "키워드", "AI생성결과"];
-                            const rows = students.map(s => [
-                                s.id,
-                                `"${s.selectedKeywords.join(", ")}"`,
-                                `"${s.aiResult.replace(/\n/g, " ").replace(/"/g, '""')}"`
-                            ]);
-                            const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers, ...rows].map(e => e.join(",")).join("\n");
-                            const encodedUri = encodeURI(csvContent);
-                            const link = document.createElement("a");
-                            link.setAttribute("href", encodedUri);
-                            link.setAttribute("download", `행특_데이터_${new Date().toISOString().slice(0, 10)}.csv`);
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
-                        }}
+                        onClick={() => downloadWorkspaceCsv("behavior", students)}
                         className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:border-emerald-900/50 dark:text-emerald-400 gap-2 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-all font-black text-xs shrink-0"
                     >
                         내보내기 <Download className="size-4" />
                     </Button>
                     <Button
+                        aria-label={isExpanded ? "전체화면 닫기" : "전체화면으로 넓게 보기"}
                         onClick={() => setIsExpanded(!isExpanded)}
                         className="rounded-2xl h-11 px-5 border-slate-100 bg-slate-50 text-slate-500 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
                         variant="ghost"
@@ -170,7 +155,8 @@ export const BehaviorWorkspace = ({
                     <div className="sticky top-0 z-20 bg-slate-50 dark:bg-black/80 dark:backdrop-blur-md border-b border-slate-100 dark:border-slate-800 shadow-sm">
                         <div className="grid grid-cols-[40px_60px_minmax(180px,1.2fr)_minmax(260px,2fr)_140px] gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 items-center">
                             <div className="flex items-center justify-center">
-                                <input type="checkbox" onChange={toggleAllSelection} checked={students.length > 0 && students.every(s => s.selected)} className="size-5 rounded-lg border-slate-300 dark:border-slate-600 accent-primary cursor-pointer" />
+                                <input type="checkbox" onChange={toggleAllSelection} aria-label="모든 학생 선택"
+                                        checked={students.length > 0 && students.every(s => s.selected)} className="size-5 rounded-lg border-slate-300 dark:border-slate-600 accent-primary cursor-pointer" />
                             </div>
                             <div className="text-center font-black">번호</div>
                             <div>행동특성 키워드 (최소 2개)</div>
@@ -189,7 +175,7 @@ export const BehaviorWorkspace = ({
                             const hiddenKeywordCount = allKeywords.length - visibleKeywords.length;
                             return (
                             <div
-                                key={student.id}
+                                key={student.id} data-student-id={student.id}
                                 className={cn(
                                     "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_minmax(260px,2fr)_140px] gap-6 px-8 rounded-[2rem] border transition-all items-start group/row",
                                     isRowOpen ? "py-7" : "py-4",
@@ -200,7 +186,8 @@ export const BehaviorWorkspace = ({
                                 <div className="flex items-center justify-center pt-3">
                                     <input
                                         type="checkbox"
-                                        checked={student.selected}
+                                        aria-label={`${student.id}번 학생 선택`}
+                                            checked={student.selected}
                                         onChange={() => toggleStudentSelection(student.id)}
                                         className="size-5 rounded-lg border-slate-300 dark:border-slate-600 accent-primary cursor-pointer"
                                     />
@@ -261,8 +248,8 @@ export const BehaviorWorkspace = ({
                                                 placeholder="키워드 입력"
                                                 className="px-4 py-2 text-xs font-bold border-2 rounded-xl w-32 outline-none focus:border-primary/50 transition-all bg-white dark:bg-slate-800 dark:text-white dark:border-slate-600"
                                             />
-                                            <Button onClick={() => addCustomKeyword(student.id)} variant="ghost" className="size-9 rounded-lg bg-primary text-white p-0"><CheckCircle2 className="size-4" /></Button>
-                                            <Button onClick={() => setIsAddingKeyword(null)} variant="ghost" className="size-9 rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 p-0"><X className="size-4" /></Button>
+                                            <Button aria-label={`${student.id}번 학생 키워드 추가`} onClick={() => addCustomKeyword(student.id)} variant="ghost" className="size-9 rounded-lg bg-primary text-white p-0"><CheckCircle2 className="size-4" /></Button>
+                                            <Button aria-label="키워드 추가 취소" onClick={() => setIsAddingKeyword(null)} variant="ghost" className="size-9 rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 p-0"><X className="size-4" /></Button>
                                         </div>
                                     ) : (
                                         <div className="flex flex-wrap gap-2">
@@ -279,7 +266,7 @@ export const BehaviorWorkspace = ({
                                     )}
                                 </div>
 
-                                <div className="relative group/txt pt-1">
+                                <div className={cn("relative group/txt pt-1", isRowOpen && "col-span-full row-start-2 max-w-[calc(100vw-6rem)]")}>
                                     <div
                                         onClick={() => { if (!isRowOpen && !student.isGenerating) setExpandedRowId(student.id); }}
                                         className={cn(
@@ -297,7 +284,8 @@ export const BehaviorWorkspace = ({
                                         ) : isRowOpen ? (
                                             <textarea
                                                 autoFocus
-                                                value={student.aiResult}
+                                                aria-label={`${student.id}번 학생 작성 결과`}
+                                                        value={student.aiResult}
                                                 placeholder="선택된 키워드가 없습니다. 키워드를 클릭하고 생성을 눌러주세요."
                                                 onChange={(e) => {
                                                     const newVal = e.target.value;
@@ -323,7 +311,7 @@ export const BehaviorWorkspace = ({
                                     )}
                                 </div>
 
-                                <div className="flex flex-col items-center justify-start gap-2 pt-2">
+                                <div className="flex flex-col items-center justify-start gap-2 pt-2" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
                                     <Button
                                         onClick={() => handleGenerate(student.id)}
                                         disabled={student.selectedKeywords.length < 2 || student.isGenerating}
@@ -349,19 +337,19 @@ export const BehaviorWorkspace = ({
                     </div>
                 </div>
             </div>
-            <div className="flex items-center justify-between py-8 px-4 bg-slate-50/50 dark:bg-slate-800/30 rounded-[2.5rem] border border-slate-100 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-3 py-4 px-4 bg-slate-50/50 dark:bg-slate-800/30 rounded-[2.5rem] border border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-4">
-                    <div className="px-6 py-3 bg-white dark:bg-slate-900 rounded-2xl text-sm font-black text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
+                    <div className="px-3 py-2 bg-white dark:bg-slate-900 rounded-2xl text-sm font-black text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
                         <div className="size-2 rounded-full bg-blue-600 animate-pulse" />
-                        {students.filter(s => s.selected).length} Students Focused
+                        {students.filter(s => s.selected).length}명 선택됨
                     </div>
                 </div>
-                <div className="flex gap-4">
+                <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button
                                 variant="ghost"
-                                className="rounded-2xl bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-black h-16 px-10 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all gap-3"
+                                className="rounded-2xl bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-black h-11 px-4 sm:px-6 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all gap-3"
                             >
                                 <RotateCcw className="size-5" /> 초기화
                             </Button>
@@ -390,13 +378,13 @@ export const BehaviorWorkspace = ({
                     <Button
                         onClick={handleSelectedGenerate}
                         variant="outline"
-                        className="rounded-2xl border-2 border-slate-900 dark:border-slate-500 text-slate-900 dark:text-white font-black h-16 px-10 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm gap-3 transition-all"
+                        className="rounded-2xl border-2 border-slate-900 dark:border-slate-500 text-slate-900 dark:text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm gap-3 transition-all"
                     >
                         <UserCheck className="size-5" /> 선택 생성
                     </Button>
                     <Button
                         onClick={handleAllGenerate}
-                        className="rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-black h-16 px-12 hover:bg-slate-800 dark:hover:bg-indigo-700 shadow-2xl shadow-slate-300 dark:shadow-none gap-4 text-lg transition-all"
+                        className="rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-800 dark:hover:bg-indigo-700 shadow-2xl shadow-slate-300 dark:shadow-none gap-4 text-lg transition-all"
                     >
                         <Zap className="size-5 text-primary dark:text-white" /> 전체 생성
                     </Button>
