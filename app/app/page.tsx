@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { importWorkspaceCsv } from "@/lib/workspace-csv";
 import { supabase } from "@/lib/supabase";
 import { creditAIFetch } from "@/lib/credit-client";
+import { appendRecordText, type GenerationMode } from "@/lib/record-generation";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
 import { WorkLogSessionBar } from "@/components/workspace/WorkLogSessionBar";
 import { WorkspaceButton, WorkspaceNumberSelect } from "@/components/workspace/WorkspaceControls";
@@ -795,8 +796,26 @@ function DashboardPage() {
     const activeTab = features.find(f => f.id === activeTabId) || features[0];
 
     // AI 생성
-    const handleGenerate = async (id: number) => {
+    const generationModePayload = (student: Student, mode: GenerationMode) => (
+        mode === "append" && activeTabId !== "subject" && student.aiResult.trim()
+            ? { mode: "append", existingText: student.aiResult }
+            : { mode: "replace" }
+    );
+
+    const applyGeneratedText = (current: Student, before: Student, result: unknown, mode: GenerationMode) => {
+        if (!current.isGenerating) return current;
+        if (typeof result !== "string" || !result.trim() || current.aiResult !== before.aiResult) return { ...current, isGenerating: false };
+        return {
+            ...current,
+            isGenerating: false,
+            isEditable: true,
+            aiResult: mode === "append" ? appendRecordText(before.aiResult, result) : result,
+        };
+    };
+
+    const handleGenerate = async (id: number, mode: GenerationMode = "replace") => {
         setLogError("");
+        setLogMessage("");
         const epoch = workEpoch.current;
         const updateStudents: typeof setStudents = action => { if (epoch === workEpoch.current) setStudents(action); };
 
@@ -876,6 +895,7 @@ function DashboardPage() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                    ...generationModePayload(student, mode),
                     keywords: tokens,
                     term: student.officerPeriod || "",
                     role: student.officerRole || "임원아님",
@@ -891,13 +911,11 @@ function DashboardPage() {
 
             const data = await response.json();
                 if (epoch !== workEpoch.current) return;
-            if (data.result) {
-                updateStudents(prev => prev.map(s => s.id === id ? {
-                    ...s,
-                    isGenerating: false,
-                    aiResult: data.result,
-                    isEditable: true
-                } : s));
+            if (response.ok && mode === "append" && data.noContinuation) {
+                updateStudents(prev => prev.map(s => s.id === id ? { ...s, isGenerating: false } : s));
+                setLogMessage("새로 추가할 내용이 없어 기존 기록을 유지했습니다.");
+            } else if (response.ok && data.result) {
+                updateStudents(prev => prev.map(s => s.id === id ? applyGeneratedText(s, student, data.result, mode) : s));
             } else {
                 throw new Error(data.error || "작성 결과를 받지 못했습니다. 다시 생성해주세요.");
             }
@@ -909,8 +927,9 @@ function DashboardPage() {
         }
     };
 
-    const handleAllGenerate = async () => {
+    const handleAllGenerate = async (mode: GenerationMode = "replace") => {
         setLogError("");
+        setLogMessage("");
         const epoch = workEpoch.current;
         const updateStudents: typeof setStudents = action => { if (epoch === workEpoch.current) setStudents(action); };
 
@@ -982,6 +1001,7 @@ function DashboardPage() {
 
         // 병렬 처리 실행
         let firstError: string | null = null;
+        let noContinuationCount = 0;
         const results = await Promise.all(targetStudents.map(async (student) => {
             try {
                 let tokens: string[] = [];
@@ -992,6 +1012,7 @@ function DashboardPage() {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
+                        ...generationModePayload(student, mode),
                         keywords: tokens,
                         term: student.officerPeriod || "",
                         role: student.officerRole || "임원아님",
@@ -1014,12 +1035,8 @@ function DashboardPage() {
                 }
 
                 // 결과 도착 시 즉시 상태 업데이트 (개별 업데이트)
-                updateStudents(prev => prev.map(s => s.id === student.id ? {
-                    ...s,
-                    isGenerating: false,
-                    aiResult: data.result || s.aiResult,
-                    isEditable: !!data.result
-                } : s));
+                if (mode === "append" && data.noContinuation) noContinuationCount += 1;
+                updateStudents(prev => prev.map(s => s.id === student.id ? applyGeneratedText(s, student, data.result, mode) : s));
                 return true;
             } catch (error: unknown) {
                 console.error(`Error generating for student ${student.id}:`, error);
@@ -1029,13 +1046,15 @@ function DashboardPage() {
             }
         }));
 
+        if (epoch === workEpoch.current && noContinuationCount) setLogMessage(`${noContinuationCount}명은 새로 추가할 내용이 없어 기존 기록을 유지했습니다.`);
         if (epoch === workEpoch.current && firstError) {
             setLogError(`${results.filter(ok => !ok).length}명 생성에 실패했습니다. 기존 문장은 유지됩니다. ${firstError}`);
         }
     };
 
-    const handleSelectedGenerate = async () => {
+    const handleSelectedGenerate = async (mode: GenerationMode = "replace") => {
         setLogError("");
+        setLogMessage("");
         const epoch = workEpoch.current;
         const updateStudents: typeof setStudents = action => { if (epoch === workEpoch.current) setStudents(action); };
 
@@ -1103,7 +1122,8 @@ function DashboardPage() {
         }
 
         // 병렬 처리 실행
-        selectedStudents.forEach(async (student) => {
+        let noContinuationCount = 0;
+        await Promise.all(selectedStudents.map(async (student) => {
             try {
                 let tokens: string[] = [];
                 if (activeTabId === 'behavior') tokens = student.selectedKeywords;
@@ -1113,6 +1133,7 @@ function DashboardPage() {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
+                        ...generationModePayload(student, mode),
                         keywords: tokens,
                         term: student.officerPeriod || "",
                         role: student.officerRole || "임원아님",
@@ -1128,20 +1149,19 @@ function DashboardPage() {
                 const data = await response.json();
                 if (epoch !== workEpoch.current) return;
 
+                if (!response.ok) throw new Error(data.error || "작성 결과를 받지 못했습니다.");
+
                 // 결과 도착 시 즉시 상태 업데이트 (개별 업데이트)
-                updateStudents(prev => prev.map(s => s.id === student.id ? {
-                    ...s,
-                    isGenerating: false,
-                    aiResult: data.result || s.aiResult,
-                    isEditable: !!data.result
-                } : s));
+                if (mode === "append" && data.noContinuation) noContinuationCount += 1;
+                updateStudents(prev => prev.map(s => s.id === student.id ? applyGeneratedText(s, student, data.result, mode) : s));
             } catch (error) {
             if (epoch !== workEpoch.current || (error instanceof Error && error.name === "AbortError")) return;
                 console.error(`Error generating for student ${student.id}:`, error);
                 setLogError(`${student.id}번 학생 생성에 실패했습니다. 기존 문장은 유지됩니다.`);
                 updateStudents(prev => prev.map(s => s.id === student.id ? { ...s, isGenerating: false } : s));
             }
-        });
+        }));
+        if (epoch === workEpoch.current && noContinuationCount) setLogMessage(`${noContinuationCount}명은 새로 추가할 내용이 없어 기존 기록을 유지했습니다.`);
     };
 
     const handleReset = async (id: number) => {
@@ -1307,7 +1327,8 @@ function DashboardPage() {
                 subjects,
                 warnings: Array.isArray(data.warnings) ? data.warnings : [],
             });
-            setSelectedSubjectPlanIndexes(isSavedEditor ? [0] : subjects.map((_, index) => index));
+            const matches = subjects.flatMap((subject, index) => subject.subjectName.trim() === subjectConfig.subjectName.trim() ? [index] : []);
+            setSelectedSubjectPlanIndexes(isSavedEditor ? (matches.length === 1 ? matches : []) : subjects.map((_, index) => index));
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : "평가계획을 읽을 수 없습니다.";
             if (epoch === workEpoch.current && !signal.aborted) setLogError(message);
@@ -1598,7 +1619,7 @@ function DashboardPage() {
                     </nav>
                     <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
                         <div><h1 className="text-2xl font-black tracking-tight">{activeTab.title}</h1>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{activeTabId === "subject" ? "평가계획을 가져오거나 직접 기준을 입력한 뒤, 학생별 상·중·하를 선택하세요." : activeTabId === "creative" ? "각 학생의 활동 선택에서 참여 활동을 고르세요. 임원 직책과 기간도 함께 기록할 수 있습니다." : "관찰 키워드를 2개 이상 선택하고 학생별 문장을 작성하세요."}</p></div>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{activeTabId === "subject" ? "평가계획 HWPX를 가져오거나 평가기준을 직접 입력한 뒤, 학생별 상·중·하를 선택하세요." : activeTabId === "creative" ? "각 학생의 활동 선택에서 참여 활동을 고르세요. 임원 직책과 기간도 함께 기록할 수 있습니다." : "관찰 키워드를 2개 이상 선택하고 학생별 문장을 작성하세요."}</p></div>
                         <a href="/extension/bridge" target="_blank" rel="noreferrer" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900">나이스 확장 연결</a>
                     </header>
                     <WorkLogSessionBar saving={logBusy} editing={isSavedEditor} title={logTitle} onTitle={setLogTitle}
@@ -1623,10 +1644,10 @@ function DashboardPage() {
                                 <input type="file" id="workspace-csv-upload" accept=".csv,text/csv" className="hidden" onChange={handleFileUpload} />
                                 <WorkspaceButton variant="outline" onClick={() => document.getElementById("workspace-csv-upload")?.click()} disabled={isSubjectPlanImporting} className="border-slate-200 dark:border-slate-700"><Upload aria-hidden="true" />CSV 가져오기</WorkspaceButton>
                                 {activeTabId === "subject" && <>
-                                    <input type="file" id="subject-plan-upload" accept=".hwp,.hwpx,.pdf" className="hidden" onChange={handleSubjectPlanUpload} />
+                                    <input type="file" id="subject-plan-upload" accept=".hwpx,.hwp" className="hidden" onChange={handleSubjectPlanUpload} />
                                     <WorkspaceButton onClick={() => document.getElementById("subject-plan-upload")?.click()} disabled={isSubjectPlanImporting} className="bg-indigo-600 hover:bg-indigo-700">
                                         {isSubjectPlanImporting ? <Loader2 aria-hidden="true" className="animate-spin" /> : <FileSearch aria-hidden="true" />}
-                                        {isSubjectPlanImporting ? "평가계획 분석 중…" : <><span>평가계획 가져오기</span><span className="text-xs font-medium text-indigo-100">PDF · HWPX</span></>}
+                                        {isSubjectPlanImporting ? "평가계획 분석 중…" : <><span>평가계획 가져오기</span><span className="text-xs font-medium text-indigo-100">HWPX</span></>}
                                     </WorkspaceButton>
                                     {isSubjectPlanImporting && <WorkspaceButton variant="outline" onClick={cancelSubjectPlanImport}>분석 취소</WorkspaceButton>}
                                 </>}
@@ -1662,6 +1683,7 @@ function DashboardPage() {
                             />
                         ) : activeTabId === "subject" ? (
                             <SubjectWorkspace
+                            key={isSavedEditor ? requestedLogId : "subject-draft"}
                             savedEditor={isSavedEditor}
                             polishAction={polishAction}
                             students={students}
@@ -1676,8 +1698,8 @@ function DashboardPage() {
                             onDeleteAllSubjectLogs={handleDeleteAllSubjectLogs}
                             onReorderSubjectLogs={handleReorderSubjectLogs}
                             handleGenerate={handleGenerate}
-                            handleAllGenerate={handleAllGenerate}
-                            handleSelectedGenerate={handleSelectedGenerate}
+                            handleAllGenerate={() => void handleAllGenerate()}
+                            handleSelectedGenerate={() => void handleSelectedGenerate()}
                             handleResetAll={handleResetAll}
                             toggleAllSelection={toggleAllSelection}
                             toggleStudentSelection={toggleStudentSelection}
@@ -1722,7 +1744,7 @@ function DashboardPage() {
                                 <div className="text-[11px] font-black text-indigo-500 dark:text-indigo-400 tracking-widest uppercase">평가계획 불러오기</div>
                                 <h3 id="plan-import-heading" className="text-2xl font-black text-slate-900 dark:text-slate-100">가져온 교과</h3>
                                 <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                                    {isSavedEditor ? "현재 저장본에 적용할 교과 하나를 선택하세요. 작성 문장과 메모는 유지됩니다." : "적용할 교과를 선택하세요. 선택한 교과마다 독립된 작업을 만들며 기존 교과는 유지됩니다."}
+                                    {isSavedEditor ? "현재 저장본에 적용할 교과 하나를 선택하세요. 작성 문장과 개별 메모는 유지되며, 바뀐 기준의 학생별 평가는 다시 입력합니다." : "적용할 교과를 선택하세요. 선택한 교과마다 독립된 작업을 만들며 기존 교과는 유지됩니다."}
                                 </p>
                             </div>
                             <button
@@ -1770,7 +1792,8 @@ function DashboardPage() {
                                                                 "size-7 rounded-lg border flex items-center justify-center shrink-0",
                                                                 selected ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-transparent"
                                                             )}
-                                                            aria-label={selected ? "선택 해제" : "선택"}
+                                                            aria-label={`${subject.subjectName || "교과"} 선택`}
+                                                            aria-pressed={selected}
                                                         >
                                                             <Check className="size-4" />
                                                         </button>
@@ -1880,7 +1903,7 @@ function DashboardPage() {
                                     }}
                                     className="h-12 rounded-xl px-6 font-black border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400"
                                 >
-                                    건너뛰기
+                                    취소
                                 </Button>
                                 <Button
                                     type="button"
@@ -1889,7 +1912,7 @@ function DashboardPage() {
                                     className="h-12 rounded-xl px-8 font-black bg-indigo-600 text-white hover:bg-indigo-700 gap-2"
                                 >
                                     {isWorkLogLoading ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                                    적용
+                                    {isSavedEditor ? "평가기준 적용" : "선택한 교과 추가"}
                                 </Button>
                             </div>
                         </div>

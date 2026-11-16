@@ -22,6 +22,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { downloadWorkspaceCsv } from "@/lib/workspace-csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { GenerationMenu } from "@/components/workspace/GenerationMenu";
+import type { GenerationMode } from "@/lib/record-generation";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -64,9 +66,9 @@ interface CreativeActivityWorkspaceProps {
     polishAction?: React.ReactNode;
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
-    handleGenerate: (id: number) => void;
-    handleAllGenerate: () => void;
-    handleSelectedGenerate: () => void;
+    handleGenerate: (id: number, mode: GenerationMode) => void;
+    handleAllGenerate: (mode: GenerationMode) => void;
+    handleSelectedGenerate: (mode: GenerationMode) => void;
     handleResetAll: () => void;
     toggleAllSelection: () => void;
     toggleStudentSelection: (id: number) => void;
@@ -354,8 +356,8 @@ export const CreativeActivityWorkspace = ({
                                     </div>
 
                                     <div className="flex flex-col gap-2 pt-1 min-w-[100px]" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
-                                        <Button
-                                            onClick={() => handleGenerate(student.id)}
+                                        <GenerationMenu
+                                            onGenerate={mode => handleGenerate(student.id, mode)}
                                             disabled={student.isGenerating || (student.participatedEvents?.length || 0) === 0}
                                             className={cn(
                                                 "w-full rounded-2xl font-black h-12 px-5 gap-2 text-[13px] transition-all shadow-lg",
@@ -365,7 +367,7 @@ export const CreativeActivityWorkspace = ({
                                             )}
                                         >
                                             {student.aiResult ? "재생성" : "생성"} <Sparkles className="size-3.5" />
-                                        </Button>
+                                        </GenerationMenu>
                                         <button
                                             onClick={() => {
                                                 setStudents(prev => prev.map(s => s.id === student.id ? {
@@ -402,19 +404,19 @@ export const CreativeActivityWorkspace = ({
                         >
                             전체 초기화
                         </Button>
-                        <Button
-                            onClick={handleSelectedGenerate}
+                        <GenerationMenu
+                            onGenerate={handleSelectedGenerate}
                             variant="outline"
                             className="rounded-2xl border-2 border-slate-900 text-slate-900 dark:text-slate-100 font-black h-11 px-4 sm:px-6 hover:bg-slate-50 dark:hover:bg-slate-800/70 shadow-sm gap-3 transition-all"
                         >
                             <UserCheck className="size-5" /> 선택 생성
-                        </Button>
-                        <Button
-                            onClick={handleAllGenerate}
+                        </GenerationMenu>
+                        <GenerationMenu
+                            onGenerate={handleAllGenerate}
                             className="rounded-2xl bg-slate-900 text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-800 shadow-2xl shadow-slate-300 gap-4 text-lg transition-all"
                         >
                             <Zap className="size-5 text-amber-400" /> 전체 생성
-                        </Button>
+                        </GenerationMenu>
                     </div>
                 </div>
             </Card>

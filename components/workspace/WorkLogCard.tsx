@@ -41,7 +41,7 @@ export function WorkLogCard({ log, busy, dateLabel, onPreview, onEdit, onExport,
             <div className="mt-auto space-y-3">
                 <div className={`grid gap-2 ${!log.archived_at && log.category !== "docs" ? "grid-cols-2" : "grid-cols-1"}`}>
                     <Button variant="outline" onClick={onPreview} disabled={busy} className="h-11 gap-2 rounded-xl"><Eye className="size-4" />보기</Button>
-                    {!log.archived_at && log.category !== "docs" && <Button onClick={onEdit} disabled={busy} className="h-11 gap-2 rounded-xl bg-sky-600 text-white hover:bg-sky-700"><Edit3 className="size-4" />수정하기</Button>}
+                    {!log.archived_at && log.category !== "docs" && <Button onClick={onEdit} disabled={busy} className="h-11 gap-2 rounded-xl bg-sky-600 text-white hover:bg-sky-700"><Edit3 className="size-4" />편집하기</Button>}
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-1 border-t border-slate-100 pt-3 dark:border-slate-800">
                     <Button variant="ghost" onClick={onExport} disabled={busy || !log.completed_count} className="h-9 gap-1.5 rounded-lg px-2 text-xs text-slate-600 dark:text-slate-300"><Download className="size-3.5" />내보내기</Button>

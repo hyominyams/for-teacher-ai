@@ -32,7 +32,7 @@
         <div class="card-head">
           <div>
             <h2>데이터 선택</h2>
-            <p>저장한 작업로그를 고르거나 CSV를 불러오세요.</p>
+            <p>저장한 작업로그 또는 내 CSV·엑셀 파일을 불러오세요.</p>
           </div>
           <button id="resetData" type="button" class="button compact">초기화</button>
         </div>
@@ -44,7 +44,7 @@
           </label>
           <label>
             <input type="radio" name="sourceMode" value="csv" />
-            <span>CSV</span>
+            <span>내 파일 (CSV·XLSX)</span>
           </label>
         </div>
 
@@ -53,7 +53,7 @@
           <select id="category">
             <option value="behavior">행특</option>
             <option value="subject">학기말 종합의견</option>
-            <option value="creative">창체</option>
+            <option value="creative">창체(자율)</option>
           </select>
         </div>
         <div id="webSourcePanel" class="source-panel">
@@ -77,8 +77,12 @@
         </div>
 
         <div id="csvSourcePanel" class="source-panel hidden">
-          <label class="label" for="csvFile">CSV 파일</label>
-          <input id="csvFile" type="file" accept=".csv,text/csv" />
+          <p>① 영역 선택 → ② 예시 양식 다운로드·작성 → ③ 업로드</p>
+          <button id="downloadTemplate" type="button" class="button full">행특 예시 CSV 다운로드</button>
+          <p id="fileHelp" class="file-help">번호·이름·내용 열을 유지해 주세요. 이름은 비워도 됩니다.</p>
+          <label class="label" for="csvFile">CSV 또는 엑셀 파일</label>
+          <input id="csvFile" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-describedby="fileHelp" />
+          <p class="file-help">XLSX는 첫 번째 시트를 읽습니다. 교과·학급별로 파일을 나눠 주세요. 파일은 기기 안에서 처리합니다.</p>
           <button id="parseClipboard" type="button" class="button full">클립보드 CSV 읽기</button>
         </div>
       </section>
@@ -111,6 +115,8 @@
     </main>
 
     <script src="config.js"></script>
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="file-import.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

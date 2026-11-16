@@ -179,7 +179,7 @@ export const SubjectWorkspace = ({
 }: SubjectWorkspaceProps) => {
     const [bulkAssessmentId, setBulkAssessmentId] = useState<string | null>(null);
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
-    const [activeInputTab, setActiveInputTab] = useState("global");
+    const [activeInputTab, setActiveInputTab] = useState(savedEditor ? "individual" : "global");
     const [draggedSubjectScopeKey, setDraggedSubjectScopeKey] = useState<string | null>(null);
     const [dragOverSubjectScopeKey, setDragOverSubjectScopeKey] = useState<string | null>(null);
     const suppressSubjectClickRef = useRef(false);
@@ -853,7 +853,7 @@ export const SubjectWorkspace = ({
                                                             autoFocus
                                                             aria-label={`${student.id}번 학생 작성 결과`}
                                                         value={student.aiResult}
-                                                            placeholder="평가 선택 후 생성을 눌러주세요."
+                                                            placeholder="평가 수준을 선택해 생성하거나 직접 작성하세요."
                                                             onChange={(e) => {
                                                                 const newVal = e.target.value;
                                                                 setStudents(prev => prev.map(s => s.id === student.id ? { ...s, aiResult: newVal } : s));
@@ -861,16 +861,18 @@ export const SubjectWorkspace = ({
                                                             className="w-full min-h-[140px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0 font-medium leading-[1.7]"
                                                         />
                                                     ) : (
-                                                        <div className="line-clamp-3">{student.aiResult || "평가 선택 후 생성을 눌러주세요."}</div>
+                                                        <div className="line-clamp-3">{student.aiResult || "평가 수준을 선택해 생성하거나 직접 작성하세요."}</div>
                                                     )}
                                                 </div>
                                                 {!student.isGenerating && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); setExpandedRowId(isRowOpen ? null : student.id); }}
-                                                        title={isRowOpen ? "접기" : "펼쳐서 편집"}
+                                                        type="button"
+                                                        aria-label={isRowOpen ? `${student.id}번 결과 접기` : `${student.id}번 결과 편집`}
+                                                        title={isRowOpen ? "결과 접기" : "결과 편집"}
                                                         className={cn(
                                                             "absolute top-2.5 right-2.5 size-8 rounded-lg border flex items-center justify-center shadow-xl transition-all hover:scale-110",
-                                                            isRowOpen ? "bg-indigo-600 text-white border-indigo-600 opacity-100" : "bg-white dark:bg-slate-900 text-slate-400 border-slate-100 dark:border-slate-700 opacity-0 group-hover/txt:opacity-100 hover:text-indigo-600 dark:hover:text-indigo-300"
+                                                            isRowOpen ? "bg-indigo-600 text-white border-indigo-600 opacity-100" : "bg-white dark:bg-slate-900 text-slate-400 border-slate-100 dark:border-slate-700 hover:text-indigo-600 dark:hover:text-indigo-300"
                                                         )}
                                                     >
                                                         {isRowOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
@@ -881,6 +883,7 @@ export const SubjectWorkspace = ({
                                             <div className="flex flex-col gap-2 pt-1" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
                                                 <Button
                                                     onClick={() => handleGenerate(student.id)}
+                                                    title={student.aiResult ? "기존 문장을 새로 생성한 문장으로 바꿉니다." : "평가 수준과 개별 관찰 내용을 바탕으로 생성합니다."}
                                                     disabled={student.isGenerating || !student.subjectData?.assessments.some(a => a.level && globalConfig.assessments.some(g => g.id === a.assessmentId))}
                                                     className={cn(
                                                         "w-full rounded-2xl font-black h-11 px-5 gap-2 text-[12px] transition-all shadow-lg",

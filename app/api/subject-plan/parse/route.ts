@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
-const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".pdf"]);
+const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx"]);
 
 type SubjectPlanExtraction = {
     subjects: ParsedSubjectPlanSubject[];
@@ -193,7 +193,7 @@ export async function POST(req: Request) {
 
         const extension = getExtension(file.name);
         if (!ALLOWED_EXTENSIONS.has(extension)) {
-            return NextResponse.json({ error: "HWP, HWPX, PDF 파일만 업로드할 수 있습니다." }, { status: 400 });
+            return NextResponse.json({ error: "평가계획을 한글에서 HWPX 파일로 저장한 뒤 올려주세요." }, { status: 400 });
         }
 
         const hints = {
@@ -206,30 +206,11 @@ export async function POST(req: Request) {
         const parseResult = await parse(buffer);
 
         if (!parseResult.success) {
-            const error = parseResult.code === "IMAGE_BASED_PDF"
-                ? "텍스트를 읽을 수 없습니다. 텍스트가 포함된 PDF나 HWP 파일을 업로드해주세요."
-                : parseResult.error || "평가계획을 읽을 수 없습니다.";
-            return NextResponse.json({ error }, { status: 400 });
+            return NextResponse.json({ error: parseResult.error || "평가계획을 읽을 수 없습니다." }, { status: 400 });
         }
 
         const markdown = parseResult.markdown.trim();
         const parseWarnings = (parseResult.warnings || []).map((warning) => warning.message);
-        const hasOcrSignal = extension === ".pdf" && (
-            parseResult.qualitySummary?.needsOcr ||
-            (parseResult.warnings || []).some((warning) => warning.code === "NEEDS_OCR")
-        );
-        const needsOcr = extension === ".pdf" && (
-            parseResult.isImageBased ||
-            (hasOcrSignal && markdown.length < 500)
-        );
-
-        if (needsOcr) {
-            return NextResponse.json(
-                { error: "텍스트를 읽을 수 없습니다. 텍스트가 포함된 PDF나 HWP 파일을 업로드해주세요." },
-                { status: 400 }
-            );
-        }
-
         if (markdown.length < 40) {
             return NextResponse.json(
                 { error: "텍스트를 읽을 수 없습니다. 다른 파일을 업로드해주세요." },

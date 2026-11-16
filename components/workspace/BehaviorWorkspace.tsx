@@ -20,6 +20,8 @@ import {
 import { downloadWorkspaceCsv } from "@/lib/workspace-csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { GenerationMenu } from "@/components/workspace/GenerationMenu";
+import type { GenerationMode } from "@/lib/record-generation";
 import { Card } from "@/components/ui/card";
 import {
     DropdownMenu,
@@ -39,13 +41,13 @@ interface BehaviorWorkspaceProps {
     setIsExpanded: (val: boolean) => void;
     charLimit: number;
     handleAutoGenerateKeywords: () => void;
-    handleGenerate: (id: number) => void;
+    handleGenerate: (id: number, mode: GenerationMode) => void;
     handleReset: (id: number) => void;
     handleResetAll: () => void;
     handleResetKeywords: () => void;
     handleDeleteUnusedKeywords: () => void;
-    handleSelectedGenerate: () => void;
-    handleAllGenerate: () => void;
+    handleSelectedGenerate: (mode: GenerationMode) => void;
+    handleAllGenerate: (mode: GenerationMode) => void;
     toggleAllSelection: (e: React.ChangeEvent<HTMLInputElement>) => void;
     toggleStudentSelection: (id: number) => void;
     isAddingKeyword: number | null;
@@ -312,8 +314,8 @@ export const BehaviorWorkspace = ({
                                 </div>
 
                                 <div className="flex flex-col items-center justify-start gap-2 pt-2" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
-                                    <Button
-                                        onClick={() => handleGenerate(student.id)}
+                                    <GenerationMenu
+                                        onGenerate={mode => handleGenerate(student.id, mode)}
                                         disabled={student.selectedKeywords.length < 2 || student.isGenerating}
                                         className={cn(
                                             "w-full rounded-2xl font-black h-12 px-5 gap-2 text-[13px] transition-all shadow-lg",
@@ -323,7 +325,7 @@ export const BehaviorWorkspace = ({
                                         )}
                                     >
                                         {student.aiResult ? "재생성" : "생성"} <Sparkles className="size-4" />
-                                    </Button>
+                                    </GenerationMenu>
                                     <button
                                         onClick={() => handleReset(student.id)}
                                         className="w-full h-11 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-all flex items-center justify-center gap-2 font-black text-[11px]"
@@ -375,19 +377,19 @@ export const BehaviorWorkspace = ({
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
-                    <Button
-                        onClick={handleSelectedGenerate}
+                    <GenerationMenu
+                        onGenerate={handleSelectedGenerate}
                         variant="outline"
                         className="rounded-2xl border-2 border-slate-900 dark:border-slate-500 text-slate-900 dark:text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm gap-3 transition-all"
                     >
                         <UserCheck className="size-5" /> 선택 생성
-                    </Button>
-                    <Button
-                        onClick={handleAllGenerate}
+                    </GenerationMenu>
+                    <GenerationMenu
+                        onGenerate={handleAllGenerate}
                         className="rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-800 dark:hover:bg-indigo-700 shadow-2xl shadow-slate-300 dark:shadow-none gap-4 text-lg transition-all"
                     >
                         <Zap className="size-5 text-primary dark:text-white" /> 전체 생성
-                    </Button>
+                    </GenerationMenu>
                 </div>
             </div>
         </Card>

@@ -1,5 +1,7 @@
 import { callBudget, completionText, creditFailure, creditUser, CreditError, readAIJson, runCreditJob } from "@/lib/server/credits";
 import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
+import { runRecordContinuation } from "@/lib/server/record-continuation";
+import { MAX_EXISTING_RECORD_CHARS } from "@/lib/record-generation";
 import { OpenAI } from "openai";
 import fs from "fs";
 import path from "path";
@@ -38,7 +40,7 @@ export async function POST(req: Request) {
     try {
         const user = await creditUser(req);
         const raw = await readAIJson(req);
-        const { keywords, targetChars, category = "behavior", role, term, subjectMeta, workLogId } = raw;
+        const { keywords, targetChars, category = "behavior", role, term, subjectMeta, workLogId, mode, existingText } = raw;
         if (!["behavior", "subject", "creative"].includes(category) || !Array.isArray(keywords) || keywords.some(k => typeof k !== "string") || !Number.isInteger(targetChars) || targetChars < 1 || targetChars > 10000) throw new CreditError("INVALID_INPUT", "영역·키워드·목표 글자 수를 확인해주세요.");
         try { await assertEditableWorkLog(req, workLogId); } catch (error) { return workLogFailure(error); }
 
@@ -58,6 +60,13 @@ export async function POST(req: Request) {
             officerInfo = `${role}${term ? `(${term})` : ""}`;
         }
 
+        if (mode === "append") {
+            if ((category !== "behavior" && category !== "creative") || typeof existingText !== "string" || existingText.length > MAX_EXISTING_RECORD_CHARS) {
+                throw new CreditError("INVALID_INPUT", "이어쓸 수 있는 영역과 기존 기록을 확인해주세요.");
+            }
+            if (existingText.trim()) return await runRecordContinuation(req, user, raw, { category, original: existingText.trim(), keywords, officerInfo, targetChars });
+        }
+
         // 템플릿 변수 치환
         let prompt = promptTemplate
             .replaceAll("[KEYWORDS]", keywords.join(", "))
@@ -70,8 +79,8 @@ export async function POST(req: Request) {
                 const { schoolLevel, grade, subjectName, assessments, studentAssessments, individualNote } = subjectMeta;
 
                 const assessmentsText = ((assessments || []) as SubjectAssessment[]).map((a) => {
-                    const studentLevel = ((studentAssessments || []) as StudentAssessment[]).find((sa) => sa.assessmentId === a.id)?.level || "미선택";
-                    if (studentLevel === "" || studentLevel === "none") return null;
+                    const studentLevel = ((studentAssessments || []) as StudentAssessment[]).find((sa) => sa.assessmentId === a.id)?.level;
+                    if (!studentLevel || !ACHIEVEMENT_LEVELS.some(level => level === studentLevel)) return null;
                     const criteria = getCriteriaForLevel(a.criteria, studentLevel);
 
                     return `- 영역: ${a.area}

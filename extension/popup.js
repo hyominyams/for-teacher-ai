@@ -1,5 +1,6 @@
 const SESSION_KEY = "forteacherSession";
 const CSV_KEY = "neisUploadCsvRecords";
+const FILE_RECORDS_KEY = "neisUploadFileRecordsByCategory";
 const LEGACY_KEYS = ["neisUploadRecords", "neisUploadWebRecordsByCategory", "neisUploadSubjectScope", "neisUploadRecordLabel"];
 const NEIS_GRID_EDITABLE_SELECTOR = ".cl-textarea:not(.cl-disabled)";
 const BEHAVIOR_SELECTOR = [
@@ -18,8 +19,15 @@ const DEFAULT_SELECTORS = {
   subject: SUBJECT_SELECTOR
 };
 
+const FILE_SELECTORS = {
+  behavior: ".cl-grid-cell[data-cellindex='3'][aria-label*='행동특성'] .cl-textarea:not(.cl-disabled)",
+  creative: ".cl-grid-cell[data-cellindex='3'][aria-label*='특기사항']:not([aria-label*='행동특성']):not([aria-label*='종합의견']) .cl-textarea:not(.cl-disabled)",
+  subject: ".cl-grid-cell[data-cellindex='4'][aria-label*='학기말 종합의견'] .cl-textarea:not(.cl-disabled)"
+};
+
 const $ = (id) => document.getElementById(id);
 const csvFile = $("csvFile"), parseClipboard = $("parseClipboard");
+const downloadTemplate = $("downloadTemplate"), fileHelp = $("fileHelp");
 const recordCount = $("recordCount"), recordSummary = $("recordSummary"), recordTable = $("recordTable");
 const delay = $("delay"), accountState = $("accountState"), accountBadge = $("accountBadge");
 const connectWebApp = $("connectWebApp"), logoutWebApp = $("logoutWebApp");
@@ -30,6 +38,7 @@ const webSourcePanel = $("webSourcePanel"), csvSourcePanel = $("csvSourcePanel")
 const openOverlay = $("openOverlay"), statusEl = $("status");
 const sourceModeInputs = [...document.querySelectorAll("input[name='sourceMode']")];
 let records = [], csvRecords = [], logs = [], loadedLog = null;
+let fileRecordsByCategory = {};
 let activeSource = "web", session = null, page = 0, total = 0, epoch = 0, busy = false;
 
 function on(element, eventName, handler) {
@@ -37,16 +46,21 @@ function on(element, eventName, handler) {
 }
 
 async function init() {
-  const saved = await chrome.storage.local.get([CSV_KEY, SESSION_KEY, "neisUploadSource", "neisUploadCategory", ...LEGACY_KEYS]);
+  const saved = await chrome.storage.local.get([CSV_KEY, FILE_RECORDS_KEY, SESSION_KEY, "neisUploadSource", "neisUploadCategory", ...LEGACY_KEYS]);
   session = saved[SESSION_KEY] || null;
   activeSource = saved.neisUploadSource === "csv" ? "csv" : "web";
-  csvRecords = saved[CSV_KEY] || [];
-  // Old web caches have no reliable owner or saved-log identity. Never reuse them.
-  await chrome.storage.local.set({ [CSV_KEY]: csvRecords });
-  await chrome.storage.local.remove(LEGACY_KEYS);
   if (DEFAULT_SELECTORS[saved.neisUploadCategory]) category.value = saved.neisUploadCategory;
+  fileRecordsByCategory = saved[FILE_RECORDS_KEY] || {};
+  const legacyCsv = saved[CSV_KEY] || [];
+  if (!saved[FILE_RECORDS_KEY] && legacyCsv.length) {
+    fileRecordsByCategory[category.value] = { records: legacyCsv, label: saved.neisUploadRecordLabel || "CSV 파일" };
+  }
+  csvRecords = getFileBucket()?.records || [];
+  // Old web caches have no reliable owner or saved-log identity. Never reuse them.
+  await chrome.storage.local.set({ [FILE_RECORDS_KEY]: fileRecordsByCategory });
+  await chrome.storage.local.remove([CSV_KEY, ...LEGACY_KEYS]);
   records = activeSource === "csv" ? csvRecords : [];
-  renderAccount(); renderSource(); renderLogList(); renderRecords();
+  renderAccount(); renderSource(); renderLogList(); renderRecords(activeSource === "csv" ? getFileBucket()?.label : "");
   if (activeSource === "web" && session?.access_token) await loadLogList();
 }
 
@@ -54,14 +68,16 @@ function invalidate() {
   epoch += 1;
   busy = false;
   loadedLog = null;
+  csvRecords = getFileBucket()?.records || [];
   records = activeSource === "csv" ? csvRecords : [];
-  renderLogInfo(); renderRecords(); renderControls();
+  renderLogInfo(); renderRecords(activeSource === "csv" ? getFileBucket()?.label : ""); renderControls();
   return epoch;
 }
 
 sourceModeInputs.forEach(input => on(input, "change", async () => {
   activeSource = input.value;
   invalidate(); renderSource();
+  setStatus("");
   await chrome.storage.local.set({ neisUploadSource: activeSource });
   if (activeSource === "web") await loadLogList();
 }));
@@ -69,6 +85,8 @@ sourceModeInputs.forEach(input => on(input, "change", async () => {
 on(category, "change", async () => {
   page = 0;
   invalidate();
+  renderSource();
+  setStatus("");
   await chrome.storage.local.set({ neisUploadCategory: category.value });
   if (activeSource === "web") await loadLogList();
 } );
@@ -81,20 +99,22 @@ on(workLog, "change", () => { invalidate(); setStatus("선택한 작업로그를
 on(csvFile, "change", async () => {
   const file = csvFile.files?.[0];
   if (!file) return;
-  const requestEpoch = epoch;
-  try {
-    const text = await file.text();
-    if (requestEpoch !== epoch) return;
-    await setCsvRecords(parseRecords(text));
-  } catch (error) { if (requestEpoch === epoch) setStatus(`CSV를 읽지 못했습니다: ${error.message}`); }
+  await importRecords(() => ForTeacherImport.parseFile(file, category.value), file.name);
+  csvFile.value = "";
 });
 on(parseClipboard, "click", async () => {
-  const requestEpoch = epoch;
-  try {
+  await importRecords(async () => {
     const text = await navigator.clipboard.readText();
-    if (requestEpoch !== epoch) return;
-    await setCsvRecords(parseRecords(text));
-  } catch (error) { if (requestEpoch === epoch) setStatus(`클립보드를 읽지 못했습니다: ${error.message}`); }
+    return { records: ForTeacherImport.parseText(text, category.value) };
+  }, "클립보드 CSV");
+});
+on(downloadTemplate, "click", () => {
+  const { filename, csv } = ForTeacherImport.template(category.value);
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url; link.download = filename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setStatus("예시 학생을 실제 데이터로 바꾸고 열 이름을 유지해 저장한 뒤 업로드하세요.");
 });
 
 on(connectWebApp, "click", async () => {
@@ -112,9 +132,9 @@ on(connectWebApp, "click", async () => {
 });
 
 on(logoutWebApp, "click", async () => {
-  session = null; logs = []; total = 0; csvRecords = [];
+  session = null; logs = []; total = 0; csvRecords = []; fileRecordsByCategory = {};
   invalidate(); renderAccount(); renderLogList();
-  await chrome.storage.local.remove([SESSION_KEY, CSV_KEY, ...LEGACY_KEYS]);
+  await chrome.storage.local.remove([SESSION_KEY, CSV_KEY, FILE_RECORDS_KEY, ...LEGACY_KEYS]);
   setStatus("계정 연결과 불러온 학생 데이터를 지웠습니다.");
 });
 
@@ -130,10 +150,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 on(loadWebData, "click", loadSelectedLog);
 on(resetData, "click", async () => {
-  csvRecords = []; logs = []; total = 0; page = 0; csvFile.value = "";
+  csvRecords = []; fileRecordsByCategory = {}; logs = []; total = 0; page = 0; csvFile.value = "";
   invalidate(); renderLogList();
-  await chrome.storage.local.remove([CSV_KEY, ...LEGACY_KEYS]);
-  setStatus("불러온 데이터를 비웠습니다. 작업로그 목록을 새로고침하거나 CSV를 선택하세요.");
+  await chrome.storage.local.remove([CSV_KEY, FILE_RECORDS_KEY, ...LEGACY_KEYS]);
+  setStatus("불러온 데이터를 비웠습니다. 작업로그 목록을 새로고침하거나 CSV·XLSX 파일을 선택하세요.");
 });
 
 on(openOverlay, "click", async () => {
@@ -158,11 +178,36 @@ on(openOverlay, "click", async () => {
   } finally { if (requestEpoch === epoch) { busy = false; renderControls(); } }
 });
 
-async function setCsvRecords(nextRecords) {
-  csvRecords = nextRecords;
-  invalidate();
-  await chrome.storage.local.set({ [CSV_KEY]: csvRecords });
-  setStatus(`${records.length}개 항목을 불러왔습니다.`);
+function getFileBucket() {
+  return fileRecordsByCategory[category.value];
+}
+
+async function importRecords(read, label) {
+  const requestEpoch = ++epoch;
+  const importCategory = category.value;
+  busy = true; renderControls();
+  setStatus("파일 형식과 학생별 데이터를 확인하는 중입니다.");
+  try {
+    const result = await read();
+    if (requestEpoch !== epoch || activeSource !== "csv") return;
+    const sourceLabel = `${ForTeacherImport.categories[importCategory].label} · ${label}${result.sheetName ? ` · ${result.sheetName}` : ""}`;
+    const nextBuckets = { ...fileRecordsByCategory, [importCategory]: { records: result.records, label: sourceLabel } };
+    await chrome.storage.local.set({ [FILE_RECORDS_KEY]: nextBuckets });
+    if (requestEpoch !== epoch) {
+      // Mode changes and reset may happen while Chrome completes a storage write.
+      const saved = await chrome.storage.local.get([FILE_RECORDS_KEY]);
+      fileRecordsByCategory = saved[FILE_RECORDS_KEY] || {};
+      if (!busy && activeSource === "csv") invalidate();
+      return;
+    }
+    fileRecordsByCategory = nextBuckets;
+    invalidate();
+    setStatus(`${records.length}명을 불러왔습니다. 영역·번호·내용을 확인한 뒤 나이스 패널을 여세요.`);
+  } catch (error) {
+    if (requestEpoch === epoch) setStatus(`불러오지 못했습니다: ${error.message}\n기존 목록은 유지됩니다.`);
+  } finally {
+    if (requestEpoch === epoch) { busy = false; renderControls(); }
+  }
 }
 
 async function requestLog(path) {
@@ -236,7 +281,7 @@ function formatDate(value) {
 }
 function getCategoryLabel() {
   const baseLabel = category.options[category.selectedIndex]?.text || category.value;
-  return activeSource === "web" && loadedLog ? `${baseLabel} · ${loadedLog.title}${loadedLog.archived_at ? " (보관본)" : ""}` : `${baseLabel} · CSV`;
+  return activeSource === "web" && loadedLog ? `${baseLabel} · ${loadedLog.title}${loadedLog.archived_at ? " (보관본)" : ""}` : getFileBucket()?.label || `${baseLabel} · 내 파일`;
 }
 function renderAccount() {
   const email = session?.user?.email || "";
@@ -250,6 +295,9 @@ function renderSource() {
   sourceModeInputs.forEach(input => { input.checked = input.value === activeSource; });
   webSourcePanel.classList.toggle("hidden", activeSource !== "web");
   csvSourcePanel.classList.toggle("hidden", activeSource !== "csv");
+  const config = ForTeacherImport.categories[category.value];
+  downloadTemplate.textContent = `${config.label} 예시 CSV 다운로드`;
+  fileHelp.textContent = `번호·이름·${config.headers[0]} 열을 유지해 주세요. 이름은 비워도 됩니다. 예시 학생은 실제 데이터로 바꿔 주세요.`;
 }
 
 void init();
@@ -374,6 +422,7 @@ async function runOnActiveTab(action, payload, requestEpoch = epoch) {
 function getPayload() {
   return {
     records,
+    matchStudentNumber: activeSource === "csv",
     category: category.value,
     selector: getSelectorForCategory(),
     fallbackSelector: NEIS_GRID_EDITABLE_SELECTOR,
@@ -383,91 +432,8 @@ function getPayload() {
 }
 
 function getSelectorForCategory() {
+  if (activeSource === "csv") return FILE_SELECTORS[category.value] || FILE_SELECTORS.behavior;
   return DEFAULT_SELECTORS[category.value] || BEHAVIOR_SELECTOR;
-}
-
-function parseRecords(csvText) {
-  const rows = parseCSV(csvText.replace(/^\uFEFF/, "").trim());
-  if (rows.length < 2) return [];
-
-  const headers = rows[0].map(normalizeHeader);
-  const idIndex = findHeader(headers, ["번호", "no", "number", "id"]);
-  const nameIndex = findHeader(headers, ["이름", "성명", "name"]);
-  const textIndex = findHeader(headers, [
-    "작성 결과",
-    "AI생성결과",
-    "AI 생성 결과",
-    "결과",
-    "내용",
-    "세특",
-    "행특",
-    "창체",
-    "text"
-  ]);
-  const fallbackTextIndex = rows[0].length - 1;
-
-  return rows
-    .slice(1)
-    .map((row, index) => ({
-      id: idIndex >= 0 ? row[idIndex] || String(index + 1) : String(index + 1),
-      name: nameIndex >= 0 ? row[nameIndex] || "" : "",
-      text: row[textIndex >= 0 ? textIndex : fallbackTextIndex] || ""
-    }))
-    .filter((record) => record.text.trim().length > 0)
-    .sort(compareRecordById);
-}
-
-function parseCSV(text) {
-  const rows = [];
-  let row = [];
-  let cell = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i];
-    const next = text[i + 1];
-
-    if (char === '"' && inQuotes && next === '"') {
-      cell += '"';
-      i += 1;
-      continue;
-    }
-
-    if (char === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-
-    if (char === "," && !inQuotes) {
-      row.push(cell);
-      cell = "";
-      continue;
-    }
-
-    if ((char === "\n" || char === "\r") && !inQuotes) {
-      if (char === "\r" && next === "\n") i += 1;
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = "";
-      continue;
-    }
-
-    cell += char;
-  }
-
-  row.push(cell);
-  rows.push(row);
-  return rows.filter((cells) => cells.some((value) => value.trim()));
-}
-
-function normalizeHeader(value) {
-  return value.replace(/\s+/g, "").trim().toLowerCase();
-}
-
-function findHeader(headers, names) {
-  const normalizedNames = names.map(normalizeHeader);
-  return headers.findIndex((header) => normalizedNames.some((name) => header.includes(name)));
 }
 
 function setStatus(message) {
@@ -501,6 +467,7 @@ async function runUploaderInPage(action, payload) {
   const delayMs = payload?.delayMs || 300;
   const categoryLabel = payload?.categoryLabel || "ForTeacher AI";
   const isSubjectUpload = payload?.category === "subject";
+  const matchStudentNumber = Boolean(payload?.matchStudentNumber);
 
   if (!records.length) {
     return { ok: false, count: 0, message: "불러온 데이터가 없습니다." };
@@ -518,7 +485,7 @@ async function runUploaderInPage(action, payload) {
     if (primarySelector && findVisibleEditables(primarySelector).length > 0) {
       return primarySelector;
     }
-    if (secondarySelector && findVisibleEditables(secondarySelector).length > 0) {
+    if (!matchStudentNumber && secondarySelector && findVisibleEditables(secondarySelector).length > 0) {
       return secondarySelector;
     }
     return "";
@@ -526,6 +493,8 @@ async function runUploaderInPage(action, payload) {
 
   function installSelectionTracker(activeSelector) {
     window.__forTeacherActiveSelector = activeSelector;
+    const selected = findActiveEditable(activeSelector);
+    if (selected) window.__forTeacherLastEditable = selected;
     if (window.__forTeacherSelectionTrackerInstalled) return;
     window.__forTeacherSelectionTrackerInstalled = true;
     document.addEventListener("mousedown", (event) => {
@@ -645,6 +614,20 @@ async function runUploaderInPage(action, payload) {
           font: inherit;
           font-size: 12px;
         }
+        .ft-mode {
+          display: grid;
+          gap: 6px;
+          margin: 0;
+          padding: 8px 10px 10px;
+          border: 1px solid #e1e7ee;
+          border-radius: 8px;
+          color: #334155;
+          font-size: 12px;
+        }
+        .ft-mode legend { padding: 0 4px; font-weight: 900; }
+        .ft-mode label { display: flex; align-items: center; gap: 6px; }
+        .ft-mode input { margin: 0; accent-color: #0f766e; }
+        .ft-mode p { margin: 0; color: #64748b; font-size: 11px; }
         .ft-progress {
           height: 8px;
           overflow: hidden;
@@ -701,7 +684,7 @@ async function runUploaderInPage(action, payload) {
         </div>
         <div class="ft-body">
           <div class="ft-meta">
-            <p>${escapeText(categoryLabel)}<br />첫 입력칸을 클릭한 뒤 시작하세요.</p>
+            <p>${escapeText(categoryLabel)}<br />${matchStudentNumber ? "파일의 번호와 나이스 학생 번호를 대조해 입력합니다." : "첫 입력칸을 클릭한 뒤 시작하세요."}</p>
             <strong class="ft-count">${records.length}명</strong>
           </div>
           <div class="ft-controls">
@@ -714,8 +697,14 @@ async function runUploaderInPage(action, payload) {
               <input class="ft-delay" type="number" min="0" max="2000" step="50" value="${delayMs}" />
             </div>
           </div>
+          <fieldset class="ft-mode">
+            <legend>붙여넣기 방식</legend>
+            <label><input type="radio" name="ft-write-mode" value="append" checked /> 기존 내용 뒤에 이어쓰기</label>
+            <label><input type="radio" name="ft-write-mode" value="replace" /> 기존 내용 덮어쓰기</label>
+            <p>이어쓰기는 기존 문장 끝에 공백 한 칸을 두고 붙입니다.</p>
+          </fieldset>
           <div class="ft-progress"><span></span></div>
-          <p class="ft-status">대기 중입니다. 나이스의 첫 입력칸을 클릭하세요.</p>
+          <p class="ft-status" role="status">대기 중입니다. 나이스의 첫 입력칸을 클릭하세요.</p>
           <div class="ft-actions">
             <button class="ft-button primary ft-start" type="button">시작</button>
             <button class="ft-button ft-detect" type="button">선택 확인</button>
@@ -731,6 +720,7 @@ async function runUploaderInPage(action, payload) {
     const progress = overlay.querySelector(".ft-progress span");
     const startIdInput = overlay.querySelector(".ft-start-id");
     const delayInput = overlay.querySelector(".ft-delay");
+    const writeMode = overlay.querySelector(".ft-mode");
 
     close.addEventListener("click", () => overlay.remove());
     detect.addEventListener("click", () => {
@@ -745,26 +735,39 @@ async function runUploaderInPage(action, payload) {
       }
 
       const startId = Number(startIdInput.value);
-      const startRecordIndex = Number.isFinite(startId)
-        ? Math.max(0, records.findIndex((record) => Number(record.id) === startId))
-        : 0;
-      const uploadRecords = records.slice(startRecordIndex < 0 ? 0 : startRecordIndex);
+      const startRecordIndex = records.findIndex((record) => Number(record.id) === startId);
+      if (startRecordIndex < 0) {
+        status.textContent = "불러온 목록에 없는 시작 번호입니다. 번호를 확인하세요.";
+        return;
+      }
+      const uploadRecords = records.slice(startRecordIndex);
       const interval = Math.max(0, Number(delayInput.value) || 0);
+      const append = writeMode.querySelector("input:checked").value === "append";
 
       start.disabled = true;
       detect.disabled = true;
+      writeMode.disabled = true;
+      progress.style.width = "0%";
       status.textContent = "입력을 시작합니다.";
-      const count = await fillFromFocused(selector, uploadRecords, interval, (done, total, record) => {
-        progress.style.width = `${Math.round((done / total) * 100)}%`;
-        status.textContent = `${done}/${total} 입력 중: ${record?.id || "-"}번`;
-      });
-      if (isSubjectUpload && count < uploadRecords.length) {
-        status.textContent = `${count}/${uploadRecords.length}개만 입력했습니다. 다음 교과 입력칸으로 이동하지 못했습니다. 현재 선택 칸을 확인하세요.`;
-      } else {
-        status.textContent = `${count}개 입력을 완료했습니다. 나이스 저장 전 내용을 확인하세요.`;
+      let completed = 0;
+      try {
+        const count = await fillFromFocused(selector, uploadRecords, interval, append, (done, total, record) => {
+          completed = done;
+          progress.style.width = `${Math.round((done / total) * 100)}%`;
+          status.textContent = `${done}/${total} 입력 중: ${record?.id || "-"}번`;
+        });
+        if ((isSubjectUpload || matchStudentNumber) && count < uploadRecords.length) {
+          status.textContent = `${count}/${uploadRecords.length}개만 입력했습니다. ${uploadRecords[count]?.id}번 입력칸을 확인하지 못해 중단했습니다. 나이스의 영역·학생 번호를 확인하세요.`;
+        } else {
+          status.textContent = `${count}개 입력을 완료했습니다. 나이스 저장 전 내용을 확인하세요.`;
+        }
+      } catch (error) {
+        status.textContent = `${completed}/${uploadRecords.length}개 입력 후 ${uploadRecords[completed]?.id || "-"}번에서 중단했습니다. ${error.message}`;
+      } finally {
+        start.disabled = false;
+        detect.disabled = false;
+        writeMode.disabled = false;
       }
-      start.disabled = false;
-      detect.disabled = false;
     });
 
     document.body.appendChild(overlay);
@@ -780,7 +783,7 @@ async function runUploaderInPage(action, payload) {
   }
 
   function getCurrentEditable(inputSelector) {
-    return isSubjectUpload ? findActiveEditable(inputSelector) : findFocusedEditable(inputSelector);
+    return isSubjectUpload || matchStudentNumber ? findActiveEditable(inputSelector) : findFocusedEditable(inputSelector);
   }
 
   function findActiveEditable(inputSelector) {
@@ -825,9 +828,9 @@ async function runUploaderInPage(action, payload) {
     }) || null;
   }
 
-  async function fillFromFocused(inputSelector, uploadRecords, intervalMs, onProgress) {
-    if (isSubjectUpload) {
-      return fillSubjectFromFocused(inputSelector, uploadRecords, intervalMs, onProgress);
+  async function fillFromFocused(inputSelector, uploadRecords, intervalMs, append, onProgress) {
+    if (isSubjectUpload || matchStudentNumber) {
+      return fillSubjectFromFocused(inputSelector, uploadRecords, intervalMs, append, onProgress);
     }
 
     const targets = findVisibleEditables(inputSelector);
@@ -839,6 +842,7 @@ async function runUploaderInPage(action, payload) {
     const count = Math.min(availableTargets.length, uploadRecords.length);
     for (let i = 0; i < count; i += 1) {
       await setEditableValue(availableTargets[i], uploadRecords[i].text, {
+        append,
         advanceAfterCommit: i < count - 1
       });
       onProgress?.(i + 1, count, uploadRecords[i]);
@@ -847,7 +851,7 @@ async function runUploaderInPage(action, payload) {
     return count;
   }
 
-  async function fillSubjectFromFocused(inputSelector, uploadRecords, intervalMs, onProgress) {
+  async function fillSubjectFromFocused(inputSelector, uploadRecords, intervalMs, append, onProgress) {
     const initialTarget = findActiveEditable(inputSelector);
     if (!initialTarget) return 0;
 
@@ -857,6 +861,7 @@ async function runUploaderInPage(action, payload) {
       if (!target) return i;
 
       await setEditableValue(target, uploadRecords[i].text, {
+        append,
         advanceAfterCommit: false,
         simulatePaste: true
       });
@@ -885,8 +890,16 @@ async function runUploaderInPage(action, payload) {
     const recordNumber = normalizeRowNumber(record?.id);
     if (!recordNumber) return null;
     return findVisibleEditables(inputSelector).find((target) => {
-      return getGridRowNumber(target) === recordNumber;
+      return (matchStudentNumber ? getGridStudentNumber(target) : getGridRowNumber(target)) === recordNumber;
     }) || null;
+  }
+
+  function getGridStudentNumber(element) {
+    const row = element?.closest?.(".cl-grid-row, [role='row']");
+    if (!row) return "";
+    const numberCell = [...row.querySelectorAll("[aria-label]")].find((cell) => /(?:^|\s)번호\s+\d+(?:\s|$)/.test(cell.getAttribute("aria-label") || ""));
+    const match = numberCell?.getAttribute("aria-label")?.match(/(?:^|\s)번호\s+(\d+)(?:\s|$)/);
+    return match ? normalizeRowNumber(match[1]) : "";
   }
 
   function getGridRowNumber(element) {
@@ -947,7 +960,7 @@ async function runUploaderInPage(action, payload) {
   function getSubjectScrollDirection(inputSelector, record) {
     const wanted = Number(normalizeRowNumber(record?.id));
     const visibleRows = findVisibleEditables(inputSelector)
-      .map(getGridRowNumber)
+      .map(matchStudentNumber ? getGridStudentNumber : getGridRowNumber)
       .map(Number)
       .filter((number) => Number.isFinite(number) && number > 0);
 
@@ -957,19 +970,6 @@ async function runUploaderInPage(action, payload) {
     if (wanted < min) return -1;
     if (wanted > max) return 1;
     return 1;
-  }
-
-  function getEditableStamp(element) {
-    const cell = element?.closest?.(".cl-grid-cell");
-    const row = element?.closest?.("[aria-rowindex], [data-rowindex], .cl-grid-row");
-    const rect = (cell || element)?.getBoundingClientRect?.();
-    return [
-      cell?.getAttribute("aria-label") || "",
-      cell?.getAttribute("data-cellindex") || "",
-      row?.getAttribute("aria-rowindex") || "",
-      row?.getAttribute("data-rowindex") || "",
-      rect ? Math.round(rect.top) : ""
-    ].join("|");
   }
 
   function findVisibleEditables(inputSelector) {
@@ -1004,14 +1004,23 @@ async function runUploaderInPage(action, payload) {
   }
 
   async function setEditableValue(element, value, options = {}) {
+    if (options.append && (!element.isConnected || !isEditable(element))) {
+      throw new Error("입력칸이 바뀌었습니다. 나이스에서 해당 학생의 칸을 다시 선택하세요.");
+    }
     element.scrollIntoView({ block: "center", inline: "nearest" });
     activateEditable(element);
     await sleep(180);
 
     if (element.matches(".cl-textarea")) {
-      const nativeEditor = await waitForNativeEditor(element, 1200);
+      const nativeEditor = await waitForNativeEditor(element, 1200, options.append);
       if (nativeEditor) {
         nativeEditor.focus();
+        if (options.append) {
+          appendToEditor(nativeEditor, value);
+          await sleep(80);
+          commitNativeEditor(nativeEditor, element, options);
+          return;
+        }
         nativeEditor.select?.();
         clearNativeEditor(nativeEditor);
         nativeEditor.focus();
@@ -1028,8 +1037,14 @@ async function runUploaderInPage(action, payload) {
         return;
       }
 
+      if (options.append) throw unreadableEditorError();
       if (options.simulatePaste) dispatchPasteEvent(element, value);
       dispatchEditableEvents(element, value);
+      return;
+    }
+
+    if (options.append) {
+      appendToEditor(element, value);
       return;
     }
 
@@ -1041,6 +1056,66 @@ async function runUploaderInPage(action, payload) {
 
     setNativeInputValue(element, value);
     dispatchEditableEvents(element, value);
+  }
+
+  function unreadableEditorError() {
+    return new Error("기존 내용을 읽을 수 없어 이 칸은 변경하지 않았습니다. 해당 입력칸을 확인하세요.");
+  }
+
+  function appendToEditor(editor, value) {
+    if (!editor.isConnected || !isEditable(editor) || editor.closest("#forteacher-neis-overlay")) {
+      throw unreadableEditorError();
+    }
+    const nativeInput = editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement;
+    if (nativeInput ? editor.disabled || editor.readOnly : !editor.isContentEditable) throw unreadableEditorError();
+    const existing = nativeInput ? editor.value : editor.innerText;
+    const singleLine = editor instanceof HTMLInputElement;
+    const prefix = existing.trimEnd();
+    const suffix = `${prefix ? " " : ""}${value.trimStart()}`;
+    const nextValue = prefix + suffix;
+    if (nativeInput && editor.maxLength >= 0 && nextValue.length > editor.maxLength) {
+      throw new Error("이어쓴 내용이 입력칸의 글자 수 제한을 넘습니다. 기존 내용은 유지했습니다.");
+    }
+    if (nativeInput) {
+      setNativeInputValue(editor, nextValue);
+      const expected = singleLine ? nextValue.replace(/[\r\n]/g, "") : nextValue.replace(/\r\n?/g, "\n");
+      if (editor.value !== expected) {
+        setNativeInputValue(editor, existing);
+        throw new Error("새 내용을 입력할 수 없어 기존 내용을 유지했습니다.");
+      }
+    } else {
+      appendContentEditable(editor, suffix, Boolean(prefix));
+    }
+    // Append emits the completed field without publishing an intermediate empty value.
+    dispatchInputEvents(editor, nativeInput ? editor.value : editor.innerText);
+  }
+
+  function appendContentEditable(editor, suffix, hasExistingText) {
+    const fragment = document.createDocumentFragment();
+    suffix.split(/\r\n?|\n/).forEach((line, index) => {
+      if (index) fragment.append(document.createElement("br"));
+      if (line) fragment.append(document.createTextNode(line));
+    });
+    if (!hasExistingText) {
+      editor.replaceChildren(fragment);
+      return;
+    }
+
+    // Insert within the last line, preserving the earlier nodes and line breaks.
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let lastText;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.data.trim()) lastText = node;
+    }
+    if (!lastText) throw unreadableEditorError();
+    const offset = lastText.data.trimEnd().length;
+    const range = document.createRange();
+    range.setStart(lastText, offset);
+    range.setEnd(editor, editor.childNodes.length);
+    range.deleteContents();
+    range.setStart(lastText, offset);
+    range.collapse(true);
+    range.insertNode(fragment);
   }
 
   function activateEditable(element) {
@@ -1058,28 +1133,37 @@ async function runUploaderInPage(action, payload) {
     element.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "F2" }));
   }
 
-  async function waitForNativeEditor(container, timeoutMs) {
+  async function waitForNativeEditor(container, timeoutMs, requireMatch = false) {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
-      const editor = findNativeEditor(container);
+      const editor = findNativeEditor(container, requireMatch);
       if (editor) return editor;
       await sleep(50);
     }
     return null;
   }
 
-  function findNativeEditor(container) {
-    const localEditor = container.querySelector("textarea, input[type='text'], [contenteditable='true']");
-    if (localEditor && isEditable(localEditor)) return localEditor;
+  function findNativeEditor(container, requireMatch) {
+    const editorSelector = "textarea, input[type='text'], [contenteditable='true']";
+    const isNativeEditor = (editor) => editor?.matches?.(editorSelector) && isEditable(editor)
+      && (!requireMatch || (!editor.closest("#forteacher-neis-overlay") && isVisible(editor)));
+    const localEditor = [container, ...container.querySelectorAll(editorSelector)].find(isNativeEditor);
+    if (localEditor) return localEditor;
     const active = document.activeElement;
-    if (active && active !== container && isEditable(active) && isVisible(active)) return active;
+    if (!requireMatch && active && active !== container && isEditable(active) && isVisible(active)) return active;
     const containerRect = container.getBoundingClientRect();
-    return [...document.querySelectorAll("textarea, input[type='text'], [contenteditable='true']")]
+    const containerCell = container.closest(".cl-grid-cell");
+    const candidates = [...document.querySelectorAll(editorSelector)]
       .filter(isEditable)
       .filter(isVisible)
-      .find((candidate) => {
-        return rectanglesOverlap(candidate.getBoundingClientRect(), containerRect);
-      }) || null;
+      .filter((candidate) => rectanglesOverlap(candidate.getBoundingClientRect(), containerRect));
+    if (!requireMatch) return candidates[0] || null;
+
+    // NEIS can position its editor outside the cell. Only trust the focused editor
+    // over the target, never a different grid cell or a stale editor.
+    if (!isNativeEditor(active) || !candidates.includes(active)) return null;
+    const activeCell = active.closest(".cl-grid-cell");
+    return !activeCell || activeCell === containerCell ? active : null;
   }
 
   function setNativeInputValue(element, value) {
@@ -1116,7 +1200,7 @@ async function runUploaderInPage(action, payload) {
   }
 
   function commitNativeEditor(editor, originalElement, options = {}) {
-    dispatchEditableEvents(editor, editor.value ?? editor.textContent ?? "");
+    if (!options.append) dispatchEditableEvents(editor, editor.value ?? editor.textContent ?? "");
     if (options.advanceAfterCommit) {
       editor.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Tab" }));
       editor.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "Tab" }));
