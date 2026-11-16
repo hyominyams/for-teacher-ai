@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
     Brain,
-    Download,
     Maximize2,
     Minimize2,
     X,
@@ -17,21 +16,36 @@ import {
     Zap,
     CheckCircle2
 } from "lucide-react";
-import { downloadWorkspaceCsv } from "@/lib/workspace-csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { GenerationMenu } from "@/components/workspace/GenerationMenu";
 import type { GenerationMode } from "@/lib/record-generation";
-import { Card } from "@/components/ui/card";
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+    WorkspaceActionBar,
+    WorkspaceCardHeader,
+    workspaceCardClassName,
+    workspaceCheckboxClassName,
+    workspacePrimaryActionClassName,
+    workspaceRowClassName,
+    workspaceRowGenerateClassName,
+    workspaceRowNumberClassName,
+    workspaceRowResetClassName,
+    workspaceSecondaryActionClassName,
+    workspaceStickyHeadClassName,
+    workspaceTableHeadClassName,
+    workspaceTableScrollClassName,
+    workspaceToolButtonClassName,
+} from "@/components/workspace/WorkspaceControls";
 import { Student } from "@/types";
 
 const KEYWORD_PREVIEW_LIMIT = 10;
+const GRID_COLUMNS = "grid-cols-[32px_52px_minmax(200px,1.2fr)_minmax(280px,2fr)_120px]";
 
 interface BehaviorWorkspaceProps {
     polishAction?: React.ReactNode;
@@ -48,6 +62,7 @@ interface BehaviorWorkspaceProps {
     handleDeleteUnusedKeywords: () => void;
     handleSelectedGenerate: (mode: GenerationMode) => void;
     handleAllGenerate: (mode: GenerationMode) => void;
+    handleClearSelection?: () => void;
     toggleAllSelection: (e: React.ChangeEvent<HTMLInputElement>) => void;
     toggleStudentSelection: (id: number) => void;
     isAddingKeyword: number | null;
@@ -72,6 +87,7 @@ export const BehaviorWorkspace = ({
     handleDeleteUnusedKeywords,
     handleSelectedGenerate,
     handleAllGenerate,
+    handleClearSelection,
     toggleAllSelection,
     toggleStudentSelection,
     isAddingKeyword,
@@ -83,6 +99,7 @@ export const BehaviorWorkspace = ({
 }: BehaviorWorkspaceProps) => {
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
     const [expandedKeywordRows, setExpandedKeywordRows] = useState<Set<number>>(new Set());
+    const selectedCount = students.filter(s => s.selected).length;
 
     const toggleKeywordRow = (studentId: number) => {
         setExpandedKeywordRows(prev => {
@@ -96,79 +113,68 @@ export const BehaviorWorkspace = ({
         });
     };
 
-    return (
-        <Card className={cn(
-            "gap-0 p-4 sm:p-5 border border-slate-200 bg-white dark:bg-slate-900 shadow-sm dark:shadow-none space-y-5 overflow-hidden transition-all duration-500 dark:border dark:border-slate-800",
-            isExpanded ? "fixed inset-4 z-[200] rounded-[3rem] border border-blue-100 dark:border-slate-700 shadow-primary/20" : "rounded-2xl"
-        )}>
-            <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                    <div className="size-10 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                        <UserCheck className="size-5" />
-                    </div>
-                    <div>
-                        <h4 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
-                            학생별 기록
-                        </h4>
-                        <p className="text-sm text-slate-400 dark:text-slate-500 font-medium">키워드를 기반으로 생활기록부 작성을 시작하세요.</p>
-                    </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                    {polishAction}
-                    <Button
-                        variant="outline"
-                        onClick={handleAutoGenerateKeywords}
-                        className="rounded-2xl h-11 px-6 font-bold border-purple-100 bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:border-purple-900/50 dark:text-purple-400 gap-2 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-all font-black text-xs shrink-0"
-                    >
-                        키워드 자동생성 <Brain className="size-4" />
-                    </Button>
-                    <Button
-                        variant="outline"
-                        onClick={() => downloadWorkspaceCsv("behavior", students)}
-                        className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:border-emerald-900/50 dark:text-emerald-400 gap-2 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-all font-black text-xs shrink-0"
-                    >
-                        내보내기 <Download className="size-4" />
-                    </Button>
-                    <Button
-                        aria-label={isExpanded ? "전체화면 닫기" : "전체화면으로 넓게 보기"}
-                        onClick={() => setIsExpanded(!isExpanded)}
-                        className="rounded-2xl h-11 px-5 border-slate-100 bg-slate-50 text-slate-500 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
-                        variant="ghost"
-                    >
-                        {isExpanded ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
-                    </Button>
-                    {isExpanded && (
-                        <Button
-                            onClick={() => setIsExpanded(false)}
-                            className="rounded-2xl size-11 p-0 bg-red-50 text-red-400 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40"
-                        >
-                            <X className="size-6" />
-                        </Button>
-                    )}
-                </div>
-            </div>
+    // 전체화면일 때 뒤 페이지가 함께 스크롤되지 않게 한다(교과·창체와 같은 동작).
+    useEffect(() => {
+        if (!isExpanded) return;
+        const prevBodyOverflow = document.body.style.overflow;
+        const prevHtmlOverflow = document.documentElement.style.overflow;
+        document.body.style.overflow = "hidden";
+        document.documentElement.style.overflow = "hidden";
+        return () => {
+            document.body.style.overflow = prevBodyOverflow;
+            document.documentElement.style.overflow = prevHtmlOverflow;
+        };
+    }, [isExpanded]);
 
-            <div
-                className="bg-slate-100/30 dark:bg-slate-950/30 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 overflow-auto custom-scrollbar relative"
-                style={{ height: isExpanded ? "calc(100vh - 400px)" : "600px" }}
-            >
-                <div className="w-fit min-w-full flex flex-col min-h-full">
-                    {/* Sticky Table Header */}
-                    <div className="sticky top-0 z-20 bg-slate-50 dark:bg-black/80 dark:backdrop-blur-md border-b border-slate-100 dark:border-slate-800 shadow-sm">
-                        <div className="grid grid-cols-[40px_60px_minmax(180px,1.2fr)_minmax(260px,2fr)_140px] gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 items-center">
+    return (
+        <>
+        {isExpanded && <div aria-hidden="true" className="fixed inset-0 z-[199] bg-slate-100/90 backdrop-blur-sm dark:bg-slate-950/90" />}
+        <section
+            aria-label="학생별 기록"
+            className={cn(
+                workspaceCardClassName,
+                "space-y-4 p-4 sm:p-5",
+                isExpanded && "fixed inset-4 z-[200] overflow-y-auto overscroll-contain shadow-2xl"
+            )}
+        >
+            <WorkspaceCardHeader
+                icon={<UserCheck />}
+                accent="sky"
+                title="학생별 기록"
+                description="키워드를 기반으로 생활기록부 작성을 시작하세요."
+                actions={<>
+                    {polishAction}
+                    <Button variant="outline" onClick={handleAutoGenerateKeywords} className={workspaceToolButtonClassName}>
+                        <Brain aria-hidden="true" className="text-violet-500" />키워드 자동생성
+                    </Button>
+                    <Button
+                        variant="outline"
+                        aria-label={isExpanded ? "전체화면 닫기" : "전체화면으로 넓게 보기"}
+                        title={isExpanded ? "전체화면 닫기" : "전체화면으로 넓게 보기"}
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className={cn(workspaceToolButtonClassName, "w-9 px-0")}
+                    >
+                        {isExpanded ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+                    </Button>
+                </>}
+            />
+
+            <div className={cn("rounded-xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950/40", workspaceTableScrollClassName(isExpanded, "lg"))}>
+                <div className="w-fit min-w-full">
+                    <div className={cn(workspaceStickyHeadClassName(isExpanded, "lg"), "rounded-t-xl")}>
+                        <div className={cn("grid items-center gap-4 px-5 py-2.5", GRID_COLUMNS, workspaceTableHeadClassName)}>
                             <div className="flex items-center justify-center">
                                 <input type="checkbox" onChange={toggleAllSelection} aria-label="모든 학생 선택"
-                                        checked={students.length > 0 && students.every(s => s.selected)} className="size-5 rounded-lg border-slate-300 dark:border-slate-600 accent-primary cursor-pointer" />
+                                    checked={students.length > 0 && students.every(s => s.selected)} className={workspaceCheckboxClassName} />
                             </div>
-                            <div className="text-center font-black">번호</div>
-                            <div>행동특성 키워드 (최소 2개)</div>
-                            <div className="pl-5">AI 결과 및 편집</div>
-                            <div className="text-center">관리 액션</div>
+                            <div className="text-center">번호</div>
+                            <div>행동특성 키워드 (2개 이상)</div>
+                            <div>작성 결과</div>
+                            <div className="text-center">관리</div>
                         </div>
                     </div>
 
-                    {/* List Content */}
-                    <div className="p-6 pt-4 space-y-3">
+                    <div className="space-y-2 p-2 sm:p-3">
                         {students.map((student) => {
                             const isRowOpen = expandedRowId === student.id;
                             const allKeywords = Array.from(new Set([...defaultKeywords, ...student.customKeywords]));
@@ -179,121 +185,125 @@ export const BehaviorWorkspace = ({
                             <div
                                 key={student.id} data-student-id={student.id}
                                 className={cn(
-                                    "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_minmax(260px,2fr)_140px] gap-6 px-8 rounded-[2rem] border transition-all items-start group/row",
-                                    isRowOpen ? "py-7" : "py-4",
-                                    student.selected ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800" : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-100 dark:hover:border-slate-700",
-                                    isRowOpen && "ring-2 ring-primary/20 border-primary/40 shadow-xl shadow-primary/5"
+                                    "group/row grid items-start gap-4 px-3 py-3",
+                                    GRID_COLUMNS,
+                                    workspaceRowClassName(student.selected, "sky"),
+                                    isRowOpen && "ring-2 ring-primary/20"
                                 )}
                             >
-                                <div className="flex items-center justify-center pt-3">
+                                <div className="flex items-center justify-center pt-1.5">
                                     <input
                                         type="checkbox"
                                         aria-label={`${student.id}번 학생 선택`}
-                                            checked={student.selected}
+                                        checked={student.selected}
                                         onChange={() => toggleStudentSelection(student.id)}
-                                        className="size-5 rounded-lg border-slate-300 dark:border-slate-600 accent-primary cursor-pointer"
+                                        className={workspaceCheckboxClassName}
                                     />
                                 </div>
-                                <div className="text-lg font-black text-slate-900 dark:text-white text-center pt-2 whitespace-nowrap">{student.id}번</div>
+                                <div className={cn(workspaceRowNumberClassName, "whitespace-nowrap pt-1 text-center")}>{student.id}번</div>
 
-                                <div className="flex flex-col gap-4 pt-1">
-                                    <div className="flex gap-2 flex-wrap">
-                                        {visibleKeywords.map(k => (
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {visibleKeywords.map(k => {
+                                            const isSelected = student.selectedKeywords.includes(k);
+                                            return (
                                             <button
                                                 key={k}
+                                                type="button"
+                                                aria-pressed={isSelected}
                                                 onClick={() => {
-                                                    const isSelected = student.selectedKeywords.includes(k);
                                                     setStudents(prev => prev.map(s => s.id === student.id ? {
                                                         ...s,
                                                         selectedKeywords: isSelected ? s.selectedKeywords.filter(kw => kw !== k) : [...s.selectedKeywords, k]
                                                     } : s));
                                                 }}
                                                 className={cn(
-                                                    "px-4 py-2 rounded-xl text-[11px] font-black transition-all border-2",
-                                                    student.selectedKeywords.includes(k)
-                                                        ? "bg-primary border-primary text-white shadow-md shadow-primary/20"
-                                                        : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-400 dark:text-slate-400 hover:border-slate-200 dark:hover:border-slate-600 hover:text-slate-600 dark:hover:text-slate-200"
+                                                    "rounded-lg border px-2.5 py-1 text-xs font-medium leading-5 transition-colors",
+                                                    isSelected
+                                                        ? "border-primary bg-primary text-primary-foreground"
+                                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
                                                 )}
                                             >
                                                 {k}
                                             </button>
-                                        ))}
+                                            );
+                                        })}
                                         {hiddenKeywordCount > 0 && (
                                             <button
                                                 type="button"
                                                 onClick={() => toggleKeywordRow(student.id)}
-                                                className="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-slate-200 bg-slate-50 px-3 text-[11px] font-black text-slate-500 transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-blue-800 dark:hover:bg-blue-900/20 dark:hover:text-blue-300"
+                                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium leading-5 text-slate-500 transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-sky-800 dark:hover:bg-sky-950/40 dark:hover:text-sky-300"
                                             >
                                                 더보기 {hiddenKeywordCount}
-                                                <ChevronDown className="size-3.5" />
+                                                <ChevronDown aria-hidden="true" className="size-3.5" />
                                             </button>
                                         )}
                                         {isKeywordRowOpen && allKeywords.length > KEYWORD_PREVIEW_LIMIT && (
                                             <button
                                                 type="button"
                                                 onClick={() => toggleKeywordRow(student.id)}
-                                                className="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-blue-100 bg-blue-50 px-3 text-[11px] font-black text-blue-600 transition-all hover:bg-blue-100 dark:border-blue-900/50 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40"
+                                                className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium leading-5 text-sky-700 transition-colors hover:bg-sky-100 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-300"
                                             >
                                                 접기
-                                                <ChevronUp className="size-3.5" />
+                                                <ChevronUp aria-hidden="true" className="size-3.5" />
                                             </button>
                                         )}
                                     </div>
 
                                     {isAddingKeyword === student.id ? (
-                                        <div className="flex gap-2 items-center">
+                                        <div className="flex items-center gap-1.5">
                                             <input
                                                 autoFocus
                                                 value={newKeywordInput}
                                                 onChange={(e) => setNewKeywordInput(e.target.value)}
                                                 onKeyDown={(e) => e.key === 'Enter' && addCustomKeyword(student.id)}
                                                 placeholder="키워드 입력"
-                                                className="px-4 py-2 text-xs font-bold border-2 rounded-xl w-32 outline-none focus:border-primary/50 transition-all bg-white dark:bg-slate-800 dark:text-white dark:border-slate-600"
+                                                aria-label={`${student.id}번 학생 새 키워드`}
+                                                className="h-8 w-36 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                                             />
-                                            <Button aria-label={`${student.id}번 학생 키워드 추가`} onClick={() => addCustomKeyword(student.id)} variant="ghost" className="size-9 rounded-lg bg-primary text-white p-0"><CheckCircle2 className="size-4" /></Button>
-                                            <Button aria-label="키워드 추가 취소" onClick={() => setIsAddingKeyword(null)} variant="ghost" className="size-9 rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 p-0"><X className="size-4" /></Button>
+                                            <Button aria-label={`${student.id}번 학생 키워드 추가`} onClick={() => addCustomKeyword(student.id)} className="size-8 rounded-lg p-0"><CheckCircle2 aria-hidden="true" /></Button>
+                                            <Button aria-label="키워드 추가 취소" onClick={() => setIsAddingKeyword(null)} variant="ghost" className="size-8 rounded-lg p-0 text-slate-500"><X aria-hidden="true" /></Button>
                                         </div>
                                     ) : (
-                                        <div className="flex flex-wrap gap-2">
-                                            <button
-                                                onClick={() => {
-                                                    setIsAddingKeyword(student.id);
-                                                    setNewKeywordInput("");
-                                                }}
-                                                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-[11px] font-black text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500 hover:text-slate-500 dark:hover:text-slate-300 w-fit transition-all group/btn"
-                                            >
-                                                <Plus className="size-4 transition-transform group-hover/btn:rotate-90" /> 키워드 직접 추가
-                                            </button>
-                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsAddingKeyword(student.id);
+                                                setNewKeywordInput("");
+                                            }}
+                                            className="inline-flex w-fit items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2.5 py-1 text-xs font-medium leading-5 text-slate-500 transition-colors hover:border-slate-400 hover:bg-white hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                        >
+                                            <Plus aria-hidden="true" className="size-3.5" /> 키워드 직접 추가
+                                        </button>
                                     )}
                                 </div>
 
-                                <div className={cn("relative group/txt pt-1", isRowOpen && "col-span-full row-start-2 max-w-[calc(100vw-6rem)]")}>
+                                <div className={cn("group/txt relative", isRowOpen && "col-span-full row-start-2 max-w-[calc(100vw-6rem)]")}>
                                     <div
                                         onClick={() => { if (!isRowOpen && !student.isGenerating) setExpandedRowId(student.id); }}
                                         className={cn(
-                                            "rounded-2xl text-[13px] font-medium leading-[1.8] transition-all",
-                                            isRowOpen ? "p-6 min-h-[200px]" : "p-4 h-[108px] overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary/20",
-                                            student.aiResult ? "bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800" : "bg-slate-50/50 dark:bg-slate-950/30 text-slate-300 dark:text-slate-700 italic border border-dashed border-slate-200 dark:border-slate-800"
+                                            "rounded-xl text-sm leading-relaxed transition-colors",
+                                            isRowOpen ? "min-h-[180px] p-4" : "h-[96px] cursor-pointer overflow-hidden p-3 pr-10 hover:border-sky-200 dark:hover:border-sky-800",
+                                            student.aiResult ? "border border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300" : "border border-dashed border-slate-200 bg-white/60 text-slate-400 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-500"
                                         )}
                                     >
                                         {student.isGenerating ? (
-                                            <div className="flex flex-col gap-3">
-                                                <div className="h-2.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full animate-pulse" />
-                                                <div className="h-2.5 w-4/5 bg-slate-200 dark:bg-slate-800 rounded-full animate-pulse" />
-                                                <div className="h-2.5 w-3/5 bg-slate-200 dark:bg-slate-800 rounded-full animate-pulse" />
+                                            <div className="flex flex-col gap-3 pt-1">
+                                                <div className="h-2.5 w-full animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
+                                                <div className="h-2.5 w-4/5 animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
+                                                <div className="h-2.5 w-3/5 animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
                                             </div>
                                         ) : isRowOpen ? (
                                             <textarea
                                                 autoFocus
                                                 aria-label={`${student.id}번 학생 작성 결과`}
-                                                        value={student.aiResult}
+                                                value={student.aiResult}
                                                 placeholder="선택된 키워드가 없습니다. 키워드를 클릭하고 생성을 눌러주세요."
                                                 onChange={(e) => {
                                                     const newVal = e.target.value;
                                                     setStudents(prev => prev.map(s => s.id === student.id ? { ...s, aiResult: newVal } : s));
                                                 }}
-                                                className="w-full min-h-[180px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0 leading-[1.8] text-slate-700 dark:text-slate-300 placeholder:text-slate-300 dark:placeholder:text-slate-700"
+                                                className="min-h-[160px] w-full resize-none border-none bg-transparent p-0 leading-relaxed text-slate-700 outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-300 dark:placeholder:text-slate-500"
                                             />
                                         ) : (
                                             <div className="line-clamp-3">{student.aiResult || "선택된 키워드가 없습니다. 키워드를 클릭하고 생성을 눌러주세요."}</div>
@@ -301,36 +311,30 @@ export const BehaviorWorkspace = ({
                                     </div>
                                     {!student.isGenerating && (
                                         <button
+                                            type="button"
                                             onClick={(e) => { e.stopPropagation(); setExpandedRowId(isRowOpen ? null : student.id); }}
                                             title={isRowOpen ? "접기" : "펼쳐서 편집"}
+                                            aria-label={isRowOpen ? `${student.id}번 결과 접기` : `${student.id}번 결과 펼쳐서 편집`}
                                             className={cn(
-                                                "absolute top-3 right-3 size-9 rounded-xl shadow-xl border flex items-center justify-center cursor-pointer transition-all hover:scale-110",
-                                                isRowOpen ? "bg-primary text-white border-primary opacity-100" : "bg-white dark:bg-slate-800 text-slate-400 border-slate-100 dark:border-slate-700 opacity-0 group-hover/txt:opacity-100 hover:text-primary"
+                                                "absolute right-2 top-2 flex size-8 items-center justify-center rounded-lg border transition-colors",
+                                                isRowOpen ? "border-primary bg-primary text-primary-foreground" : "border-slate-200 bg-white text-slate-400 opacity-0 hover:text-primary focus-visible:opacity-100 group-hover/txt:opacity-100 dark:border-slate-700 dark:bg-slate-800"
                                             )}
                                         >
-                                            {isRowOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                                            {isRowOpen ? <ChevronUp aria-hidden="true" className="size-4" /> : <ChevronDown aria-hidden="true" className="size-4" />}
                                         </button>
                                     )}
                                 </div>
 
-                                <div className="flex flex-col items-center justify-start gap-2 pt-2" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
+                                <div className="flex flex-col items-stretch gap-1" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
                                     <GenerationMenu
                                         onGenerate={mode => handleGenerate(student.id, mode)}
                                         disabled={student.selectedKeywords.length < 2 || student.isGenerating}
-                                        className={cn(
-                                            "w-full rounded-2xl font-black h-12 px-5 gap-2 text-[13px] transition-all shadow-lg",
-                                            student.aiResult
-                                                ? "bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800 shadow-blue-100 dark:shadow-none"
-                                                : "bg-primary text-white hover:bg-primary/90 shadow-primary/20 dark:shadow-none"
-                                        )}
+                                        className={workspaceRowGenerateClassName(Boolean(student.aiResult))}
                                     >
-                                        {student.aiResult ? "재생성" : "생성"} <Sparkles className="size-4" />
+                                        <Sparkles aria-hidden="true" />{student.aiResult ? "재생성" : "생성"}
                                     </GenerationMenu>
-                                    <button
-                                        onClick={() => handleReset(student.id)}
-                                        className="w-full h-11 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-all flex items-center justify-center gap-2 font-black text-[11px]"
-                                    >
-                                        <RotateCcw className="size-4" /> 초기화
+                                    <button type="button" onClick={() => handleReset(student.id)} className={workspaceRowResetClassName}>
+                                        <RotateCcw aria-hidden="true" className="size-3.5" /> 초기화
                                     </button>
                                 </div>
                             </div>
@@ -339,59 +343,34 @@ export const BehaviorWorkspace = ({
                     </div>
                 </div>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 py-4 px-4 bg-slate-50/50 dark:bg-slate-800/30 rounded-[2.5rem] border border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-4">
-                    <div className="px-3 py-2 bg-white dark:bg-slate-900 rounded-2xl text-sm font-black text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
-                        <div className="size-2 rounded-full bg-blue-600 animate-pulse" />
-                        {students.filter(s => s.selected).length}명 선택됨
-                    </div>
-                </div>
-                <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                className="rounded-2xl bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-black h-11 px-4 sm:px-6 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all gap-3"
-                            >
-                                <RotateCcw className="size-5" /> 초기화
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56 rounded-2xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-2xl z-[300]">
-                            <DropdownMenuItem
-                                onClick={handleResetAll}
-                                className="rounded-xl px-4 py-3 font-black text-slate-600 dark:text-slate-300 cursor-pointer focus:bg-slate-50 dark:focus:bg-slate-800"
-                            >
-                                <RotateCcw className="size-4 text-slate-400" /> 전체 초기화
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                onClick={handleResetKeywords}
-                                className="rounded-xl px-4 py-3 font-black text-slate-600 dark:text-slate-300 cursor-pointer focus:bg-blue-50 dark:focus:bg-blue-900/20 focus:text-blue-600 dark:focus:text-blue-300"
-                            >
-                                <X className="size-4 text-blue-400" /> 키워드 초기화
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                onClick={handleDeleteUnusedKeywords}
-                                className="rounded-xl px-4 py-3 font-black text-slate-600 dark:text-slate-300 cursor-pointer focus:bg-red-50 dark:focus:bg-red-900/20 focus:text-red-500 dark:focus:text-red-300"
-                            >
-                                <Trash2 className="size-4 text-red-400" /> 미선택 키워드만 삭제
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                    <GenerationMenu
-                        onGenerate={handleSelectedGenerate}
-                        variant="outline"
-                        className="rounded-2xl border-2 border-slate-900 dark:border-slate-500 text-slate-900 dark:text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm gap-3 transition-all"
-                    >
-                        <UserCheck className="size-5" /> 선택 생성
-                    </GenerationMenu>
-                    <GenerationMenu
-                        onGenerate={handleAllGenerate}
-                        className="rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-800 dark:hover:bg-indigo-700 shadow-2xl shadow-slate-300 dark:shadow-none gap-4 text-lg transition-all"
-                    >
-                        <Zap className="size-5 text-primary dark:text-white" /> 전체 생성
-                    </GenerationMenu>
-                </div>
-            </div>
-        </Card>
+
+            <WorkspaceActionBar selectedCount={selectedCount} onClearSelection={handleClearSelection} expanded={isExpanded}>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className={workspaceSecondaryActionClassName}>
+                            <RotateCcw aria-hidden="true" /> 초기화 <ChevronDown aria-hidden="true" className="opacity-60" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="z-[300] w-56 rounded-xl p-1.5">
+                        <DropdownMenuItem onClick={handleResetAll} className="rounded-lg px-2.5 py-2 font-medium">
+                            <RotateCcw aria-hidden="true" className="text-slate-400" /> 전체 초기화
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleResetKeywords} className="rounded-lg px-2.5 py-2 font-medium">
+                            <X aria-hidden="true" className="text-sky-500" /> 키워드 초기화
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleDeleteUnusedKeywords} className="rounded-lg px-2.5 py-2 font-medium text-red-600 focus:bg-red-50 focus:text-red-700 dark:text-red-400 dark:focus:bg-red-950/40">
+                            <Trash2 aria-hidden="true" className="text-red-500" /> 미선택 키워드만 삭제
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+                <GenerationMenu onGenerate={handleSelectedGenerate} variant="outline" className={workspaceSecondaryActionClassName}>
+                    <UserCheck aria-hidden="true" /> 선택 생성
+                </GenerationMenu>
+                <GenerationMenu onGenerate={handleAllGenerate} className={workspacePrimaryActionClassName}>
+                    <Zap aria-hidden="true" /> 전체 생성
+                </GenerationMenu>
+            </WorkspaceActionBar>
+        </section>
+        </>
     );
 };

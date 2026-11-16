@@ -11,18 +11,23 @@ import {
     Upload,
     FileSearch,
     Loader2,
-    Check
+    Check,
+    ChevronDown,
+    Download,
+    FileSpreadsheet,
+    PlugZap
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { importWorkspaceCsv } from "@/lib/workspace-csv";
+import { downloadWorkspaceCsv, importWorkspaceCsv } from "@/lib/workspace-csv";
 import { supabase } from "@/lib/supabase";
 import { creditAIFetch } from "@/lib/credit-client";
 import { appendRecordText, type GenerationMode } from "@/lib/record-generation";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
 import { WorkLogSessionBar } from "@/components/workspace/WorkLogSessionBar";
-import { WorkspaceButton, WorkspaceNumberSelect } from "@/components/workspace/WorkspaceControls";
+import { WorkspaceButton, WorkspaceNumberSelect, workspaceToolButtonClassName } from "@/components/workspace/WorkspaceControls";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getSavedWorkLog, workLogRequest, WorkLogError } from "@/lib/work-log-client";
 import { defaultWorkTitle, normalizeWorkData, type WorkCategory, workFingerprint, workLogCsv, stableWorkJson } from "@/lib/work-logs";
 import type { SavedWorkLog } from "@/lib/work-logs";
@@ -76,6 +81,13 @@ const features = [
         color: "emerald",
     }
 ];
+
+const AREA_SHORT_TITLE: Record<string, string> = { behavior: "행동특성", subject: "교과", creative: "창체" };
+const AREA_ACCENT_TEXT: Record<string, string> = {
+    behavior: "text-sky-700 dark:text-sky-300",
+    subject: "text-indigo-700 dark:text-indigo-300",
+    creative: "text-amber-700 dark:text-amber-300",
+};
 
 const DEFAULT_SCOPE_KEY = "default";
 const DEFAULT_STUDENT_COUNTS: Record<string, number> = {
@@ -1602,57 +1614,71 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         />
     ) : null;
 
+    const workspaceLocked = isWorkLogLoading || logBusy || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId);
+    const planImportAction = activeTabId === "subject" ? (
+        <>
+            <Button type="button" variant="outline" onClick={() => document.getElementById("subject-plan-upload")?.click()} disabled={isSubjectPlanImporting}
+                className={cn(workspaceToolButtonClassName, "border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 dark:border-indigo-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40")}>
+                {isSubjectPlanImporting ? <Loader2 aria-hidden="true" className="animate-spin" /> : <FileSearch aria-hidden="true" />}
+                {isSubjectPlanImporting ? "평가계획 분석 중…" : <>평가계획 가져오기<span className="font-medium text-indigo-500 dark:text-indigo-400">HWPX</span></>}
+            </Button>
+            {isSubjectPlanImporting && <Button type="button" variant="outline" onClick={cancelSubjectPlanImport} className={workspaceToolButtonClassName}>분석 취소</Button>}
+        </>
+    ) : null;
+
     // --- UI Rendering ---
     return (
         <div className="min-h-screen bg-[#FAFBFF] dark:bg-background transition-colors duration-300">
 
             <main className="pt-24 pb-12">
                 <div className="mx-auto w-full max-w-[1800px] px-4 sm:px-6 lg:px-8">
-                    <nav aria-label="작성 영역" className="mb-5 flex flex-wrap gap-2 border-b border-slate-200 pb-4 dark:border-slate-700">
-                        {features.filter(feature => feature.id !== "docs").map(feature => <button key={feature.id}
-                            onClick={() => changeCategory(feature.id)} aria-current={activeTabId === feature.id ? "page" : undefined}
-                            disabled={logBusy || isWorkLogLoading || isSubjectPlanImporting}
-                            className={cn("flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-colors disabled:opacity-50", activeTabId === feature.id ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200" : "bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300")}>
-                            <feature.icon className="size-4 shrink-0" />{feature.title}
-                        </button>)}
-                        <a href="/app/logs" className="ml-auto flex items-center px-3 text-sm font-semibold text-slate-600 underline underline-offset-4 dark:text-slate-300">작업로그 열기</a>
-                    </nav>
-                    <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                        <div><h1 className="text-2xl font-black tracking-tight">{activeTab.title}</h1>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{activeTabId === "subject" ? "평가계획 HWPX를 가져오거나 평가기준을 직접 입력한 뒤, 학생별 상·중·하를 선택하세요." : activeTabId === "creative" ? "각 학생의 활동 선택에서 참여 활동을 고르세요. 임원 직책과 기간도 함께 기록할 수 있습니다." : "관찰 키워드를 2개 이상 선택하고 학생별 문장을 작성하세요."}</p></div>
-                        <a href="/extension/bridge" target="_blank" rel="noreferrer" className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900">나이스 확장 연결</a>
+                    <header className="mb-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+                        <div className="min-w-0">
+                            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{activeTab.title}</h1>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{activeTabId === "subject" ? "평가계획 HWPX를 가져오거나 평가기준을 직접 입력한 뒤, 학생별 상·중·하를 선택하세요." : activeTabId === "creative" ? "각 학생의 활동 선택에서 참여 활동을 고르세요. 임원 직책과 기간도 함께 기록할 수 있습니다." : "관찰 키워드를 2개 이상 선택하고 학생별 문장을 작성하세요."}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <nav aria-label="작성 영역" className="inline-flex rounded-xl border border-slate-200 bg-slate-100/80 p-1 dark:border-slate-800 dark:bg-slate-900">
+                                {features.filter(feature => feature.id !== "docs").map(feature => {
+                                    const active = activeTabId === feature.id;
+                                    return <button key={feature.id} type="button" title={feature.title}
+                                        onClick={() => changeCategory(feature.id)} aria-current={active ? "page" : undefined}
+                                        disabled={logBusy || isWorkLogLoading || isSubjectPlanImporting}
+                                        className={cn("flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors disabled:opacity-50", active ? cn("bg-white shadow-sm dark:bg-slate-800", AREA_ACCENT_TEXT[feature.id]) : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white")}>
+                                        <feature.icon aria-hidden="true" className="size-4 shrink-0" />{AREA_SHORT_TITLE[feature.id] ?? feature.title}
+                                    </button>;
+                                })}
+                            </nav>
+                            <a href="/extension/bridge" target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"><PlugZap aria-hidden="true" className="size-4" />나이스 확장 연결</a>
+                        </div>
                     </header>
                     <WorkLogSessionBar saving={logBusy} editing={isSavedEditor} title={logTitle} onTitle={setLogTitle}
                         busy={logBusy || isWorkLogLoading || isSubjectPlanImporting || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} dirty={editorDirty}
                         message={logMessage} error={logError} draftStatus={isSavedEditor ? undefined : draftSaveStatus} onSave={() => void saveSnapshot(false)} onSaveNew={() => void saveSnapshot(true)}
-                        onReset={() => void startEmptyDraft()} onBack={() => leaveEditor("/app/logs")} />
+                        onReset={() => void startEmptyDraft()} onBack={() => leaveEditor("/app/logs")}
+                        settings={<fieldset disabled={workspaceLocked} aria-label="작성 설정과 가져오기" className="m-0 grid min-w-0 grid-cols-2 items-end gap-3 border-0 p-0 sm:flex sm:flex-wrap">
+                            <WorkspaceNumberSelect id="workspace-student-count" label="학생 수" value={studentCount} unit="명" className="sm:w-28"
+                                options={Array.from({ length: 40 }, (_, i) => i + 1)} onValueChange={changeStudentCount}
+                                disabled={workspaceLocked || isSubjectPlanImporting} />
+                            <WorkspaceNumberSelect id="workspace-char-limit" label="목표 글자 수" value={charLimits[activeTabId]} unit="자" className="sm:w-32"
+                                options={[charLimits[activeTabId], 100, 200, 300, 400, 500, 600, 800, 1000].filter((value, i, all) => all.indexOf(value) === i).sort((a, b) => a - b)}
+                                onValueChange={value => setCharLimits(prev => ({ ...prev, [activeTabId]: value }))}
+                                disabled={workspaceLocked} />
+                            <input type="file" id="workspace-csv-upload" accept=".csv,text/csv" className="hidden" onChange={handleFileUpload} />
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <WorkspaceButton variant="outline" disabled={isSubjectPlanImporting} className="col-span-2 border-slate-200 dark:border-slate-700"><FileSpreadsheet aria-hidden="true" />CSV<ChevronDown aria-hidden="true" className="opacity-60" /></WorkspaceButton>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5">
+                                    <DropdownMenuItem onSelect={() => document.getElementById("workspace-csv-upload")?.click()} className="rounded-lg px-2.5 py-2 font-medium"><Upload aria-hidden="true" />CSV 가져오기</DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => downloadWorkspaceCsv(activeTabId as "behavior" | "subject" | "creative", students, activeTabId === "subject" ? subjectConfig : undefined)} className="rounded-lg px-2.5 py-2 font-medium"><Download aria-hidden="true" />CSV 내보내기</DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </fieldset>} />
                     {isWorkLogLoading && logError && <Button variant="outline" onClick={() => window.location.reload()} className="mb-4">다시 불러오기</Button>}
                     {staleEdit && <button className="mb-4 text-sm text-blue-700 underline" onClick={() => { const url = URL.createObjectURL(new Blob([workLogCsv({ category: activeTabId as "behavior", data: staleEdit.data })], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href = url; a.download = `${staleEdit.title}-임시수정.csv`; a.click(); URL.revokeObjectURL(url); }}>이전 임시 수정 내보내기</button>}
-                    <fieldset disabled={isWorkLogLoading || logBusy || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} className="min-w-0 border-0 p-0 m-0">
-                        <div className="mb-4 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 lg:flex-row lg:items-end" aria-label="작성 설정과 가져오기">
-                            <div className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap">
-                                <WorkspaceNumberSelect id="workspace-student-count" label="학생 수" value={studentCount} unit="명"
-                                    options={Array.from({ length: 40 }, (_, i) => i + 1)} onValueChange={changeStudentCount}
-                                    disabled={isWorkLogLoading || logBusy || isSubjectPlanImporting || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} />
-                                <WorkspaceNumberSelect id="workspace-char-limit" label="목표 글자 수" value={charLimits[activeTabId]} unit="자"
-                                    options={[charLimits[activeTabId], 100, 200, 300, 400, 500, 600, 800, 1000].filter((value, i, all) => all.indexOf(value) === i).sort((a, b) => a - b)}
-                                    onValueChange={value => setCharLimits(prev => ({ ...prev, [activeTabId]: value }))}
-                                    disabled={isWorkLogLoading || logBusy || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} />
-                                {students.some(student => student.selected) && <WorkspaceButton variant="ghost" onClick={handleResetSelection} className="col-span-2 justify-self-start text-slate-500 dark:text-slate-400">선택 해제</WorkspaceButton>}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
-                                <input type="file" id="workspace-csv-upload" accept=".csv,text/csv" className="hidden" onChange={handleFileUpload} />
-                                <WorkspaceButton variant="outline" onClick={() => document.getElementById("workspace-csv-upload")?.click()} disabled={isSubjectPlanImporting} className="border-slate-200 dark:border-slate-700"><Upload aria-hidden="true" />CSV 가져오기</WorkspaceButton>
-                                {activeTabId === "subject" && <>
-                                    <input type="file" id="subject-plan-upload" accept=".hwpx,.hwp" className="hidden" onChange={handleSubjectPlanUpload} />
-                                    <WorkspaceButton onClick={() => document.getElementById("subject-plan-upload")?.click()} disabled={isSubjectPlanImporting} className="bg-indigo-600 hover:bg-indigo-700">
-                                        {isSubjectPlanImporting ? <Loader2 aria-hidden="true" className="animate-spin" /> : <FileSearch aria-hidden="true" />}
-                                        {isSubjectPlanImporting ? "평가계획 분석 중…" : <><span>평가계획 가져오기</span><span className="text-xs font-medium text-indigo-100">HWPX</span></>}
-                                    </WorkspaceButton>
-                                    {isSubjectPlanImporting && <WorkspaceButton variant="outline" onClick={cancelSubjectPlanImport}>분석 취소</WorkspaceButton>}
-                                </>}
-                            </div>
-                        </div>
+                    <fieldset disabled={workspaceLocked} className="min-w-0 border-0 p-0 m-0">
+                        {activeTabId === "subject" && <input type="file" id="subject-plan-upload" accept=".hwpx,.hwp" className="hidden" onChange={handleSubjectPlanUpload} />}
                         {activeTabId === "behavior" ? (
                             <BehaviorWorkspace
                             polishAction={polishAction}
@@ -1680,12 +1706,15 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             setNewKeywordInput={setNewKeywordInput}
                             addCustomKeyword={addCustomKeyword}
                             defaultKeywords={defaultKeywords}
+                            handleClearSelection={handleResetSelection}
                             />
                         ) : activeTabId === "subject" ? (
                             <SubjectWorkspace
                             key={isSavedEditor ? requestedLogId : "subject-draft"}
                             savedEditor={isSavedEditor}
                             polishAction={polishAction}
+                            planImportAction={planImportAction}
+                            handleClearSelection={handleResetSelection}
                             students={students}
                             setStudents={setStudents}
                             globalConfig={subjectConfig}
@@ -1719,6 +1748,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             toggleStudentSelection={toggleStudentSelection}
                             studentCount={studentCount}
                             charLimit={charLimits.creative}
+                            handleClearSelection={handleResetSelection}
                             isExpanded={isExpanded}
                             setIsExpanded={setIsExpanded}
                             />
@@ -1738,11 +1768,11 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
                             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
                         }
-                    }} className="w-full max-w-5xl max-h-[88vh] overflow-hidden rounded-[2rem] bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
+                    }} className="w-full max-w-5xl max-h-[88vh] overflow-hidden rounded-2xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
                         <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="space-y-1">
-                                <div className="text-[11px] font-black text-indigo-500 dark:text-indigo-400 tracking-widest uppercase">평가계획 불러오기</div>
-                                <h3 id="plan-import-heading" className="text-2xl font-black text-slate-900 dark:text-slate-100">가져온 교과</h3>
+                                <div className="text-xs font-semibold text-indigo-500 dark:text-indigo-400">평가계획 불러오기</div>
+                                <h3 id="plan-import-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100">가져온 교과</h3>
                                 <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
                                     {isSavedEditor ? "현재 저장본에 적용할 교과 하나를 선택하세요. 작성 문장과 개별 메모는 유지되며, 바뀐 기준의 학생별 평가는 다시 입력합니다." : "적용할 교과를 선택하세요. 선택한 교과마다 독립된 작업을 만들며 기존 교과는 유지됩니다."}
                                 </p>
@@ -1799,21 +1829,21 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                                         </button>
                                                         <div className="min-w-0 flex-1 grid grid-cols-1 md:grid-cols-[1fr_7rem] gap-3">
                                                             <label className="space-y-1">
-                                                                <span className="text-[11px] font-black text-slate-400">교과명</span>
+                                                                <span className="text-xs font-semibold text-slate-400">교과명</span>
                                                                 <Input
                                                                     value={subject.subjectName || ""}
                                                                     onChange={(event) => updateSubjectPlanSubject(index, "subjectName", event.target.value)}
                                                                     placeholder="교과명"
-                                                                    className="h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-base font-black text-slate-900 dark:text-slate-100"
+                                                                    className="h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-base font-semibold text-slate-900 dark:text-slate-100"
                                                                 />
                                                             </label>
                                                             <label className="space-y-1">
-                                                                <span className="text-[11px] font-black text-slate-400">학년</span>
+                                                                <span className="text-xs font-semibold text-slate-400">학년</span>
                                                                 <Input
                                                                     value={subject.grade || ""}
                                                                     onChange={(event) => updateSubjectPlanSubject(index, "grade", event.target.value)}
                                                                     placeholder="학년"
-                                                                    className="h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-base font-black text-slate-900 dark:text-slate-100"
+                                                                    className="h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-base font-semibold text-slate-900 dark:text-slate-100"
                                                                 />
                                                             </label>
                                                             <div className="md:col-span-2 text-xs font-bold text-slate-400">
@@ -1822,7 +1852,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                                         </div>
                                                     </div>
                                                 </div>
-                                            <div className="shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800 px-4 py-2 text-xs font-black text-slate-500 dark:text-slate-400">
+                                            <div className="shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
                                                 {selected ? "선택됨" : "제외됨"}
                                             </div>
                                         </div>
@@ -1836,16 +1866,16 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                                             className="rounded-xl bg-white/85 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 p-4 space-y-3"
                                                         >
                                                         <label className="space-y-1 block">
-                                                            <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-300">영역</span>
+                                                            <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">영역</span>
                                                             <Input
                                                                 value={assessment.area || ""}
                                                                 onChange={(event) => updateSubjectPlanAssessment(index, assessmentIndex, "area", event.target.value)}
                                                                 placeholder={`평가 ${assessmentIndex + 1}`}
-                                                                className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-sm font-black text-indigo-700 dark:text-indigo-200"
+                                                                className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-sm font-semibold text-indigo-700 dark:text-indigo-200"
                                                             />
                                                         </label>
                                                         <label className="space-y-1 block">
-                                                            <span className="text-[11px] font-black text-slate-400">성취기준</span>
+                                                            <span className="text-xs font-semibold text-slate-400">성취기준</span>
                                                             <textarea
                                                                 value={assessment.standard || ""}
                                                                 onChange={(event) => updateSubjectPlanAssessment(index, assessmentIndex, "standard", event.target.value)}
@@ -1855,12 +1885,12 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                                             />
                                                         </label>
                                                         <div className="space-y-2">
-                                                            <span className="text-[11px] font-black text-slate-400">평가기준</span>
+                                                            <span className="text-xs font-semibold text-slate-400">평가기준</span>
                                                             <div className="grid gap-2 md:grid-cols-3">
                                                                 {ACHIEVEMENT_LEVELS.map((level) => (
                                                                     <label key={level} className="block space-y-1">
                                                                         <span className={cn(
-                                                                            "inline-flex h-6 min-w-8 items-center justify-center rounded-lg px-2 text-[11px] font-black",
+                                                                            "inline-flex h-6 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-semibold",
                                                                             level === "상" && "bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300",
                                                                             level === "중" && "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
                                                                             level === "하" && "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-200"
@@ -1889,7 +1919,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                         </div>
 
                         <div className="px-8 py-6 border-t border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="text-sm font-black text-slate-500 dark:text-slate-400">
+                            <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">
                                 {selectedSubjectPlanIndexes.length}개 교과 선택
                             </div>
                             <div className="flex gap-3">
@@ -1901,7 +1931,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                         setSubjectPlanImport(null);
                                         setSelectedSubjectPlanIndexes([]);
                                     }}
-                                    className="h-12 rounded-xl px-6 font-black border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400"
+                                    className="h-12 rounded-xl px-6 font-semibold border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400"
                                 >
                                     취소
                                 </Button>
@@ -1909,7 +1939,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                     type="button"
                                     disabled={isWorkLogLoading || selectedSubjectPlanIndexes.length === 0}
                                     onClick={applySubjectPlanImport}
-                                    className="h-12 rounded-xl px-8 font-black bg-indigo-600 text-white hover:bg-indigo-700 gap-2"
+                                    className="h-12 rounded-xl px-8 font-semibold bg-indigo-600 text-white hover:bg-indigo-700 gap-2"
                                 >
                                     {isWorkLogLoading ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                                     {isSavedEditor ? "평가기준 적용" : "선택한 교과 추가"}

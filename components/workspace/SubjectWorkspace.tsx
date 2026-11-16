@@ -6,25 +6,20 @@ import {
     BookOpen,
     Maximize2,
     Minimize2,
-    X,
     Plus,
     Sparkles,
     RotateCcw,
     UserCheck,
     Trash2,
     Settings2,
-    Users,
-    Download,
     Target,
     ChevronDown,
     ChevronUp,
     GripVertical
 } from "lucide-react";
 import { normalizeSchoolLevel } from "@/lib/subject-plan-values";
-import { downloadWorkspaceCsv } from "@/lib/workspace-csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,7 +35,23 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+    WorkspaceActionBar,
+    WorkspaceCardHeader,
+    workspaceCardClassName,
+    workspaceCheckboxClassName,
+    workspacePrimaryActionClassName,
+    workspaceRowClassName,
+    workspaceRowGenerateClassName,
+    workspaceRowNumberClassName,
+    workspaceRowResetClassName,
+    workspaceSecondaryActionClassName,
+    workspaceStickyHeadClassName,
+    workspaceTableHeadClassName,
+    workspaceTableScrollClassName,
+    workspaceToolButtonClassName,
+    type WorkspaceTableFit,
+} from "@/components/workspace/WorkspaceControls";
 import { createPortal } from "react-dom";
 import { AchievementLevel, CriteriaLevels, Student, SubjectGlobalConfig, SubjectAssessmentInfo } from "@/types";
 
@@ -50,22 +61,29 @@ interface WrapperProps {
     mounted: boolean;
 }
 
+/** 전체화면은 body로 포털해 상위 transform·overflow 영향을 받지 않게 한다(기존 동작 유지). */
 const Wrapper = ({ children, isExpanded, mounted }: WrapperProps) => {
     if (isExpanded && mounted) {
         return createPortal(
             <div className="fixed inset-0 z-[9999] isolate">
-                <div className="absolute inset-0 bg-white dark:bg-slate-900 pointer-events-auto" />
+                <div className="pointer-events-auto absolute inset-0 bg-slate-100/90 backdrop-blur-sm dark:bg-slate-950/90" />
                 {children}
             </div>,
             document.body
         );
     }
-    return <div className="space-y-5 transform-none">{children}</div>;
+    return <>{children}</>;
 };
+
+const subjectFieldClassName = "h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-medium tabular-nums text-slate-800 shadow-none data-[size=default]:h-11 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
+const subjectTextInputClassName = "h-10 rounded-xl border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:border-indigo-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
+const subjectTextAreaClassName = "w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-relaxed text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:ring-indigo-900/50";
 
 interface SubjectWorkspaceProps {
     savedEditor?: boolean;
     polishAction?: React.ReactNode;
+    /** 평가계획 HWPX 가져오기 버튼(파일 입력과 처리는 RecordWorkspace에 있다) */
+    planImportAction?: React.ReactNode;
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
     globalConfig: SubjectGlobalConfig;
@@ -86,6 +104,7 @@ interface SubjectWorkspaceProps {
     handleAllGenerate: () => void;
     handleSelectedGenerate: () => void;
     handleResetAll: () => void;
+    handleClearSelection?: () => void;
     toggleAllSelection: React.ChangeEventHandler<HTMLInputElement>;
     toggleStudentSelection: (id: number) => void;
     isExpanded: boolean;
@@ -157,6 +176,7 @@ const formatCriteriaFromLevels = (levels: CriteriaLevels) => (
 export const SubjectWorkspace = ({
     savedEditor = false,
     polishAction,
+    planImportAction,
     students,
     setStudents,
     globalConfig,
@@ -172,6 +192,7 @@ export const SubjectWorkspace = ({
     handleAllGenerate,
     handleSelectedGenerate,
     handleResetAll,
+    handleClearSelection,
     toggleAllSelection,
     toggleStudentSelection,
     isExpanded,
@@ -179,7 +200,14 @@ export const SubjectWorkspace = ({
 }: SubjectWorkspaceProps) => {
     const [bulkAssessmentId, setBulkAssessmentId] = useState<string | null>(null);
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
-    const [activeInputTab, setActiveInputTab] = useState(savedEditor ? "individual" : "global");
+    // 평가 기준 섹션: 사용자가 직접 열고 닫기 전에는 평가가 없을 때만 펼친다. 교과를 바꾸면 다시 자동으로 돌아간다.
+    const [criteriaOpenOverride, setCriteriaOpenOverride] = useState<boolean | null>(null);
+    const [criteriaScopeKey, setCriteriaScopeKey] = useState(activeSubjectScopeKey);
+    if (criteriaScopeKey !== activeSubjectScopeKey) {
+        setCriteriaScopeKey(activeSubjectScopeKey);
+        setCriteriaOpenOverride(null);
+    }
+    const criteriaOpen = criteriaOpenOverride ?? (globalConfig.assessments.length === 0);
     const [draggedSubjectScopeKey, setDraggedSubjectScopeKey] = useState<string | null>(null);
     const [dragOverSubjectScopeKey, setDragOverSubjectScopeKey] = useState<string | null>(null);
     const suppressSubjectClickRef = useRef(false);
@@ -302,15 +330,12 @@ export const SubjectWorkspace = ({
         }));
     };
 
-    // Calculate dynamic grid columns for the row based on number of assessments
-    // cols: Checkbox(40px) + Number(80px) + (Assessments x 140px) + Note(minmax 200) + Result(minmax 300) + Actions(160px)
-    // cols: Checkbox(40px) + Number(80px) + (Assessments x 140px) + Note(minmax 200) + Result(minmax 300) + Actions(160px)
-    const assessmentCols = globalConfig.assessments.length > 0
-        ? `${"120px ".repeat(globalConfig.assessments.length)}`
-        : ""; // If no assessments, do not create a placeholder column to avoid grid misalignment
-
-    // Adjusted ratios: AI Result gets more space (2.5fr) vs Note (1fr)
-    const gridTemplateCols = `40px 70px ${assessmentCols} minmax(180px, 1fr) minmax(280px, 2.5fr) 140px`;
+    // 열: 선택(32) + 번호(52) + 평가 수(각 96) + 특이사항 + 작성 결과 + 관리(120). 평가가 없으면 평가 열을 만들지 않는다.
+    const assessmentCount = globalConfig.assessments.length;
+    const assessmentCols = assessmentCount > 0 ? "96px ".repeat(assessmentCount) : "";
+    const gridTemplateCols = `32px 52px ${assessmentCols}minmax(180px, 1fr) minmax(280px, 2.5fr) 120px`;
+    // 표 최소 폭이 카드 안에 들어오는 폭에서만 페이지 스크롤 고정 머리글을 쓴다.
+    const tableFit: WorkspaceTableFit = assessmentCount <= 3 ? "xl" : assessmentCount <= 5 ? "2xl" : "none";
     const currentSubjectLabel = globalConfig.subjectName.trim() || "새 교과";
     const activeSubjectLogExists = subjectLogs.some(log => log.scopeKey === activeSubjectScopeKey);
     const rawSubjectSelectItems = activeSubjectLogExists
@@ -373,127 +398,90 @@ export const SubjectWorkspace = ({
 
     return (
         <Wrapper isExpanded={isExpanded} mounted={mounted}>
-            <Card className={cn(
-                "gap-0 p-4 sm:p-5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm space-y-5 transition-all duration-500",
-                isExpanded ? "fixed inset-4 z-[9999] rounded-[2rem] border border-indigo-100 dark:border-indigo-900 shadow-primary/20 !transform-none overflow-hidden flex flex-col pointer-events-auto cursor-default p-6 space-y-0 gap-4" : "rounded-2xl overflow-hidden"
-            )}>
-                {/* Header Section */}
-                {isExpanded && <div className="flex justify-end">{polishAction}</div>}
-                {!isExpanded && (
-                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
-                    <div className="flex items-center gap-4">
-                        <div className="size-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center">
-                            <BookOpen aria-hidden="true" className="size-5" />
-                        </div>
-                        <div>
-                            <h4 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-3">
-                                학생별 기록
-                            </h4>
-                            <p className="text-sm text-slate-400 font-medium">성취수준을 바탕으로 생활기록부 작성을 시작하세요.</p>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 w-full xl:w-auto">
-                        <div className="col-span-2 sm:col-span-1">{polishAction}</div>
-                        <Button
-                            variant="outline"
-                            className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
-                            onClick={() => downloadWorkspaceCsv("subject", students, globalConfig)}
-                        >
-                            내보내기 <Download className="size-4" />
-                        </Button>
+            <section
+                aria-label="학생별 기록"
+                className={cn(
+                    workspaceCardClassName,
+                    "relative space-y-4 p-4 sm:p-5",
+                    isExpanded && "pointer-events-auto fixed inset-4 overflow-y-auto overscroll-contain shadow-2xl"
+                )}
+            >
+                <WorkspaceCardHeader
+                    icon={<BookOpen />}
+                    accent="indigo"
+                    title="학생별 기록"
+                    description={isExpanded ? `${currentSubjectLabel} · 학생 평가 수준과 결과 입력` : "성취수준을 바탕으로 생활기록부 작성을 시작하세요."}
+                    actions={<>
+                        {polishAction}
                         <Button
                             variant="outline"
                             aria-label={isExpanded ? "전체화면 닫기" : "전체화면으로 넓게 보기"}
-                        onClick={() => setIsExpanded(!isExpanded)}
-                            className="rounded-2xl h-11 px-5 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all col-span-2 sm:col-span-1"
+                            title={isExpanded ? "전체화면 닫기" : "전체화면으로 넓게 보기"}
+                            onClick={() => setIsExpanded(!isExpanded)}
+                            className={cn(workspaceToolButtonClassName, "w-9 px-0")}
                         >
-                            {isExpanded ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
+                            {isExpanded ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
                         </Button>
-                        {isExpanded && (
-                            <Button
-                                onClick={() => setIsExpanded(false)}
-                                className="rounded-2xl size-11 p-0 bg-red-50 dark:bg-red-950/40 text-red-400 hover:bg-red-100"
-                            >
-                                <X className="size-6" />
-                            </Button>
-                        )}
-                    </div>
-                </div>
-                )}
-
-                {isExpanded && (
-                    <div className="flex items-center justify-between gap-4 rounded-2xl border border-indigo-100 dark:border-indigo-900 bg-indigo-50/70 dark:bg-indigo-950/50 px-5 py-4 shrink-0">
-                        <div className="min-w-0">
-                            <div className="text-[10px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-widest">② 학생 평가·결과 입력</div>
-                            <div className="truncate text-lg font-black text-slate-900 dark:text-slate-100">{currentSubjectLabel}</div>
-                        </div>
-                        <Button
-                            variant="outline"
-                            onClick={() => setIsExpanded(false)}
-                            className="h-11 rounded-xl border-indigo-100 dark:border-indigo-900 bg-white dark:bg-slate-900 px-5 text-xs font-black text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 gap-2 shrink-0"
-                        >
-                            <Minimize2 className="size-4" /> 돌아가기
-                        </Button>
-                    </div>
-                )}
+                    </>}
+                />
 
                 {!isExpanded && (
-                <section aria-label="교과 기본정보와 교과 선택" className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-3 dark:border-indigo-900 dark:bg-indigo-950/30 sm:p-4">
+                <section aria-label="교과 기본정보와 교과 선택" className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 dark:border-indigo-900 dark:bg-indigo-950/20 sm:p-4">
                     <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[144px_112px_minmax(0,1fr)] lg:grid-cols-[144px_112px_minmax(0,1fr)_auto]">
                         <div className="min-w-0 space-y-1.5">
-                            <Label htmlFor="subject-school-level" className="text-xs font-semibold text-slate-500 dark:text-slate-400">학교급</Label>
+                            <Label htmlFor="subject-school-level" className="text-xs font-semibold text-slate-600 dark:text-slate-400">학교급</Label>
                             <Select value={globalConfig.schoolLevel ? normalizeSchoolLevel(globalConfig.schoolLevel) : ""} onValueChange={(val) => setGlobalConfig(p => ({ ...p, schoolLevel: val }))}>
-                                <SelectTrigger id="subject-school-level" className="w-full data-[size=default]:h-11 h-11 rounded-[12px] bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700 font-semibold tabular-nums focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
+                                <SelectTrigger id="subject-school-level" className={subjectFieldClassName}>
                                     <SelectValue placeholder="학교급 선택" />
                                 </SelectTrigger>
-                                <SelectContent className="rounded-[12px] border-slate-100 dark:border-slate-700 shadow-lg">
-                                    <SelectItem value="elementary" className="font-bold">초등학교</SelectItem>
-                                    <SelectItem value="middle" className="font-bold">중학교</SelectItem>
-                                    <SelectItem value="high" className="font-bold">고등학교</SelectItem>
+                                <SelectContent className="rounded-xl">
+                                    <SelectItem value="elementary">초등학교</SelectItem>
+                                    <SelectItem value="middle">중학교</SelectItem>
+                                    <SelectItem value="high">고등학교</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
                         <div className="min-w-0 space-y-1.5">
-                            <Label htmlFor="subject-grade" className="text-xs font-semibold text-slate-500 dark:text-slate-400">학년</Label>
+                            <Label htmlFor="subject-grade" className="text-xs font-semibold text-slate-600 dark:text-slate-400">학년</Label>
                             <Select value={globalConfig.grade} onValueChange={(val) => setGlobalConfig(p => ({ ...p, grade: val }))}>
-                                <SelectTrigger id="subject-grade" className="w-full data-[size=default]:h-11 h-11 rounded-[12px] bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700 font-semibold tabular-nums focus:ring-indigo-200 text-slate-600 dark:text-slate-300">
+                                <SelectTrigger id="subject-grade" className={subjectFieldClassName}>
                                     <SelectValue placeholder="학년 선택" />
                                 </SelectTrigger>
-                                <SelectContent className="rounded-[12px] border-slate-100 dark:border-slate-700 shadow-lg">
+                                <SelectContent className="rounded-xl">
                                     {[1, 2, 3, 4, 5, 6].map(g => (
-                                        <SelectItem key={g} value={g.toString()} className="font-bold">{g}학년</SelectItem>
+                                        <SelectItem key={g} value={g.toString()}>{g}학년</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
                         </div>
                         <div className="col-span-2 min-w-0 space-y-1.5 sm:col-span-1">
-                            <Label htmlFor="subject-name" className="text-xs font-semibold text-slate-500 dark:text-slate-400">교과명</Label>
+                            <Label htmlFor="subject-name" className="text-xs font-semibold text-slate-600 dark:text-slate-400">교과명</Label>
                             <Input
                                 id="subject-name"
                                 value={globalConfig.subjectName}
                                 onChange={(e) => setGlobalConfig(p => ({ ...p, subjectName: e.target.value }))}
                                 placeholder="예: 국어, 수학, 통합교과(봄) 등"
-                                className="h-11 rounded-[12px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-semibold px-3 text-slate-700 dark:text-slate-200 focus:border-indigo-300 shadow-none placeholder:text-slate-400 placeholder:font-medium"
+                                className="h-11 rounded-xl border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:border-indigo-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                             />
                         </div>
                         {!savedEditor && (
                             <div className="col-span-2 flex items-center gap-2 sm:col-span-3 lg:col-span-1">
-                                <Button variant="outline" onClick={onCreateSubjectLog} className="h-11 rounded-xl border-indigo-100 bg-white px-4 text-xs font-bold text-indigo-600 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-indigo-950/70">
-                                    <Plus className="mr-1.5 size-4" /> 새 교과
+                                <Button variant="outline" onClick={onCreateSubjectLog} className="h-11 gap-1.5 rounded-xl border-indigo-200 bg-white px-4 text-sm font-semibold text-indigo-700 shadow-none hover:bg-indigo-50 dark:border-indigo-900 dark:bg-slate-900 dark:text-indigo-300 dark:hover:bg-indigo-950/50">
+                                    <Plus aria-hidden="true" /> 새 교과
                                 </Button>
                                 <Popover>
                                     <PopoverTrigger asChild>
-                                        <Button variant="outline" className="h-11 rounded-xl border-indigo-100 bg-white px-4 text-xs font-bold text-slate-600 dark:border-indigo-900 dark:bg-slate-900 dark:text-slate-300">
-                                            교과 관리 <ChevronDown className="ml-1.5 size-3.5" />
+                                        <Button variant="outline" className="h-11 gap-1.5 rounded-xl border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                                            교과 관리 <ChevronDown aria-hidden="true" className="opacity-60" />
                                         </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent align="end" className="w-56 rounded-2xl border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-                                        <p className="px-3 py-2 text-xs font-semibold text-slate-500">교과 삭제</p>
-                                        <Button variant="ghost" onClick={() => onDeleteSubjectLog(activeSubjectScopeKey)} disabled={subjectLogs.length === 0} className="h-11 w-full justify-start gap-2 rounded-xl text-sm text-slate-600 dark:text-slate-300">
-                                            <Trash2 className="size-4" /> 현재 교과 삭제
+                                    <PopoverContent align="end" className="w-56 rounded-xl border-slate-200 bg-white p-1.5 dark:border-slate-700 dark:bg-slate-900">
+                                        <p className="px-2.5 py-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">교과 삭제</p>
+                                        <Button variant="ghost" onClick={() => onDeleteSubjectLog(activeSubjectScopeKey)} disabled={subjectLogs.length === 0} className="h-10 w-full justify-start gap-2 rounded-lg px-2.5 text-sm font-medium text-slate-700 dark:text-slate-300">
+                                            <Trash2 aria-hidden="true" /> 현재 교과 삭제
                                         </Button>
-                                        <Button variant="ghost" onClick={onDeleteAllSubjectLogs} disabled={subjectLogs.length === 0 && globalConfig.assessments.length === 0 && !globalConfig.subjectName.trim()} className="h-11 w-full justify-start gap-2 rounded-xl text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">
-                                            <Trash2 className="size-4" /> 전체 교과 삭제
+                                        <Button variant="ghost" onClick={onDeleteAllSubjectLogs} disabled={subjectLogs.length === 0 && globalConfig.assessments.length === 0 && !globalConfig.subjectName.trim()} className="h-10 w-full justify-start gap-2 rounded-lg px-2.5 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/40">
+                                            <Trash2 aria-hidden="true" /> 전체 교과 삭제
                                         </Button>
                                     </PopoverContent>
                                 </Popover>
@@ -501,7 +489,7 @@ export const SubjectWorkspace = ({
                         )}
                     </div>
                     {!savedEditor && (
-                    <div role="group" aria-label="교과 선택 · 드래그해서 순서 변경" className="flex flex-nowrap gap-2 overflow-x-auto overflow-y-hidden border-t border-indigo-100 pt-3 custom-scrollbar pb-1 pr-1 dark:border-indigo-900">
+                    <div role="group" aria-label="교과 선택 · 드래그해서 순서 변경" className="custom-scrollbar flex flex-nowrap gap-2 overflow-x-auto overflow-y-hidden border-t border-indigo-100 pb-1 pr-1 pt-3 dark:border-indigo-900">
                         {subjectSelectItems.map(log => {
                             const isActive = log.scopeKey === activeSubjectScopeKey;
                             const isRealSubjectLog = subjectLogs.some(subjectLog => subjectLog.scopeKey === log.scopeKey);
@@ -510,6 +498,8 @@ export const SubjectWorkspace = ({
                             return (
                                 <button
                                     key={log.scopeKey}
+                                    type="button"
+                                    aria-pressed={isActive}
                                     draggable={isRealSubjectLog}
                                     onDragStart={(event) => handleSubjectDragStart(event, log.scopeKey)}
                                     onDragOver={(event) => handleSubjectDragOver(event, log.scopeKey)}
@@ -526,18 +516,18 @@ export const SubjectWorkspace = ({
                                         onSubjectScopeChange(log.scopeKey);
                                     }}
                                     className={cn(
-                                        "h-10 min-w-16 max-w-[160px] shrink-0 rounded-xl border px-3 text-xs font-black transition-all",
+                                        "h-9 min-w-16 max-w-[160px] shrink-0 rounded-xl border px-3 text-xs font-semibold transition-colors",
                                         isRealSubjectLog ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                                         isActive
-                                            ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200"
-                                            : "bg-white dark:bg-slate-900 border-indigo-100 dark:border-indigo-900 text-slate-500 dark:text-slate-400 hover:border-indigo-200 dark:hover:border-indigo-800 hover:text-indigo-600 dark:hover:text-indigo-300",
+                                            ? "border-indigo-600 bg-indigo-600 text-white"
+                                            : "border-indigo-100 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-700 dark:border-indigo-900 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-indigo-800 dark:hover:text-indigo-300",
                                         isDragging && "opacity-50",
-                                        isDragOver && "ring-4 ring-indigo-100 border-indigo-300"
+                                        isDragOver && "border-indigo-300 ring-4 ring-indigo-100 dark:ring-indigo-900/60"
                                     )}
                                     title={`${log.scopeLabel || "교과"}${isRealSubjectLog ? " - 드래그해서 순서 변경" : ""}`}
                                 >
                                     <span className="flex min-w-0 items-center gap-1.5">
-                                        <GripVertical className="size-3 shrink-0 opacity-45" />
+                                        <GripVertical aria-hidden="true" className="size-3 shrink-0 opacity-50" />
                                         <span className="truncate">{log.shortLabel}</span>
                                     </span>
                                 </button>
@@ -548,406 +538,380 @@ export const SubjectWorkspace = ({
                 </section>
                 )}
 
-                <Tabs value={isExpanded ? "individual" : activeInputTab} onValueChange={setActiveInputTab} className={cn(
-                    "space-y-4",
-                    isExpanded && "flex flex-col flex-1 min-h-0 space-y-0"
-                )}>
-                    <TabsList className={cn(
-                        "grid grid-cols-2 w-full bg-slate-50 dark:bg-slate-800/70 p-1.5 rounded-2xl border border-slate-100 dark:border-slate-700 h-auto",
-                        isExpanded && "hidden"
-                    )}>
-                        <TabsTrigger value="global" className="rounded-xl px-3 sm:px-8 font-black text-[12px] sm:text-[13px] tracking-tight data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all h-11">
-                            <Settings2 className="size-4 mr-2" /> ① 평가 기준 설정
-                        </TabsTrigger>
-                        <TabsTrigger value="individual" className="rounded-xl px-3 sm:px-8 font-black text-[12px] sm:text-[13px] tracking-tight data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm transition-all h-11">
-                            <Users className="size-4 mr-2" /> ② 학생 평가·결과 입력
-                        </TabsTrigger>
-                    </TabsList>
-
-                    {/* ① 평가 기준 설정 탭 */}
-                    <TabsContent value="global" className={cn(
-                        "space-y-6 focus:outline-none custom-scrollbar pb-40",
-                        isExpanded ? "overflow-y-auto flex-1 h-full" : "h-auto"
-                    )}>
-                        <div className="space-y-6 pb-20">
-                            <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-                                <div className="flex items-center gap-3">
-                                    <Label className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase tracking-wider">평가 영역 및 기준 설정</Label>
-                                    <Badge variant="secondary" className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 border-indigo-100 dark:border-indigo-900 font-black px-2.5 py-0.5 rounded-lg">{globalConfig.assessments.length}</Badge>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Button
-                                        onClick={() => setGlobalConfig({ schoolLevel: "", grade: "", subjectName: "", assessments: [] })}
-                                        variant="ghost"
-                                        className="h-11 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 font-bold gap-2 text-xs"
-                                    >
-                                        <RotateCcw className="size-3" /> 입력 정보 초기화
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={addAssessment}
-                                        className="rounded-2xl h-11 px-6 border-indigo-100 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/70 transition-all font-black text-xs gap-2"
-                                    >
-                                        평가정보 추가 <Plus className="size-4" />
-                                    </Button>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-6">
-                                {globalConfig.assessments.map((assessment, index) => (
-                                    <Card key={assessment.id} className="relative overflow-visible border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg shadow-slate-200/40 hover:shadow-xl hover:shadow-indigo-100/50 hover:border-indigo-100 dark:hover:border-indigo-900 transition-all group/card rounded-[2.5rem]">
-                                        <button
-                                            onClick={() => removeAssessment(assessment.id)}
-                                            className="absolute -top-3 -right-3 size-10 rounded-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 text-slate-300 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-950/40 hover:border-red-100 hover:text-red-500 transition-all z-10 shadow-sm opacity-0 group-hover/card:opacity-100"
-                                            title="평가정보 삭제"
-                                        >
-                                            <Trash2 className="size-4" />
-                                        </button>
-
-                                        <div className="p-8 space-y-8">
-                                            {/* Row 1: Header (Area + Competency) */}
-                                            <div className="flex flex-col md:flex-row gap-8 items-start">
-                                                {/* 영역 입력 */}
-                                                <div className="flex items-center gap-4 flex-[1.5]">
-                                                    <div className="size-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black text-lg shadow-lg shadow-indigo-200 shrink-0">
-                                                        {index + 1}
-                                                    </div>
-                                                    <div className="flex-1 space-y-2">
-                                                        <Label className="text-[11px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-[0.05em] ml-1">영역 (대단원)</Label>
-                                                        <Input
-                                                            value={assessment.area}
-                                                            onChange={(e) => updateAssessment(assessment.id, "area", e.target.value)}
-                                                            placeholder="예: 듣기, 화법과 작문 등"
-                                                            className="h-12 rounded-xl bg-slate-50 dark:bg-slate-800/70 font-bold px-4 focus:bg-white dark:focus:bg-slate-900 transition-all outline-none border-none shadow-inner text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-300"
-                                                        />
-                                                    </div>
-                                                </div>
-
-                                                {/* 핵심 역량 입력 */}
-                                                <div className="flex-1 space-y-2 w-full">
-                                                    <Label className="text-[11px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-[0.05em] ml-1 flex items-center gap-2">
-                                                        <Target className="size-3.5 text-indigo-500 dark:text-indigo-400" /> 관련 핵심 역량
-                                                    </Label>
-                                                    <div className="bg-white dark:bg-slate-900 p-2 rounded-xl border-2 border-slate-100 dark:border-slate-700 focus-within:border-indigo-200 focus-within:shadow-md transition-all flex items-center gap-3 h-12">
-                                                        <input
-                                                            value={assessment.competency}
-                                                            onChange={(e) => updateAssessment(assessment.id, "competency", e.target.value)}
-                                                            placeholder="예: 비판적 사고 역량, 의사소통 역량"
-                                                            className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-300 h-full px-2"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Row 2: Standard */}
-                                            <div className="space-y-3">
-                                                <Label className="text-[11px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-[0.05em] ml-1 flex items-center gap-2">
-                                                    <span className="size-1.5 rounded-full bg-indigo-400"></span> 성취기준 (Standard)
-                                                </Label>
-                                                <textarea
-                                                    value={assessment.standard}
-                                                    onChange={(e) => updateAssessment(assessment.id, "standard", e.target.value)}
-                                                    placeholder="예: [4국02-02] 문단과 글에서 중심 생각을 파악하고..."
-                                                    className="w-full min-h-[100px] p-6 rounded-[1.5rem] border-2 border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium leading-relaxed resize-none outline-none focus:border-indigo-200 dark:focus:border-indigo-800 focus:ring-0 transition-all placeholder:text-slate-300 text-slate-700 dark:text-slate-200"
-                                                />
-                                            </div>
-
-                                            {/* Row 3: Criteria */}
-                                            <div className="space-y-3">
-                                                <Label className="text-[11px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-[0.05em] ml-1 flex items-center gap-2">
-                                                    <span className="size-1.5 rounded-full bg-emerald-400"></span> 평가기준 (Criteria)
-                                                </Label>
-                                                <div className="grid gap-3 lg:grid-cols-3">
-                                                    {ACHIEVEMENT_LEVELS.map((level) => {
-                                                        const criteriaLevels = getAssessmentCriteriaLevels(assessment);
-
-                                                        return (
-                                                            <label key={level} className="block space-y-2">
-                                                                <span className={cn(
-                                                                    "inline-flex h-7 min-w-9 items-center justify-center rounded-xl px-3 text-[11px] font-black",
-                                                                    level === "상" && "bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300",
-                                                                    level === "중" && "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
-                                                                    level === "하" && "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-200"
-                                                                )}>
-                                                                    {level}
-                                                                </span>
-                                                                <textarea
-                                                                    value={criteriaLevels[level] || ""}
-                                                                    onChange={(e) => updateAssessmentCriteriaLevel(assessment.id, level, e.target.value)}
-                                                                    placeholder={`${level} 수준 평가기준`}
-                                                                    className="w-full min-h-[132px] resize-y rounded-[1.5rem] border-2 border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/70 px-5 py-4 text-sm font-medium leading-relaxed text-slate-700 dark:text-slate-200 outline-none transition-all placeholder:text-slate-300 focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-200 focus:ring-0"
-                                                                />
-                                                            </label>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </Card>
-                                ))}
-                            </div>
+                {!isExpanded && (
+                <section aria-labelledby="subject-criteria-heading" className="rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-4">
+                        <button
+                            type="button"
+                            aria-expanded={criteriaOpen}
+                            aria-controls="subject-criteria-panel"
+                            onClick={() => setCriteriaOpenOverride(!criteriaOpen)}
+                            className="-mx-1.5 flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                        >
+                            <ChevronDown aria-hidden="true" className={cn("size-4 shrink-0 text-slate-400 transition-transform", !criteriaOpen && "-rotate-90")} />
+                            <Settings2 aria-hidden="true" className="size-4 shrink-0 text-indigo-500 dark:text-indigo-400" />
+                            <span id="subject-criteria-heading" className="text-sm font-semibold text-slate-900 dark:text-white">평가 기준</span>
+                            <Badge variant="secondary" className="rounded-md border-indigo-100 bg-indigo-50 px-1.5 py-0 text-xs font-semibold tabular-nums text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-300">{globalConfig.assessments.length}</Badge>
+                            {!criteriaOpen && (
+                                <span className="hidden min-w-0 truncate text-xs text-slate-500 dark:text-slate-400 sm:block">
+                                    {globalConfig.assessments.length > 0
+                                        ? globalConfig.assessments.map((a, i) => `평가 ${i + 1} · ${a.area.trim() || "영역 미입력"}`).join("   ")
+                                        : "평가 영역과 상·중·하 기준을 입력하세요"}
+                                </span>
+                            )}
+                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                            {planImportAction}
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    addAssessment();
+                                    setCriteriaOpenOverride(true);
+                                }}
+                                className={cn(workspaceToolButtonClassName, "border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 dark:border-indigo-900 dark:text-indigo-300 dark:hover:bg-indigo-950/50")}
+                            >
+                                <Plus aria-hidden="true" /> 평가정보 추가
+                            </Button>
                         </div>
-                    </TabsContent>
+                    </div>
 
-                    {/* ② 학생 평가·결과 입력 탭 */}
-                    <TabsContent value="individual" className={cn(
-                        "space-y-6 focus:outline-none",
-                        isExpanded && "flex-1 flex flex-col min-h-0"
-                    )}>
-                        <div
-                            className={cn(
-                                "bg-slate-50 dark:bg-slate-800/70 rounded-[2.5rem] border border-slate-100 dark:border-slate-700 overflow-auto custom-scrollbar relative",
-                                isExpanded ? "flex-1 h-full" : "h-[600px]"
-                            )}>
-                            <div className="w-fit min-w-full flex flex-col min-h-full">
-                                {/* Sticky Table Header */}
-                                <div className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-700 shadow-sm">
-                                    <div
-                                        className="grid gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400 items-center"
-                                        style={{ gridTemplateColumns: gridTemplateCols }}
-                                    >
-                                        <div className="flex items-center justify-center">
-                                            <input
-                                                type="checkbox"
-                                                onChange={toggleAllSelection}
-                                                aria-label="모든 학생 선택"
-                                        checked={students.length > 0 && students.every(s => s.selected)}
-                                                className="size-5 rounded-lg border-slate-300 accent-indigo-500 cursor-pointer"
-                                            />
+                    {criteriaOpen && (
+                    <div id="subject-criteria-panel" className="space-y-3 border-t border-slate-200 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-950/30 sm:p-4">
+                        {globalConfig.assessments.length === 0 && (
+                            <p className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                                아직 평가정보가 없습니다. 평가계획 HWPX를 가져오거나 &lsquo;평가정보 추가&rsquo;로 직접 입력하세요.
+                            </p>
+                        )}
+                        <div className="grid grid-cols-1 gap-3 2xl:grid-cols-2">
+                            {globalConfig.assessments.map((assessment, index) => {
+                                const criteriaLevels = getAssessmentCriteriaLevels(assessment);
+                                return (
+                                <article key={assessment.id} aria-label={`평가 ${index + 1}`} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                                    <div className="flex items-end gap-3">
+                                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-sm font-semibold tabular-nums text-white">
+                                            {index + 1}
                                         </div>
-                                        <div className="text-center">번호</div>
-                                        {globalConfig.assessments.map((a, i) => (
-                                            <Popover
-                                                key={a.id}
-                                                open={bulkAssessmentId === a.id}
-                                                onOpenChange={(open) => setBulkAssessmentId(open ? a.id : null)}
-                                            >
-                                                <PopoverTrigger asChild>
-                                                    <button
-                                                        type="button"
-                                                        title={`${a.area || `평가 ${i + 1}`} 일괄 입력`}
-                                                        className="min-w-0 rounded-xl bg-indigo-100/30 dark:bg-indigo-950/70 px-3 py-2 text-center text-indigo-600 dark:text-indigo-300 transition-colors hover:bg-indigo-100 dark:hover:bg-indigo-950/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-100"
-                                                    >
-                                                        <span className="flex min-w-0 items-center justify-center gap-1 whitespace-nowrap">
-                                                            <span className="truncate">평가 {i + 1}</span>
-                                                            <ChevronDown className="size-3 shrink-0 opacity-60" />
-                                                        </span>
-                                                        <span className="mt-0.5 block truncate text-[8px] leading-3 opacity-45">
-                                                            {a.area || "영역"}
-                                                        </span>
-                                                    </button>
-                                                </PopoverTrigger>
-                                                <PopoverContent className="w-44 rounded-2xl border-indigo-100 dark:border-indigo-900 p-2 shadow-xl z-[10000]" align="center">
-                                                    <div className="grid gap-1">
-                                                        <div className="border-b border-slate-100 dark:border-slate-700 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                                                            {selectedStudentCount > 0 ? `${selectedStudentCount}명 선택` : "학생을 선택하세요"}
-                                                        </div>
-                                                        {(["상", "중", "하"] as const).map((level) => (
-                                                            <button
-                                                                key={level}
-                                                                type="button"
-                                                                disabled={selectedStudentCount === 0}
-                                                                onClick={() => applyBulkAssessmentLevel(a.id, level)}
-                                                                className="flex h-9 w-full items-center rounded-xl px-3 text-left text-sm font-black text-slate-600 dark:text-slate-300 transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 dark:hover:text-indigo-300 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
-                                                            >
-                                                                {level} 입력
-                                                            </button>
-                                                        ))}
-                                                        <button
-                                                            type="button"
-                                                            disabled={selectedStudentCount === 0}
-                                                            onClick={() => applyBulkAssessmentLevel(a.id, "")}
-                                                            className="flex h-9 w-full items-center rounded-xl px-3 text-left text-sm font-black text-slate-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
-                                                        >
-                                                            비우기
-                                                        </button>
-                                                    </div>
-                                                </PopoverContent>
-                                            </Popover>
-                                        ))}
-                                        <div className="pl-4">개별 특이사항 (선택)</div>
-                                        <div className="pl-5">AI 결과 및 편집</div>
-                                        <div className="text-center">관리 액션</div>
-                                    </div>
-                                </div>
-
-                                {/* List Content */}
-                                <div className="p-6 space-y-3">
-                                    {students.map((student) => {
-                                        const isRowOpen = expandedRowId === student.id;
-                                        return (
-                                        <div
-                                            key={student.id} data-student-id={student.id}
-                                            className={cn(
-                                                "grid gap-6 px-8 rounded-[2rem] border transition-all items-start group/row",
-                                                isRowOpen ? "py-6" : "py-3.5",
-                                                student.selected ? "bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800" : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:border-slate-100 dark:hover:border-slate-700",
-                                                isRowOpen && "ring-2 ring-indigo-400/30 border-indigo-300 shadow-xl shadow-indigo-100/40"
-                                            )}
-                                            style={{ gridTemplateColumns: gridTemplateCols }}
+                                        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
+                                            <label className="min-w-0 space-y-1.5">
+                                                <span className="block text-xs font-semibold text-slate-600 dark:text-slate-400">영역 (대단원)</span>
+                                                <Input
+                                                    value={assessment.area}
+                                                    onChange={(e) => updateAssessment(assessment.id, "area", e.target.value)}
+                                                    placeholder="예: 듣기, 화법과 작문 등"
+                                                    className={subjectTextInputClassName}
+                                                />
+                                            </label>
+                                            <label className="min-w-0 space-y-1.5">
+                                                <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                                                    <Target aria-hidden="true" className="size-3.5 text-indigo-500 dark:text-indigo-400" /> 관련 핵심 역량
+                                                </span>
+                                                <Input
+                                                    value={assessment.competency}
+                                                    onChange={(e) => updateAssessment(assessment.id, "competency", e.target.value)}
+                                                    placeholder="예: 비판적 사고 역량, 의사소통 역량"
+                                                    className={subjectTextInputClassName}
+                                                />
+                                            </label>
+                                        </div>
+                                        <Button
+                                            variant="ghost"
+                                            onClick={() => removeAssessment(assessment.id)}
+                                            aria-label={`평가 ${index + 1} 삭제`}
+                                            title="평가정보 삭제"
+                                            className="size-9 shrink-0 rounded-lg p-0 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                                         >
-                                            <div className="flex items-center justify-center pt-3">
-                                                <input
-                                                    type="checkbox"
-                                                    aria-label={`${student.id}번 학생 선택`}
-                                            checked={student.selected}
-                                                    onChange={() => toggleStudentSelection(student.id)}
-                                                    className="size-5 rounded-lg border-slate-300 accent-indigo-500 cursor-pointer"
-                                                />
-                                            </div>
-                                            <div className="text-lg font-black text-slate-900 dark:text-slate-100 text-center pt-2 whitespace-nowrap">{student.id}번</div>
+                                            <Trash2 aria-hidden="true" />
+                                        </Button>
+                                    </div>
 
-                                            {/* Assessment Dropdowns */}
-                                            {globalConfig.assessments.map((a) => {
-                                                const val = student.subjectData?.assessments?.find(sa => sa.assessmentId === a.id)?.level || "";
-                                                return (
-                                                    <div key={a.id} className="pt-1">
-                                                        <Select
-                                                            value={val || "none"}
-                                                            onValueChange={(v) => {
-                                                                const level = v === "상" || v === "중" || v === "하" ? v : "";
-                                                                handleLevelChange(student.id, a.id, level);
-                                                            }}
-                                                        >
-                                                            <SelectTrigger className="h-11 rounded-[12px] bg-slate-50 dark:bg-slate-800/70 border-none shadow-inner font-bold text-xs">
-                                                                <SelectValue placeholder="평가" />
-                                                            </SelectTrigger>
-                                                            <SelectContent className="z-[10080] rounded-[12px] border-slate-100 dark:border-slate-700 shadow-lg">
-                                                                <SelectItem value="none" className="font-bold text-slate-300">미선택</SelectItem>
-                                                                <SelectItem value="상" className="font-bold text-indigo-600 dark:text-indigo-300">상</SelectItem>
-                                                                <SelectItem value="중" className="font-bold text-slate-600 dark:text-slate-300">중</SelectItem>
-                                                                <SelectItem value="하" className="font-bold text-slate-400">하</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </div>
-                                                );
-                                            })}
+                                    <label className="block space-y-1.5">
+                                        <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                                            <span aria-hidden="true" className="size-1.5 rounded-full bg-indigo-400" /> 성취기준
+                                        </span>
+                                        <textarea
+                                            value={assessment.standard}
+                                            onChange={(e) => updateAssessment(assessment.id, "standard", e.target.value)}
+                                            placeholder="예: [4국02-02] 문단과 글에서 중심 생각을 파악하고..."
+                                            rows={2}
+                                            className={cn(subjectTextAreaClassName, "min-h-[64px]")}
+                                        />
+                                    </label>
 
-                                            <div className="pt-1">
-                                                <textarea
-                                                    value={student.subjectData?.individualNote || ""}
-                                                    onChange={(e) => handleNoteChange(student.id, e.target.value)}
-                                                    aria-label={`${student.id}번 학생 개별 특이사항`}
-                                                        placeholder="학생 관찰 특이사항..."
-                                                    className="w-full h-11 px-4 py-3 rounded-xl border-none bg-slate-50 dark:bg-slate-800/70 text-[11px] font-medium placeholder:text-slate-300 focus:h-24 transition-all outline-none focus:bg-white dark:focus:bg-slate-900 shadow-inner resize-none"
-                                                />
-                                            </div>
+                                    <div className="space-y-1.5">
+                                        <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                                            <span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-400" /> 평가기준
+                                        </span>
+                                        <div className="grid gap-2 lg:grid-cols-3">
+                                            {ACHIEVEMENT_LEVELS.map((level) => (
+                                                <label key={level} className="relative block">
+                                                    <span className={cn(
+                                                        "absolute left-2 top-2 inline-flex h-5 min-w-7 items-center justify-center rounded-md px-1.5 text-xs font-semibold",
+                                                        level === "상" && "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300",
+                                                        level === "중" && "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+                                                        level === "하" && "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                                                    )}>
+                                                        {level}
+                                                    </span>
+                                                    <textarea
+                                                        value={criteriaLevels[level] || ""}
+                                                        onChange={(e) => updateAssessmentCriteriaLevel(assessment.id, level, e.target.value)}
+                                                        placeholder={`${level} 수준 평가기준`}
+                                                        aria-label={`평가 ${index + 1} ${level} 수준 평가기준`}
+                                                        rows={3}
+                                                        className={cn(subjectTextAreaClassName, "min-h-[88px] resize-y pt-8")}
+                                                    />
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </article>
+                                );
+                            })}
+                        </div>
+                        <div className="flex justify-end">
+                            <Button
+                                onClick={() => setGlobalConfig({ schoolLevel: "", grade: "", subjectName: "", assessments: [] })}
+                                variant="ghost"
+                                className="h-8 gap-1.5 rounded-lg px-2.5 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            >
+                                <RotateCcw aria-hidden="true" className="size-3.5" /> 입력 정보 초기화
+                            </Button>
+                        </div>
+                    </div>
+                    )}
+                </section>
+                )}
 
-                                            <div className={cn("relative group/txt pt-1", isRowOpen && "col-span-full row-start-2 max-w-[calc(100vw-6rem)]")}>
-                                                <div
-                                                    onClick={() => { if (!isRowOpen && !student.isGenerating) setExpandedRowId(student.id); }}
-                                                    className={cn(
-                                                        "rounded-2xl text-[12px] font-medium leading-[1.7] transition-all",
-                                                        isRowOpen ? "p-5 min-h-[160px] shadow-inner" : "p-4 h-[88px] overflow-hidden cursor-pointer hover:ring-2 hover:ring-indigo-300/50",
-                                                        student.aiResult ? "bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border border-slate-100 dark:border-slate-700 shadow-inner" : "bg-slate-50 dark:bg-slate-800/70 border border-dashed border-slate-200 dark:border-slate-700 text-slate-300 italic"
-                                                    )}
-                                                >
-                                                    {student.isGenerating ? (
-                                                        <div className="flex flex-col gap-2">
-                                                            <div className="h-2 w-full bg-slate-200 dark:bg-slate-700 rounded-full animate-pulse" />
-                                                            <div className="h-2 w-4/5 bg-slate-200 dark:bg-slate-700 rounded-full animate-pulse" />
-                                                        </div>
-                                                    ) : isRowOpen ? (
-                                                        <textarea
-                                                            autoFocus
-                                                            aria-label={`${student.id}번 학생 작성 결과`}
-                                                        value={student.aiResult}
-                                                            placeholder="평가 수준을 선택해 생성하거나 직접 작성하세요."
-                                                            onChange={(e) => {
-                                                                const newVal = e.target.value;
-                                                                setStudents(prev => prev.map(s => s.id === student.id ? { ...s, aiResult: newVal } : s));
-                                                            }}
-                                                            className="w-full min-h-[140px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0 font-medium leading-[1.7]"
-                                                        />
-                                                    ) : (
-                                                        <div className="line-clamp-3">{student.aiResult || "평가 수준을 선택해 생성하거나 직접 작성하세요."}</div>
-                                                    )}
+                <div className={cn("rounded-xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950/40", workspaceTableScrollClassName(isExpanded, tableFit))}>
+                    <div className="w-fit min-w-full">
+                        <div className={cn(workspaceStickyHeadClassName(isExpanded, tableFit), "rounded-t-xl")}>
+                            <div
+                                className={cn("grid items-center gap-4 px-5 py-2.5", workspaceTableHeadClassName)}
+                                style={{ gridTemplateColumns: gridTemplateCols }}
+                            >
+                                <div className="flex items-center justify-center">
+                                    <input
+                                        type="checkbox"
+                                        onChange={toggleAllSelection}
+                                        aria-label="모든 학생 선택"
+                                        checked={students.length > 0 && students.every(s => s.selected)}
+                                        className={workspaceCheckboxClassName}
+                                    />
+                                </div>
+                                <div className="text-center">번호</div>
+                                {globalConfig.assessments.map((a, i) => (
+                                    <Popover
+                                        key={a.id}
+                                        open={bulkAssessmentId === a.id}
+                                        onOpenChange={(open) => setBulkAssessmentId(open ? a.id : null)}
+                                    >
+                                        <PopoverTrigger asChild>
+                                            <button
+                                                type="button"
+                                                title={`${a.area || `평가 ${i + 1}`} 일괄 입력`}
+                                                aria-label={`평가 ${i + 1} ${a.area || ""} 선택 학생 일괄 입력`.replace(/\s+/g, " ")}
+                                                className="min-w-0 rounded-lg px-2 py-1 text-center text-indigo-700 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 dark:text-indigo-300 dark:hover:bg-indigo-950/50"
+                                            >
+                                                <span className="flex min-w-0 items-center justify-center gap-1 whitespace-nowrap">
+                                                    <span className="truncate">평가 {i + 1}</span>
+                                                    <ChevronDown aria-hidden="true" className="size-3 shrink-0 opacity-60" />
+                                                </span>
+                                                <span className="block truncate text-xs font-normal leading-4 text-slate-500 dark:text-slate-400">
+                                                    {a.area || "영역"}
+                                                </span>
+                                            </button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="z-[10000] w-44 rounded-xl border-slate-200 p-1.5 shadow-xl dark:border-slate-700" align="center">
+                                            <div className="grid gap-0.5">
+                                                <div className="border-b border-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                                                    {selectedStudentCount > 0 ? `${selectedStudentCount}명 선택` : "학생을 선택하세요"}
                                                 </div>
-                                                {!student.isGenerating && (
+                                                {(["상", "중", "하"] as const).map((level) => (
                                                     <button
-                                                        onClick={(e) => { e.stopPropagation(); setExpandedRowId(isRowOpen ? null : student.id); }}
+                                                        key={level}
                                                         type="button"
-                                                        aria-label={isRowOpen ? `${student.id}번 결과 접기` : `${student.id}번 결과 편집`}
-                                                        title={isRowOpen ? "결과 접기" : "결과 편집"}
-                                                        className={cn(
-                                                            "absolute top-2.5 right-2.5 size-8 rounded-lg border flex items-center justify-center shadow-xl transition-all hover:scale-110",
-                                                            isRowOpen ? "bg-indigo-600 text-white border-indigo-600 opacity-100" : "bg-white dark:bg-slate-900 text-slate-400 border-slate-100 dark:border-slate-700 hover:text-indigo-600 dark:hover:text-indigo-300"
-                                                        )}
+                                                        disabled={selectedStudentCount === 0}
+                                                        onClick={() => applyBulkAssessmentLevel(a.id, level)}
+                                                        className="flex h-9 w-full items-center rounded-lg px-2.5 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-indigo-50 hover:text-indigo-700 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent dark:text-slate-300 dark:hover:bg-indigo-950/50 dark:hover:text-indigo-300 dark:disabled:text-slate-600"
                                                     >
-                                                        {isRowOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                                                        {level} 입력
                                                     </button>
-                                                )}
-                                            </div>
-
-                                            <div className="flex flex-col gap-2 pt-1" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
-                                                <Button
-                                                    onClick={() => handleGenerate(student.id)}
-                                                    title={student.aiResult ? "기존 문장을 새로 생성한 문장으로 바꿉니다." : "평가 수준과 개별 관찰 내용을 바탕으로 생성합니다."}
-                                                    disabled={student.isGenerating || !student.subjectData?.assessments.some(a => a.level && globalConfig.assessments.some(g => g.id === a.assessmentId))}
-                                                    className={cn(
-                                                        "w-full rounded-2xl font-black h-11 px-5 gap-2 text-[12px] transition-all shadow-lg",
-                                                        student.aiResult
-                                                            ? "bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-200"
-                                                            : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200/20"
-                                                    )}
-                                                >
-                                                    {student.aiResult ? "재생성" : "생성"} <Sparkles className="size-3.5" />
-                                                </Button>
+                                                ))}
                                                 <button
-                                                    onClick={() => {
-                                                        setStudents(prev => prev.map(s => s.id === student.id ? {
-                                                            ...s,
-                                                            subjectData: { assessments: [], individualNote: "" },
-                                                            aiResult: ""
-                                                        } : s));
-                                                    }}
-                                                    className="w-full h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 transition-all flex items-center justify-center gap-2 font-black text-[10px]"
+                                                    type="button"
+                                                    disabled={selectedStudentCount === 0}
+                                                    onClick={() => applyBulkAssessmentLevel(a.id, "")}
+                                                    className="flex h-9 w-full items-center rounded-lg px-2.5 text-left text-sm font-medium text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent dark:text-slate-400 dark:hover:bg-red-950/40 dark:disabled:text-slate-600"
                                                 >
-                                                    <RotateCcw className="size-3" /> 초기화
+                                                    비우기
                                                 </button>
                                             </div>
-                                        </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                ))}
+                                <div>개별 특이사항 (선택)</div>
+                                <div>작성 결과</div>
+                                <div className="text-center">관리</div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2 p-2 sm:p-3">
+                            {students.map((student) => {
+                                const isRowOpen = expandedRowId === student.id;
+                                return (
+                                <div
+                                    key={student.id}
+                                    data-student-id={student.id}
+                                    className={cn(
+                                        "group/row grid items-start gap-4 px-3 py-3",
+                                        workspaceRowClassName(student.selected, "indigo"),
+                                        isRowOpen && "ring-2 ring-indigo-400/30"
+                                    )}
+                                    style={{ gridTemplateColumns: gridTemplateCols }}
+                                >
+                                    <div className="flex items-center justify-center pt-2.5">
+                                        <input
+                                            type="checkbox"
+                                            aria-label={`${student.id}번 학생 선택`}
+                                            checked={student.selected}
+                                            onChange={() => toggleStudentSelection(student.id)}
+                                            className={workspaceCheckboxClassName}
+                                        />
+                                    </div>
+                                    <div className={cn(workspaceRowNumberClassName, "whitespace-nowrap pt-2 text-center")}>{student.id}번</div>
+
+                                    {globalConfig.assessments.map((a, i) => {
+                                        const val = student.subjectData?.assessments?.find(sa => sa.assessmentId === a.id)?.level || "";
+                                        return (
+                                            <div key={a.id}>
+                                                <Select
+                                                    value={val || "none"}
+                                                    onValueChange={(v) => {
+                                                        const level = v === "상" || v === "중" || v === "하" ? v : "";
+                                                        handleLevelChange(student.id, a.id, level);
+                                                    }}
+                                                >
+                                                    <SelectTrigger
+                                                        aria-label={`${student.id}번 학생 평가 ${i + 1} 수준`}
+                                                        className={cn(
+                                                            "h-9 w-full rounded-xl border-slate-200 bg-white px-2.5 text-xs font-semibold shadow-none dark:border-slate-700 dark:bg-slate-900",
+                                                            val === "상" && "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300",
+                                                            val === "중" && "text-slate-800 dark:text-slate-200",
+                                                            val === "하" && "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200",
+                                                            !val && "text-slate-400 dark:text-slate-500"
+                                                        )}
+                                                    >
+                                                        <SelectValue placeholder="평가" />
+                                                    </SelectTrigger>
+                                                    <SelectContent className="z-[10080] rounded-xl">
+                                                        <SelectItem value="none" className="text-slate-400">미선택</SelectItem>
+                                                        <SelectItem value="상" className="font-semibold text-indigo-700 dark:text-indigo-300">상</SelectItem>
+                                                        <SelectItem value="중" className="font-semibold text-slate-700 dark:text-slate-300">중</SelectItem>
+                                                        <SelectItem value="하" className="font-semibold text-amber-800 dark:text-amber-200">하</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
                                         );
                                     })}
-                                </div>
-                            </div>
-                        </div>
 
-                        <div className="flex flex-wrap items-center justify-between gap-3 py-4 px-4 bg-slate-50/50 dark:bg-slate-800/70 rounded-[3rem] border border-slate-100 dark:border-slate-700">
-                            <div className="flex items-center gap-4">
-                                <div className="px-3 py-2 bg-white dark:bg-slate-900 rounded-[1.5rem] text-sm font-black text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
-                                    <div className="size-2.5 rounded-full bg-indigo-500 animate-pulse" />
-                                    선택 학생 {selectedStudentCount}명
-                                </div>
+                                    <div>
+                                        <textarea
+                                            value={student.subjectData?.individualNote || ""}
+                                            onChange={(e) => handleNoteChange(student.id, e.target.value)}
+                                            aria-label={`${student.id}번 학생 개별 특이사항`}
+                                            placeholder="학생 관찰 특이사항..."
+                                            className="h-9 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 outline-none transition-[height,border-color] placeholder:text-slate-400 focus:h-24 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:ring-indigo-900/50"
+                                        />
+                                    </div>
 
-                            </div>
-                            <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-                                <Button
-                                    onClick={handleResetAll}
-                                    variant="ghost"
-                                    className="rounded-2xl bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-black h-11 px-4 sm:px-6 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all"
-                                >
-                                    전체 초기화
-                                </Button>
-                                <Button
-                                    onClick={handleSelectedGenerate}
-                                    variant="outline"
-                                    className="rounded-2xl border-2 border-slate-900 text-slate-900 dark:text-slate-100 font-black h-11 px-4 sm:px-6 hover:bg-slate-50 dark:hover:bg-slate-800/70 shadow-sm gap-3 transition-all"
-                                >
-                                    <UserCheck className="size-5" /> 선택 생성
-                                </Button>
-                                <Button
-                                    onClick={handleAllGenerate}
-                                    className="rounded-2xl bg-slate-900 text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-800 shadow-2xl shadow-slate-300 gap-4 text-lg transition-all"
-                                >
-                                    <Zap className="size-5 text-indigo-400" /> 전체 생성
-                                </Button>
-                            </div>
+                                    <div className={cn("group/txt relative", isRowOpen && "col-span-full row-start-2 max-w-[calc(100vw-6rem)]")}>
+                                        <div
+                                            onClick={() => { if (!isRowOpen && !student.isGenerating) setExpandedRowId(student.id); }}
+                                            className={cn(
+                                                "rounded-xl text-sm leading-relaxed transition-colors",
+                                                isRowOpen ? "min-h-[160px] p-4" : "h-[88px] cursor-pointer overflow-hidden p-3 pr-10 hover:border-indigo-200 dark:hover:border-indigo-800",
+                                                student.aiResult ? "border border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300" : "border border-dashed border-slate-200 bg-white/60 text-slate-400 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-500"
+                                            )}
+                                        >
+                                            {student.isGenerating ? (
+                                                <div className="flex flex-col gap-3 pt-1">
+                                                    <div className="h-2.5 w-full animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
+                                                    <div className="h-2.5 w-4/5 animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
+                                                </div>
+                                            ) : isRowOpen ? (
+                                                <textarea
+                                                    autoFocus
+                                                    aria-label={`${student.id}번 학생 작성 결과`}
+                                                    value={student.aiResult}
+                                                    placeholder="평가 수준을 선택해 생성하거나 직접 작성하세요."
+                                                    onChange={(e) => {
+                                                        const newVal = e.target.value;
+                                                        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, aiResult: newVal } : s));
+                                                    }}
+                                                    className="min-h-[140px] w-full resize-none border-none bg-transparent p-0 leading-relaxed text-slate-700 outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-300 dark:placeholder:text-slate-500"
+                                                />
+                                            ) : (
+                                                <div className="line-clamp-3">{student.aiResult || "평가 수준을 선택해 생성하거나 직접 작성하세요."}</div>
+                                            )}
+                                        </div>
+                                        {!student.isGenerating && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setExpandedRowId(isRowOpen ? null : student.id); }}
+                                                type="button"
+                                                aria-label={isRowOpen ? `${student.id}번 결과 접기` : `${student.id}번 결과 편집`}
+                                                title={isRowOpen ? "결과 접기" : "결과 편집"}
+                                                className={cn(
+                                                    "absolute right-2 top-2 flex size-8 items-center justify-center rounded-lg border transition-colors",
+                                                    isRowOpen ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-400 opacity-0 hover:text-indigo-600 focus-visible:opacity-100 group-hover/txt:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:text-indigo-300"
+                                                )}
+                                            >
+                                                {isRowOpen ? <ChevronUp aria-hidden="true" className="size-4" /> : <ChevronDown aria-hidden="true" className="size-4" />}
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    <div className="flex flex-col items-stretch gap-1" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
+                                        <Button
+                                            onClick={() => handleGenerate(student.id)}
+                                            title={student.aiResult ? "기존 문장을 새로 생성한 문장으로 바꿉니다." : "평가 수준과 개별 관찰 내용을 바탕으로 생성합니다."}
+                                            disabled={student.isGenerating || !student.subjectData?.assessments.some(a => a.level && globalConfig.assessments.some(g => g.id === a.assessmentId))}
+                                            className={workspaceRowGenerateClassName(Boolean(student.aiResult))}
+                                        >
+                                            <Sparkles aria-hidden="true" />{student.aiResult ? "재생성" : "생성"}
+                                        </Button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setStudents(prev => prev.map(s => s.id === student.id ? {
+                                                    ...s,
+                                                    subjectData: { assessments: [], individualNote: "" },
+                                                    aiResult: ""
+                                                } : s));
+                                            }}
+                                            className={workspaceRowResetClassName}
+                                        >
+                                            <RotateCcw aria-hidden="true" className="size-3.5" /> 초기화
+                                        </button>
+                                    </div>
+                                </div>
+                                );
+                            })}
                         </div>
-                    </TabsContent>
-                </Tabs >
-            </Card >
+                    </div>
+                </div>
+
+                <WorkspaceActionBar selectedCount={selectedStudentCount} onClearSelection={handleClearSelection} expanded={isExpanded}>
+                    <Button variant="outline" onClick={handleResetAll} className={workspaceSecondaryActionClassName}>
+                        <RotateCcw aria-hidden="true" /> 전체 초기화
+                    </Button>
+                    <Button variant="outline" onClick={handleSelectedGenerate} className={workspaceSecondaryActionClassName}>
+                        <UserCheck aria-hidden="true" /> 선택 생성
+                    </Button>
+                    <Button onClick={handleAllGenerate} className={workspacePrimaryActionClassName}>
+                        <Zap aria-hidden="true" /> 전체 생성
+                    </Button>
+                </WorkspaceActionBar>
+            </section>
         </Wrapper>
     );
 };

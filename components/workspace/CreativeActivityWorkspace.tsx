@@ -11,7 +11,6 @@ import {
     CheckCircle2,
     Maximize2,
     Minimize2,
-    Download,
     RotateCcw,
     UserCheck,
     ChevronDown,
@@ -19,12 +18,10 @@ import {
     ListPlus
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { downloadWorkspaceCsv } from "@/lib/workspace-csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { GenerationMenu } from "@/components/workspace/GenerationMenu";
 import type { GenerationMode } from "@/lib/record-generation";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
     Popover,
@@ -38,10 +35,27 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import {
+    WorkspaceActionBar,
+    WorkspaceCardHeader,
+    workspaceCardClassName,
+    workspaceCheckboxClassName,
+    workspacePrimaryActionClassName,
+    workspaceRowClassName,
+    workspaceRowGenerateClassName,
+    workspaceRowNumberClassName,
+    workspaceRowResetClassName,
+    workspaceSecondaryActionClassName,
+    workspaceStickyHeadClassName,
+    workspaceTableHeadClassName,
+    workspaceTableScrollClassName,
+    workspaceToolButtonClassName,
+} from "@/components/workspace/WorkspaceControls";
 import { Student } from "@/types";
 import { CREATIVE_CATEGORIES, OFFICER_ROLES } from "@/lib/constants/creative-events";
 
 const EVENT_PREVIEW_LIMIT = 4;
+const GRID_COLUMNS = "grid-cols-[32px_52px_minmax(180px,1.2fr)_120px_140px_minmax(280px,2fr)_120px]";
 
 interface WrapperProps {
     children: React.ReactNode;
@@ -49,17 +63,18 @@ interface WrapperProps {
     mounted: boolean;
 }
 
+/** 전체화면은 body로 포털해 상위 transform·overflow 영향을 받지 않게 한다(기존 동작 유지). */
 const Wrapper = ({ children, isExpanded, mounted }: WrapperProps) => {
     if (isExpanded && mounted) {
         return createPortal(
             <div className="fixed inset-0 z-[9999] isolate">
-                <div className="absolute inset-0 bg-white dark:bg-slate-900 pointer-events-auto" />
+                <div className="pointer-events-auto absolute inset-0 bg-slate-100/90 backdrop-blur-sm dark:bg-slate-950/90" />
                 {children}
             </div>,
             document.body
         );
     }
-    return <div className="space-y-5 transform-none">{children}</div>;
+    return <>{children}</>;
 };
 
 interface CreativeActivityWorkspaceProps {
@@ -70,6 +85,7 @@ interface CreativeActivityWorkspaceProps {
     handleAllGenerate: (mode: GenerationMode) => void;
     handleSelectedGenerate: (mode: GenerationMode) => void;
     handleResetAll: () => void;
+    handleClearSelection?: () => void;
     toggleAllSelection: () => void;
     toggleStudentSelection: (id: number) => void;
     studentCount: number;
@@ -86,6 +102,7 @@ export const CreativeActivityWorkspace = ({
     handleAllGenerate,
     handleSelectedGenerate,
     handleResetAll,
+    handleClearSelection,
     toggleAllSelection,
     toggleStudentSelection,
     isExpanded,
@@ -98,6 +115,7 @@ export const CreativeActivityWorkspace = ({
     );
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
     const [expandedEventRows, setExpandedEventRows] = useState<Set<number>>(new Set());
+    const selectedCount = students.filter(s => s.selected).length;
 
     const toggleEventRow = (studentId: number) => {
         setExpandedEventRows(prev => {
@@ -123,108 +141,90 @@ export const CreativeActivityWorkspace = ({
         };
     }, [isExpanded]);
 
-
     return (
         <Wrapper isExpanded={isExpanded} mounted={mounted}>
-            <Card className={cn(
-                "gap-0 p-4 sm:p-5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm space-y-5 transition-all duration-500 relative",
-                isExpanded ? "fixed inset-4 z-[9999] rounded-[3rem] border border-blue-100 dark:border-blue-900 shadow-primary/20 !transform-none overflow-y-auto overscroll-contain pointer-events-auto cursor-default" : "rounded-2xl overflow-hidden"
-            )}>
-                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
-                    <div className="flex items-center gap-4">
-                        <div className="size-10 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 flex items-center justify-center">
-                            <Zap className="size-5" />
-                        </div>
-                        <div>
-                            <h4 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-3">
-                                학생별 기록
-                            </h4>
-                            <p className="text-sm text-slate-400 font-medium">활동 선택 → 임원·기간 입력 → 학생별 또는 선택·전체 생성</p>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3 w-full xl:w-auto">
-                        <div className="col-span-2 sm:col-span-1">{polishAction}</div>
+            <section
+                aria-label="학생별 기록"
+                className={cn(
+                    workspaceCardClassName,
+                    "relative space-y-4 p-4 sm:p-5",
+                    isExpanded && "pointer-events-auto fixed inset-4 overflow-y-auto overscroll-contain shadow-2xl"
+                )}
+            >
+                <WorkspaceCardHeader
+                    icon={<Zap />}
+                    accent="amber"
+                    title="학생별 기록"
+                    description="활동 선택 → 임원·기간 입력 → 학생별 또는 선택·전체 생성"
+                    actions={<>
+                        {polishAction}
                         <AutoDistributeEvents students={students} setStudents={setStudents} />
                         <BulkEventAdd students={students} setStudents={setStudents} />
                         <Button
                             variant="outline"
-                            onClick={() => downloadWorkspaceCsv("creative", students)}
-                            className="rounded-2xl h-11 px-6 font-bold border-emerald-100 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-300 gap-2 hover:bg-emerald-100 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
-                        >
-                            내보내기 <Download className="size-4" />
-                        </Button>
-                        <Button
                             aria-label={isExpanded ? "전체화면 닫기" : "전체화면으로 넓게 보기"}
-                        onClick={() => setIsExpanded(!isExpanded)}
-                            className="rounded-2xl h-11 px-5 border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all w-full sm:w-auto"
-                            variant="ghost"
+                            title={isExpanded ? "전체화면 닫기" : "전체화면으로 넓게 보기"}
+                            onClick={() => setIsExpanded(!isExpanded)}
+                            className={cn(workspaceToolButtonClassName, "w-9 px-0")}
                         >
-                            {isExpanded ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
+                            {isExpanded ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
                         </Button>
-                        {isExpanded && (
-                            <Button
-                                onClick={() => setIsExpanded(false)}
-                                className="rounded-2xl size-11 p-0 bg-red-50 dark:bg-red-950/40 text-red-500 hover:bg-red-100"
-                            >
-                                <X className="size-5" />
-                            </Button>
-                        )}
-                    </div>
-                </div>
+                    </>}
+                />
 
-                <div
-                    className="bg-amber-100/10 dark:bg-amber-950/60 rounded-[2.5rem] border border-slate-100 dark:border-slate-700 overflow-auto custom-scrollbar relative"
-                    style={{ height: isExpanded ? "calc(100vh - 400px)" : "600px" }}
-                >
-                    <div className="w-fit min-w-full flex flex-col min-h-full">
-                        {/* Sticky Table Header */}
-                        <div className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-700 shadow-sm">
-                            <div className="grid grid-cols-[40px_60px_minmax(180px,1.2fr)_120px_130px_minmax(280px,2fr)_120px] gap-6 px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 items-center">
+                <div className={cn("rounded-xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950/40", workspaceTableScrollClassName(isExpanded, "xl"))}>
+                    <div className="w-fit min-w-full">
+                        <div className={cn(workspaceStickyHeadClassName(isExpanded, "xl"), "rounded-t-xl")}>
+                            <div className={cn("grid items-center gap-4 px-5 py-2.5", GRID_COLUMNS, workspaceTableHeadClassName)}>
                                 <div className="flex items-center justify-center">
                                     <input
                                         type="checkbox"
                                         onChange={toggleAllSelection}
                                         aria-label="모든 학생 선택"
                                         checked={students.length > 0 && students.every(s => s.selected)}
-                                        className="size-5 rounded-lg border-slate-300 accent-amber-500 cursor-pointer"
+                                        className={workspaceCheckboxClassName}
                                     />
                                 </div>
-                                <div className="text-center font-black">번호</div>
+                                <div className="text-center">번호</div>
                                 <div>참여 행사 (복수 선택)</div>
-                                <div className="pl-3">임원 여부</div>
-                                <div className="pl-3">임원 기간</div>
-                                <div className="pl-5">AI 결과 및 편집</div>
-                                <div className="text-center">관리 액션</div>
+                                <div>임원 여부</div>
+                                <div>임원 기간</div>
+                                <div>작성 결과</div>
+                                <div className="text-center">관리</div>
                             </div>
                         </div>
 
-                        {/* List Content */}
-                        <div className="p-6 pt-4 space-y-3">
+                        <div className="space-y-2 p-2 sm:p-3">
                             {students.map((student) => {
                                 const isRowOpen = expandedRowId === student.id;
                                 const participatedEvents = student.participatedEvents || [];
                                 const isEventRowOpen = expandedEventRows.has(student.id);
                                 const visibleEvents = isEventRowOpen ? participatedEvents : participatedEvents.slice(0, EVENT_PREVIEW_LIMIT);
                                 const hiddenEventCount = participatedEvents.length - visibleEvents.length;
+                                const isOfficer = (student.officerRole || "임원아님") !== "임원아님";
                                 return (
-                                <div key={student.id} data-student-id={student.id} className={cn(
-                                    "grid grid-cols-[40px_60px_minmax(180px,1.2fr)_120px_130px_minmax(280px,2fr)_120px] gap-6 px-8 rounded-[2rem] border transition-all items-start group/row",
-                                    isRowOpen ? "py-6" : "py-3.5",
-                                    student.selected ? "bg-amber-50/50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800" : "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:border-slate-100 dark:hover:border-slate-700",
-                                    isRowOpen && "ring-2 ring-amber-400/30 border-amber-300 shadow-xl shadow-amber-100/40"
-                                )}>
-                                    <div className="flex items-center justify-center pt-3">
+                                <div
+                                    key={student.id}
+                                    data-student-id={student.id}
+                                    className={cn(
+                                        "group/row grid items-start gap-4 px-3 py-3",
+                                        GRID_COLUMNS,
+                                        workspaceRowClassName(student.selected, "amber"),
+                                        isRowOpen && "ring-2 ring-amber-400/30"
+                                    )}
+                                >
+                                    <div className="flex items-center justify-center pt-2.5">
                                         <input
                                             type="checkbox"
                                             aria-label={`${student.id}번 학생 선택`}
                                             checked={student.selected}
                                             onChange={() => toggleStudentSelection(student.id)}
-                                            className="size-5 rounded-lg border-slate-300 accent-amber-500 cursor-pointer"
+                                            className={workspaceCheckboxClassName}
                                         />
                                     </div>
-                                    <div className="text-lg font-black text-slate-900 dark:text-slate-100 text-center pt-2 whitespace-nowrap">{student.id}번</div>
+                                    <div className={cn(workspaceRowNumberClassName, "whitespace-nowrap pt-2 text-center")}>{student.id}번</div>
 
-                                    <div className="flex flex-wrap gap-2 pt-1">
+                                    <div className="flex flex-wrap items-center gap-1.5">
                                         <AnimatePresence mode="popLayout">
                                             {visibleEvents.map((ev) => (
                                                 <motion.div
@@ -233,17 +233,19 @@ export const CreativeActivityWorkspace = ({
                                                     exit={{ scale: 0.8, opacity: 0 }}
                                                     key={ev}
                                                 >
-                                                    <Badge variant="secondary" className="pl-3 pr-1 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-200 border-amber-100 dark:border-amber-900 font-bold group/tag">
+                                                    <Badge variant="secondary" className="h-8 gap-0.5 rounded-lg border-amber-200 bg-amber-50 py-0 pl-2.5 pr-1 text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                                                         {ev}
                                                         <button
+                                                            type="button"
+                                                            aria-label={`${student.id}번 학생 ${ev} 삭제`}
                                                             onClick={() => {
                                                                 setStudents(prev => prev.map(s => s.id === student.id ? {
                                                                     ...s, participatedEvents: s.participatedEvents?.filter(e => e !== ev)
                                                                 } : s));
                                                             }}
-                                                            className="size-5 rounded-md hover:bg-amber-100 dark:hover:bg-amber-950/60 flex items-center justify-center text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 transition-all ml-1"
+                                                            className="flex size-5 items-center justify-center rounded-md text-amber-500 transition-colors hover:bg-amber-100 hover:text-amber-800 dark:hover:bg-amber-950/60 dark:hover:text-amber-200"
                                                         >
-                                                            <X className="size-3" />
+                                                            <X aria-hidden="true" className="size-3" />
                                                         </button>
                                                     </Badge>
                                                 </motion.div>
@@ -253,20 +255,20 @@ export const CreativeActivityWorkspace = ({
                                             <button
                                                 type="button"
                                                 onClick={() => toggleEventRow(student.id)}
-                                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-2.5 text-[11px] font-black text-slate-500 dark:text-slate-400 transition-all hover:border-amber-200 dark:hover:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:text-amber-600 dark:hover:text-amber-300"
+                                                className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-medium text-slate-500 transition-colors hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-amber-800 dark:hover:bg-amber-950/40 dark:hover:text-amber-300"
                                             >
                                                 더보기 {hiddenEventCount}
-                                                <ChevronDown className="size-3.5" />
+                                                <ChevronDown aria-hidden="true" className="size-3.5" />
                                             </button>
                                         )}
                                         {isEventRowOpen && participatedEvents.length > EVENT_PREVIEW_LIMIT && (
                                             <button
                                                 type="button"
                                                 onClick={() => toggleEventRow(student.id)}
-                                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-100 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 px-2.5 text-[11px] font-black text-amber-700 dark:text-amber-200 transition-all hover:bg-amber-100 dark:hover:bg-amber-950/60"
+                                                className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/60"
                                             >
                                                 접기
-                                                <ChevronUp className="size-3.5" />
+                                                <ChevronUp aria-hidden="true" className="size-3.5" />
                                             </button>
                                         )}
                                         <EventPicker
@@ -276,7 +278,7 @@ export const CreativeActivityWorkspace = ({
                                         />
                                     </div>
 
-                                    <div className="pt-1">
+                                    <div>
                                         <Select
                                             value={student.officerRole || "임원아님"}
                                             onValueChange={(val) => {
@@ -285,57 +287,58 @@ export const CreativeActivityWorkspace = ({
                                                 ));
                                             }}
                                         >
-                                            <SelectTrigger aria-label={`${student.id}번 학생 임원 직책`} className="w-full h-10 rounded-[12px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-bold text-xs ring-0 focus:ring-1 focus:ring-amber-200">
+                                            <SelectTrigger aria-label={`${student.id}번 학생 임원 직책`} className={cn("h-9 w-full rounded-xl border-slate-200 bg-white text-xs font-medium shadow-none dark:border-slate-700 dark:bg-slate-900", isOfficer ? "text-amber-800 dark:text-amber-200" : "text-slate-500 dark:text-slate-400")}>
                                                 <SelectValue placeholder="임원아님" />
                                             </SelectTrigger>
-                                            <SelectContent className="rounded-[12px] border-slate-100 dark:border-slate-700 shadow-lg z-[10000]">
+                                            <SelectContent className="z-[10000] rounded-xl">
                                                 {[...new Set([...OFFICER_ROLES, "회장", "부회장", student.officerRole].filter((role): role is string => Boolean(role)))].map(role => (
-                                                    <SelectItem key={role} value={role} className="rounded-lg font-bold text-xs py-2.5">{role}</SelectItem>
+                                                    <SelectItem key={role} value={role} className="rounded-lg py-2 text-xs font-medium">{role}</SelectItem>
                                                 ))}
                                             </SelectContent>
                                         </Select>
                                     </div>
 
-                                    <div className="pt-1">
+                                    <div>
                                         <input
                                             type="text"
-                                            placeholder="예: 2026.03.01.~08.31."
+                                            placeholder={isOfficer ? "예: 2026.03.01.~08.31." : "임원만 입력"}
                                             aria-label={`${student.id}번 학생 임원 기간`}
                                             value={student.officerPeriod || ""}
-                                            disabled={(student.officerRole || "임원아님") === "임원아님"}
+                                            disabled={!isOfficer}
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 setStudents(prev => prev.map(s => s.id === student.id ? { ...s, officerPeriod: val } : s));
                                             }}
-                                            className="w-full h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all disabled:bg-slate-50 dark:disabled:bg-slate-800 disabled:border-slate-100 disabled:text-slate-300"
+                                            className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-amber-400 focus:ring-2 focus:ring-amber-200/60 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:ring-amber-900/50 dark:disabled:bg-slate-800/60"
                                         />
                                     </div>
 
-                                    <div className={cn("relative group/txt pt-1", isRowOpen && "col-span-full row-start-2 max-w-[calc(100vw-6rem)]")}>
+                                    <div className={cn("group/txt relative", isRowOpen && "col-span-full row-start-2 max-w-[calc(100vw-6rem)]")}>
                                         <div
                                             onClick={() => { if (!isRowOpen && !student.isGenerating) setExpandedRowId(student.id); }}
                                             className={cn(
-                                                "rounded-2xl text-[12px] font-medium leading-[1.7] transition-all",
-                                                isRowOpen ? "p-5 min-h-[180px]" : "p-4 h-[100px] overflow-hidden cursor-pointer hover:ring-2 hover:ring-amber-300/50",
-                                                student.aiResult ? "bg-slate-50 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border border-slate-100 dark:border-slate-700" : "bg-slate-50/50 dark:bg-slate-800/70 text-slate-300 italic border border-dashed border-slate-200 dark:border-slate-700"
+                                                "rounded-xl text-sm leading-relaxed transition-colors",
+                                                isRowOpen ? "min-h-[180px] p-4" : "h-[96px] cursor-pointer overflow-hidden p-3 pr-10 hover:border-amber-200 dark:hover:border-amber-800",
+                                                student.aiResult ? "border border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300" : "border border-dashed border-slate-200 bg-white/60 text-slate-400 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-500"
                                             )}
                                         >
                                             {student.isGenerating ? (
-                                                <div className="flex flex-col gap-2.5">
-                                                    <div className="h-2 w-full bg-slate-200 dark:bg-slate-700 rounded-full animate-pulse" />
-                                                    <div className="h-2 w-4/5 bg-slate-200 dark:bg-slate-700 rounded-full animate-pulse" />
+                                                <div className="flex flex-col gap-3 pt-1">
+                                                    <div className="h-2.5 w-full animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
+                                                    <div className="h-2.5 w-4/5 animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
+                                                    <div className="h-2.5 w-3/5 animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
                                                 </div>
                                             ) : isRowOpen ? (
                                                 <textarea
                                                     autoFocus
                                                     aria-label={`${student.id}번 학생 작성 결과`}
-                                                        value={student.aiResult}
+                                                    value={student.aiResult}
                                                     placeholder="참여 행사를 클릭하고 생성을 눌러주세요."
                                                     onChange={(e) => {
                                                         const newVal = e.target.value;
                                                         setStudents(prev => prev.map(s => s.id === student.id ? { ...s, aiResult: newVal } : s));
                                                     }}
-                                                    className="w-full min-h-[160px] bg-transparent outline-none resize-none border-none p-0 focus:ring-0 leading-[1.7]"
+                                                    className="min-h-[160px] w-full resize-none border-none bg-transparent p-0 leading-relaxed text-slate-700 outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-300 dark:placeholder:text-slate-500"
                                                 />
                                             ) : (
                                                 <div className="line-clamp-3">{student.aiResult || "참여 행사를 클릭하고 생성을 눌러주세요."}</div>
@@ -343,32 +346,30 @@ export const CreativeActivityWorkspace = ({
                                         </div>
                                         {!student.isGenerating && (
                                             <button
+                                                type="button"
                                                 onClick={(e) => { e.stopPropagation(); setExpandedRowId(isRowOpen ? null : student.id); }}
                                                 title={isRowOpen ? "접기" : "펼쳐서 편집"}
+                                                aria-label={isRowOpen ? `${student.id}번 결과 접기` : `${student.id}번 결과 펼쳐서 편집`}
                                                 className={cn(
-                                                    "absolute top-2.5 right-2.5 size-8 rounded-lg shadow-lg border flex items-center justify-center cursor-pointer transition-all hover:scale-110",
-                                                    isRowOpen ? "bg-amber-500 text-white border-amber-500 opacity-100" : "bg-white dark:bg-slate-900 text-slate-400 border-slate-100 dark:border-slate-700 opacity-0 group-hover/txt:opacity-100 hover:text-amber-500 dark:hover:text-amber-400"
+                                                    "absolute right-2 top-2 flex size-8 items-center justify-center rounded-lg border transition-colors",
+                                                    isRowOpen ? "border-amber-500 bg-amber-500 text-white" : "border-slate-200 bg-white text-slate-400 opacity-0 hover:text-amber-600 focus-visible:opacity-100 group-hover/txt:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:text-amber-400"
                                                 )}
                                             >
-                                                {isRowOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                                                {isRowOpen ? <ChevronUp aria-hidden="true" className="size-4" /> : <ChevronDown aria-hidden="true" className="size-4" />}
                                             </button>
                                         )}
                                     </div>
 
-                                    <div className="flex flex-col gap-2 pt-1 min-w-[100px]" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
+                                    <div className="flex flex-col items-stretch gap-1" style={{ gridColumn: "-2 / -1", gridRow: 1 }}>
                                         <GenerationMenu
                                             onGenerate={mode => handleGenerate(student.id, mode)}
-                                            disabled={student.isGenerating || (student.participatedEvents?.length || 0) === 0}
-                                            className={cn(
-                                                "w-full rounded-2xl font-black h-12 px-5 gap-2 text-[13px] transition-all shadow-lg",
-                                                student.aiResult
-                                                    ? "bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-300 hover:bg-amber-200 shadow-amber-100"
-                                                    : "bg-amber-500 text-white hover:bg-amber-600 shadow-amber-200/20"
-                                            )}
+                                            disabled={student.isGenerating || participatedEvents.length === 0}
+                                            className={workspaceRowGenerateClassName(Boolean(student.aiResult))}
                                         >
-                                            {student.aiResult ? "재생성" : "생성"} <Sparkles className="size-3.5" />
+                                            <Sparkles aria-hidden="true" />{student.aiResult ? "재생성" : "생성"}
                                         </GenerationMenu>
                                         <button
+                                            type="button"
                                             onClick={() => {
                                                 setStudents(prev => prev.map(s => s.id === student.id ? {
                                                     ...s,
@@ -378,9 +379,9 @@ export const CreativeActivityWorkspace = ({
                                                     aiResult: ""
                                                 } : s));
                                             }}
-                                            className="w-full h-11 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 transition-all flex items-center justify-center gap-2 font-black text-[11px]"
+                                            className={workspaceRowResetClassName}
                                         >
-                                            <RotateCcw className="size-3" /> 초기화
+                                            <RotateCcw aria-hidden="true" className="size-3.5" /> 초기화
                                         </button>
                                     </div>
                                 </div>
@@ -389,37 +390,19 @@ export const CreativeActivityWorkspace = ({
                         </div>
                     </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-3 py-4 px-4 bg-slate-50/50 dark:bg-slate-800/70 rounded-[2.5rem] border border-slate-100 dark:border-slate-700">
-                    <div className="flex items-center gap-4">
-                        <div className="px-3 py-2 bg-white dark:bg-slate-900 rounded-2xl text-sm font-black text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
-                            <div className="size-2 rounded-full bg-amber-500 animate-pulse" />
-                            {students.filter(s => s.selected).length}명 선택됨
-                        </div>
-                    </div>
-                    <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-                        <Button
-                            onClick={handleResetAll}
-                            variant="ghost"
-                            className="rounded-2xl bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 font-black h-11 px-4 sm:px-6 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition-all"
-                        >
-                            전체 초기화
-                        </Button>
-                        <GenerationMenu
-                            onGenerate={handleSelectedGenerate}
-                            variant="outline"
-                            className="rounded-2xl border-2 border-slate-900 text-slate-900 dark:text-slate-100 font-black h-11 px-4 sm:px-6 hover:bg-slate-50 dark:hover:bg-slate-800/70 shadow-sm gap-3 transition-all"
-                        >
-                            <UserCheck className="size-5" /> 선택 생성
-                        </GenerationMenu>
-                        <GenerationMenu
-                            onGenerate={handleAllGenerate}
-                            className="rounded-2xl bg-slate-900 text-white font-black h-11 px-4 sm:px-6 hover:bg-slate-800 shadow-2xl shadow-slate-300 gap-4 text-lg transition-all"
-                        >
-                            <Zap className="size-5 text-amber-400" /> 전체 생성
-                        </GenerationMenu>
-                    </div>
-                </div>
-            </Card>
+
+                <WorkspaceActionBar selectedCount={selectedCount} onClearSelection={handleClearSelection} expanded={isExpanded}>
+                    <Button variant="outline" onClick={handleResetAll} className={workspaceSecondaryActionClassName}>
+                        <RotateCcw aria-hidden="true" /> 전체 초기화
+                    </Button>
+                    <GenerationMenu onGenerate={handleSelectedGenerate} variant="outline" className={workspaceSecondaryActionClassName}>
+                        <UserCheck aria-hidden="true" /> 선택 생성
+                    </GenerationMenu>
+                    <GenerationMenu onGenerate={handleAllGenerate} className={workspacePrimaryActionClassName}>
+                        <Zap aria-hidden="true" /> 전체 생성
+                    </GenerationMenu>
+                </WorkspaceActionBar>
+            </section>
         </Wrapper>
     );
 };
@@ -575,15 +558,15 @@ const AutoDistributeEvents = ({
             <PopoverTrigger asChild>
                 <Button
                     variant="outline"
-                    className="rounded-2xl h-11 px-6 font-bold border-amber-100 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 gap-2 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
+                    className={workspaceToolButtonClassName}
                 >
-                    활동 자동배정 <Sparkles className="size-4" />
+                    <Sparkles aria-hidden="true" className="text-amber-500" />활동 자동배정
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[420px] p-0 rounded-2xl border-slate-100 dark:border-slate-700 shadow-2xl overflow-hidden z-[10050]" align="end">
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-700">
-                    <div className="text-sm font-black text-slate-700 dark:text-slate-200">활동 자동배정</div>
-                    <p className="text-[11px] text-slate-400 font-medium mt-1 leading-relaxed">
+            <PopoverContent className="w-[420px] p-0 rounded-xl border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden z-[10050]" align="end">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-700">
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">활동 자동배정</div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                         학교 행사명으로 선택 학생의 참여 행사를 채웁니다.
                     </p>
                 </div>
@@ -599,7 +582,7 @@ const AutoDistributeEvents = ({
                             }
                         }}
                         placeholder="예: 시업식, 학급자치회, 과학의 달, 운동회, 현장체험학습"
-                        className="w-full h-28 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold placeholder:text-slate-300 focus:border-amber-400 outline-none transition-all resize-none leading-relaxed"
+                        className="w-full h-28 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium placeholder:text-slate-400 focus:border-amber-400 outline-none transition-all resize-none leading-relaxed"
                     />
 
                     <div className="grid grid-cols-3 gap-2">
@@ -613,7 +596,7 @@ const AutoDistributeEvents = ({
                                 type="button"
                                 onClick={() => setCountMode(option.value)}
                                 className={cn(
-                                    "h-10 rounded-xl border text-xs font-black transition-all",
+                                    "h-9 rounded-xl border text-xs font-semibold transition-colors",
                                     countMode === option.value
                                         ? "bg-amber-500 border-amber-500 text-white"
                                         : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-amber-200 dark:hover:border-amber-800 hover:text-amber-600 dark:hover:text-amber-300"
@@ -625,20 +608,20 @@ const AutoDistributeEvents = ({
                     </div>
                     {countMode === "custom" && (
                         <label className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/40 px-4 py-3">
-                            <span className="text-xs font-black text-amber-700 dark:text-amber-200">학생당 배정 개수</span>
+                            <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">학생당 배정 개수</span>
                             <input
                                 type="number"
                                 min={1}
                                 max={20}
                                 value={customCount}
                                 onChange={(event) => setCustomCount(event.target.value)}
-                                className="h-9 w-24 rounded-lg border border-amber-100 dark:border-amber-900 bg-white dark:bg-slate-900 px-3 text-right text-xs font-black text-amber-700 dark:text-amber-200 outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
+                                className="h-9 w-24 rounded-lg border border-amber-100 dark:border-amber-900 bg-white dark:bg-slate-900 px-3 text-right text-xs font-semibold text-amber-800 dark:text-amber-200 outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
                             />
                         </label>
                     )}
 
-                    <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-4 py-3 cursor-pointer">
-                        <span className="text-xs font-black text-slate-600 dark:text-slate-300">기존 행사 비우기</span>
+                    <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 px-4 py-3 cursor-pointer">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">기존 행사 비우기</span>
                         <input
                             type="checkbox"
                             checked={replaceExisting}
@@ -650,7 +633,7 @@ const AutoDistributeEvents = ({
                     {parsedEvents.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
                             {parsedEvents.map((event, index) => (
-                                <Badge key={`${event}-${index}`} variant="secondary" className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-200 border-amber-100 dark:border-amber-900 font-bold text-[11px]">
+                                <Badge key={`${event}-${index}`} variant="secondary" className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-200 border-amber-200 dark:border-amber-900 font-medium text-xs">
                                     {event}
                                 </Badge>
                             ))}
@@ -658,14 +641,14 @@ const AutoDistributeEvents = ({
                     )}
 
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                        <div className="text-[11px] font-bold text-slate-400">
-                            <span className="text-amber-600 dark:text-amber-300">{selectedCount}명</span>
+                        <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                            <span className="text-amber-700 dark:text-amber-300">{selectedCount}명</span>
                             <span className="mx-1">/</span>
-                            <span className="text-amber-600 dark:text-amber-300">{parsedEvents.length}개 행사</span>
+                            <span className="text-amber-700 dark:text-amber-300">{parsedEvents.length}개 행사</span>
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-2">
                             <Select value={randomCount} onValueChange={setRandomCount}>
-                                <SelectTrigger className="h-9 w-20 rounded-[12px] border-amber-100 dark:border-amber-900 bg-white dark:bg-slate-900 text-xs font-black text-amber-700 dark:text-amber-200">
+                                <SelectTrigger className="h-9 w-20 rounded-[12px] border-amber-100 dark:border-amber-900 bg-white dark:bg-slate-900 text-xs font-semibold text-amber-800 dark:text-amber-200">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent className="z-[10080]">
@@ -681,21 +664,21 @@ const AutoDistributeEvents = ({
                                 variant="outline"
                                 onClick={handleRandomAdd}
                                 disabled={isRandomLoading}
-                                className="rounded-xl h-9 px-4 font-black text-xs border-amber-100 dark:border-amber-900 bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 gap-2"
+                                className="rounded-xl h-9 px-3 font-semibold text-xs border-amber-200 dark:border-amber-900 bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 gap-2"
                             >
                                 행사랜덤추가 <Sparkles className={cn("size-3.5", isRandomLoading && "animate-spin")} />
                             </Button>
                             <Button
                                 onClick={handleDistribute}
                                 disabled={parsedEvents.length === 0 || selectedCount === 0}
-                                className="rounded-xl h-9 px-5 font-black text-xs bg-amber-600 text-white hover:bg-amber-700 disabled:bg-slate-100 disabled:text-slate-300 transition-all"
+                                className="rounded-xl h-9 px-4 font-semibold text-xs"
                             >
                                 배정하기
                             </Button>
                         </div>
                     </div>
                     {selectedCount === 0 && (
-                        <p className="text-[11px] font-bold text-red-400">학생을 선택하세요.</p>
+                        <p className="text-xs font-medium text-red-600 dark:text-red-400">학생을 선택하세요.</p>
                     )}
                 </div>
             </PopoverContent>
@@ -736,15 +719,15 @@ const BulkEventAdd = ({
             <PopoverTrigger asChild>
                 <Button
                     variant="outline"
-                    className="rounded-2xl h-11 px-6 font-bold border-blue-100 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-300 gap-2 hover:bg-blue-100 dark:hover:bg-blue-950/70 transition-all font-black text-xs shrink-0 w-full sm:w-auto"
+                    className={workspaceToolButtonClassName}
                 >
-                    선택 학생 활동 일괄추가 <ListPlus className="size-4" />
+                    <ListPlus aria-hidden="true" className="text-amber-500" />선택 학생 활동 일괄추가
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-96 p-0 rounded-2xl border-slate-100 dark:border-slate-700 shadow-2xl overflow-hidden z-[10050]" align="end">
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-700">
-                    <div className="text-sm font-black text-slate-700 dark:text-slate-200">선택 학생 활동 일괄추가</div>
-                    <p className="text-[11px] text-slate-400 font-medium mt-1 leading-relaxed">
+            <PopoverContent className="w-96 p-0 rounded-xl border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden z-[10050]" align="end">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-700">
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">선택 학생 활동 일괄추가</div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                         쉼표로 구분한 행사명을 선택 학생에게 추가합니다.
                     </p>
                 </div>
@@ -760,31 +743,31 @@ const BulkEventAdd = ({
                             }
                         }}
                         placeholder="예: 시업식, 방학식, 운동회"
-                        className="w-full h-24 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold placeholder:text-slate-300 focus:border-blue-400 outline-none transition-all resize-none leading-relaxed"
+                        className="w-full h-24 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium placeholder:text-slate-400 focus:border-amber-400 outline-none transition-all resize-none leading-relaxed"
                     />
                     {parsedEvents.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                             {parsedEvents.map((ev, i) => (
-                                <Badge key={`${ev}-${i}`} variant="secondary" className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-300 border-blue-100 dark:border-blue-900 font-bold text-[11px]">
+                                <Badge key={`${ev}-${i}`} variant="secondary" className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-900 font-medium text-xs">
                                     {ev}
                                 </Badge>
                             ))}
                         </div>
                     )}
                     <div className="flex items-center justify-between pt-1">
-                        <div className="text-[11px] font-bold text-slate-400">
-                            선택된 학생 <span className="text-blue-600 dark:text-blue-300">{selectedCount}명</span>에게 추가
+                        <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                            선택된 학생 <span className="text-amber-700 dark:text-amber-300">{selectedCount}명</span>에게 추가
                         </div>
                         <Button
                             onClick={handleAdd}
                             disabled={parsedEvents.length === 0 || selectedCount === 0}
-                            className="rounded-xl h-9 px-5 font-black text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-300 transition-all"
+                            className="rounded-xl h-9 px-4 font-semibold text-xs"
                         >
                             추가하기
                         </Button>
                     </div>
                     {selectedCount === 0 && (
-                        <p className="text-[11px] font-bold text-red-400">먼저 학생을 체크해주세요.</p>
+                        <p className="text-xs font-medium text-red-600 dark:text-red-400">먼저 학생을 체크해주세요.</p>
                     )}
                 </div>
             </PopoverContent>
@@ -806,12 +789,12 @@ const EventPicker = ({
     return (
         <Popover>
             <PopoverTrigger asChild>
-                <button type="button" aria-label={`${studentId}번 학생 활동 선택`} className="h-9 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 px-3 flex items-center justify-center gap-1.5 text-xs font-bold text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-all">
-                    <Plus className="size-4" />활동 선택
+                <button type="button" aria-label={`${studentId}번 학생 활동 선택`} className="inline-flex h-8 items-center gap-1 rounded-lg border border-dashed border-amber-300 px-2.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-50 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/40">
+                    <Plus aria-hidden="true" className="size-3.5" />활동 선택
                 </button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 p-0 rounded-2xl border-slate-100 dark:border-slate-700 shadow-2xl overflow-hidden z-[10050]" align="start">
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-700">
+            <PopoverContent className="w-80 p-0 rounded-xl border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden z-[10050]" align="start">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-700">
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
                         <input
@@ -819,7 +802,7 @@ const EventPicker = ({
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder="활동 검색 또는 직접 입력" aria-label={`${studentId}번 학생 활동 검색 또는 직접 입력`}
-                            className="w-full h-9 pl-9 pr-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold outline-none focus:border-amber-400 transition-all"
+                            className="w-full h-9 pl-9 pr-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium outline-none focus:border-amber-400 transition-colors"
                         />
                     </div>
                 </div>
@@ -838,7 +821,7 @@ const EventPicker = ({
                                 }));
                                 setSearch("");
                             }}
-                            className="w-full text-left px-3 py-3 rounded-xl text-xs font-black bg-amber-500 text-white shadow-lg shadow-amber-200 mb-4 flex items-center justify-between group"
+                            className="w-full text-left px-3 py-2.5 rounded-xl text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 mb-3 flex items-center justify-between"
                         >
                             <span>{search} 직접 추가하기</span>
                             <Plus className="size-4" />
@@ -850,7 +833,7 @@ const EventPicker = ({
 
                         return (
                             <div key={cat.id} className="mb-4">
-                                <div className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">{cat.name}</div>
+                                <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{cat.name}</div>
                                 <div className="space-y-0.5">
                                     {filteredEvents.map(e => {
                                         const isSelected = selectedEvents.includes(e);
@@ -868,8 +851,8 @@ const EventPicker = ({
                                                     }));
                                                 }}
                                                 className={cn(
-                                                    "w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-between group/item",
-                                                    isSelected ? "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300" : "hover:bg-slate-50 dark:hover:bg-slate-800/70 text-slate-600 dark:text-slate-300"
+                                                    "w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-between group/item",
+                                                    isSelected ? "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200" : "hover:bg-slate-50 dark:hover:bg-slate-800/70 text-slate-600 dark:text-slate-300"
                                                 )}
                                             >
                                                 {e}
