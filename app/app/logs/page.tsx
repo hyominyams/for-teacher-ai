@@ -76,7 +76,7 @@ function WorkLogs() {
             {loading && !page ? <div role="status" className="flex justify-center gap-3 p-16 text-sm text-slate-500"><Loader2 className="size-5 animate-spin" />기록을 불러오고 있습니다.</div> : !logs.length && !error ? <div className="px-6 py-20 text-center"><Archive className="mx-auto mb-4 size-9 text-slate-300" /><h2 className="font-semibold">{query || category !== "all" ? "조건에 맞는 기록이 없습니다." : state === "archived" ? "아직 보관한 기록이 없습니다." : "아직 저장된 작업로그가 없습니다."}</h2><p className="mt-3 text-sm text-slate-500">{state === "editable" ? "작성 화면에서 ‘작업로그에 저장’을 누르면 이곳에 쌓입니다." : "수정 가능한 기록에서 보관하기를 이용하세요."}</p></div> : <div className="grid grid-cols-1 gap-4 bg-slate-50/70 p-4 dark:bg-slate-950/40 md:grid-cols-2 md:gap-5 md:p-6 xl:grid-cols-3">{logs.map(log => (
                 <WorkLogCard key={log.id} log={log} busy={busy} dateLabel={dateLabel(log.updated_at)}
                     onPreview={() => void openPreview(log.id)}
-                    onEdit={() => router.push(`/app?log=${log.id}`)}
+                    onEdit={() => router.push(`/app/workspace/${log.category}?log=${encodeURIComponent(log.id)}`)}
                     onExport={() => void exportLog(log.id)}
                     onArchive={() => setArchiveTarget(log)} />
             ))}</div>}

@@ -77,9 +77,10 @@ export function NavbarMain() {
     }
 
     const navItems = [
-        { name: "대시보드", href: "/app", icon: LayoutDashboard },
+        { name: "메인", href: "/app", icon: LayoutDashboard },
         { name: "작업로그", href: "/app/logs" },
         { name: "크레딧", href: "/app/credits" },
+        { name: "확장 프로그램", href: "/app/extension" },
     ]
 
     return (
@@ -88,7 +89,7 @@ export function NavbarMain() {
                 "fixed top-0 left-0 right-0 z-50 h-20 transition-colors duration-300",
                 isScrolled
                     ? "bg-white/70 dark:bg-slate-950/90 backdrop-blur-2xl border-b border-black/5 dark:border-white/5 shadow-sm"
-                    : "bg-transparent"
+                    : "bg-white/90 dark:bg-slate-950/90 border-b border-black/5 dark:border-white/5 backdrop-blur-xl"
             )}
         >
             <NavbarFrame className="h-full">
@@ -156,12 +157,14 @@ export function NavbarMain() {
 
             <div
                 id="app-mobile-menu"
+                inert={!isMobileMenuOpen}
                 className={cn(
                     "lg:hidden absolute top-full left-4 right-4 bg-white/95 dark:bg-slate-950/95 backdrop-blur-3xl border border-black/5 dark:border-white/10 rounded-[2rem] mt-4 transition-all duration-500 shadow-2xl overflow-hidden",
                     isMobileMenuOpen ? "max-h-[80vh] opacity-100 p-8" : "max-h-0 opacity-0 p-0"
                 )}
             >
                 <div className="flex flex-col gap-6">
+                    <div className="md:hidden flex items-center justify-between gap-4"><span className="text-sm font-bold">{userName ? `${userName} 선생님` : "선생님"}</span><ModeToggle /></div>
                     {navItems.map((item) => (
                         <Link
                             key={item.href}
