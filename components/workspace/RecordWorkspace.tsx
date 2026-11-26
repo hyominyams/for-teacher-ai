@@ -1635,7 +1635,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                     <header className="mb-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
                         <div className="min-w-0">
                             <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{activeTab.title}</h1>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{activeTabId === "subject" ? "평가계획 HWPX를 가져오거나 평가기준을 직접 입력한 뒤, 학생별 상·중·하를 선택하세요." : activeTabId === "creative" ? "각 학생의 활동 선택에서 참여 활동을 고르세요. 임원 직책과 기간도 함께 기록할 수 있습니다." : "관찰 키워드를 2개 이상 선택하고 학생별 문장을 작성하세요."}</p>
+                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{activeTabId === "subject" ? "평가계획 HWPX를 가져오거나 평가기준을 직접 입력한 뒤, 학생별 상·중·하를 선택하세요." : activeTabId === "creative" ? "각 학생의 활동 선택에서 참여 활동을 고르세요. 임원 직책과 기간도 함께 기록할 수 있습니다." : "관찰 키워드를 2개 이상 선택하고 학생별 문장을 작성하세요."}</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             <nav aria-label="작성 영역" className="inline-flex rounded-xl border border-slate-200 bg-slate-100/80 p-1 dark:border-slate-800 dark:bg-slate-900">
@@ -1829,7 +1829,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                                         </button>
                                                         <div className="min-w-0 flex-1 grid grid-cols-1 md:grid-cols-[1fr_7rem] gap-3">
                                                             <label className="space-y-1">
-                                                                <span className="text-xs font-semibold text-slate-400">교과명</span>
+                                                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">교과명</span>
                                                                 <Input
                                                                     value={subject.subjectName || ""}
                                                                     onChange={(event) => updateSubjectPlanSubject(index, "subjectName", event.target.value)}
@@ -1838,7 +1838,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                                                 />
                                                             </label>
                                                             <label className="space-y-1">
-                                                                <span className="text-xs font-semibold text-slate-400">학년</span>
+                                                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">학년</span>
                                                                 <Input
                                                                     value={subject.grade || ""}
                                                                     onChange={(event) => updateSubjectPlanSubject(index, "grade", event.target.value)}
@@ -1846,7 +1846,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                                                     className="h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-base font-semibold text-slate-900 dark:text-slate-100"
                                                                 />
                                                             </label>
-                                                            <div className="md:col-span-2 text-xs font-bold text-slate-400">
+                                                            <div className="md:col-span-2 text-xs font-bold text-slate-700 dark:text-slate-200">
                                                                 평가 {subject.assessments.length}개
                                                             </div>
                                                         </div>
@@ -1875,7 +1875,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                                             />
                                                         </label>
                                                         <label className="space-y-1 block">
-                                                            <span className="text-xs font-semibold text-slate-400">성취기준</span>
+                                                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">성취기준</span>
                                                             <textarea
                                                                 value={assessment.standard || ""}
                                                                 onChange={(event) => updateSubjectPlanAssessment(index, assessmentIndex, "standard", event.target.value)}
@@ -1885,7 +1885,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                                             />
                                                         </label>
                                                         <div className="space-y-2">
-                                                            <span className="text-xs font-semibold text-slate-400">평가기준</span>
+                                                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">평가기준</span>
                                                             <div className="grid gap-2 md:grid-cols-3">
                                                                 {ACHIEVEMENT_LEVELS.map((level) => (
                                                                     <label key={level} className="block space-y-1">

@@ -19,7 +19,7 @@ export const workspaceSecondaryActionClassName = "h-10 gap-2 rounded-xl border b
 /** 화면마다 하나만 두는 주요 버튼(전체 생성) */
 export const workspacePrimaryActionClassName = "h-10 gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90";
 
-export const workspaceTableHeadClassName = "text-xs font-semibold leading-4 text-slate-500 dark:text-slate-400";
+export const workspaceTableHeadClassName = "text-xs font-bold leading-4 text-slate-800 dark:text-slate-100";
 
 export const workspaceCheckboxClassName = "size-4 cursor-pointer rounded border-slate-300 accent-primary dark:border-slate-600";
 
@@ -107,7 +107,7 @@ export function WorkspaceCardHeader({ icon, accent, title, description, actions 
                 <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-xl [&_svg]:size-[18px]", accentStyles[accent].icon)}>{icon}</div>
                 <div className="min-w-0">
                     <h2 className="text-base font-bold leading-6 text-slate-900 dark:text-white">{title}</h2>
-                    {description && <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</p>}
+                    {description && <p className="text-xs leading-5 text-slate-600 dark:text-slate-300">{description}</p>}
                 </div>
             </div>
             {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -127,7 +127,7 @@ export function WorkspaceActionBar({ selectedCount, onClearSelection, expanded, 
             expanded ? expandedStickyBottomClassName : "bottom-4"
         )}>
             <div className="flex items-center gap-1.5">
-                <span aria-live="polite" className="inline-flex h-8 items-center rounded-lg bg-slate-100 px-2.5 text-sm font-semibold tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <span aria-live="polite" className="inline-flex h-8 items-center rounded-lg bg-slate-100 px-2.5 text-sm font-bold tabular-nums text-slate-900 dark:bg-slate-800 dark:text-white">
                     {selectedCount}명 선택됨
                 </span>
                 {selectedCount > 0 && onClearSelection && (
@@ -160,7 +160,7 @@ type NumberSelectProps = {
 export function WorkspaceNumberSelect({ id, label, value, unit, options, disabled, className, onValueChange }: NumberSelectProps) {
     return (
         <div className={cn("min-w-0 space-y-2 sm:w-36", className)}>
-            <label htmlFor={id} className="block text-xs font-semibold leading-4 text-slate-600 dark:text-slate-400">{label}</label>
+            <label htmlFor={id} className="block text-xs font-semibold leading-4 text-slate-800 dark:text-slate-200">{label}</label>
             <Select value={String(value)} onValueChange={next => onValueChange(Number(next))} disabled={disabled}>
                 <SelectTrigger id={id} aria-label={label} className={cn(workspaceControlClassName, "w-full data-[size=default]:h-11 border-slate-200 px-3.5 dark:border-slate-700")}>
                     <SelectValue />

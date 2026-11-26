@@ -159,6 +159,7 @@ const buildPrompt = (markdown: string, hints: { schoolLevel: string; grade: stri
 
 규칙:
 - 여러 교과가 있으면 subjects 배열에 모두 포함합니다.
+- 학교자율시간은 별도의 교과를 신설하도록, 국어나 체육에 포함되지 않도록 한다
 - 학생별 상/중/하 성취도나 점수는 추출하지 않습니다.
 - 평가기준이 상/중/하로 나뉘어 있으면 criteria에는 한 문자열 안에 줄바꿈으로 유지하고, criteriaLevels.상/중/하에 각각 분리합니다.
 - 평가기준이 3개 문장이나 3개 행으로 제시되어 있고 수준명이 생략되어 있으면 위에서부터 상, 중, 하로 판단해 criteriaLevels에 넣습니다.

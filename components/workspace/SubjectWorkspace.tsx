@@ -75,9 +75,9 @@ const Wrapper = ({ children, isExpanded, mounted }: WrapperProps) => {
     return <>{children}</>;
 };
 
-const subjectFieldClassName = "h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-medium tabular-nums text-slate-800 shadow-none data-[size=default]:h-11 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
-const subjectTextInputClassName = "h-10 rounded-xl border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:border-indigo-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
-const subjectTextAreaClassName = "w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-relaxed text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:ring-indigo-900/50";
+const subjectFieldClassName = "h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-semibold tabular-nums text-slate-900 shadow-none data-[size=default]:h-11 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
+const subjectTextInputClassName = "h-10 rounded-xl border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-none placeholder:text-slate-400 focus-visible:border-indigo-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
+const subjectTextAreaClassName = "w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-relaxed text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:ring-indigo-900/50";
 
 interface SubjectWorkspaceProps {
     savedEditor?: boolean;
@@ -461,7 +461,7 @@ export const SubjectWorkspace = ({
                                 value={globalConfig.subjectName}
                                 onChange={(e) => setGlobalConfig(p => ({ ...p, subjectName: e.target.value }))}
                                 placeholder="예: 국어, 수학, 통합교과(봄) 등"
-                                className="h-11 rounded-xl border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:border-indigo-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                className="h-11 rounded-xl border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-none placeholder:text-slate-400 focus-visible:border-indigo-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                             />
                         </div>
                         {!savedEditor && (

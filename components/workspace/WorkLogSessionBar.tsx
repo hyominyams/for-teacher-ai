@@ -16,7 +16,7 @@ export function WorkLogSessionBar(p: Props) {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
             <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                    <label htmlFor="work-log-title" className="text-xs font-semibold leading-4 text-slate-700 dark:text-slate-300">작업 이름</label>
+                    <label htmlFor="work-log-title" className="text-xs font-semibold leading-4 text-slate-800 dark:text-slate-200">작업 이름</label>
                     <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-semibold leading-4", p.editing ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" : "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300")}>{p.editing ? "저장본 수정" : "새 작업"}</span>
                     <span role={failed ? "alert" : "status"} className={cn("flex min-w-0 items-center gap-1 text-xs leading-4", failed ? "text-red-700 dark:text-red-400" : p.editing && p.dirty ? "text-amber-700 dark:text-amber-400" : "text-slate-500 dark:text-slate-400")}>
                         <StatusIcon aria-hidden="true" className={cn("size-3.5 shrink-0", savingDraft && "animate-spin")} />{status}
