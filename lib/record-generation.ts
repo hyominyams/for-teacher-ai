@@ -3,6 +3,13 @@ export type GenerationMode = "replace" | "append";
 export const NO_NEW_RECORD_CONTENT = "추가할내용없음";
 export const MAX_EXISTING_RECORD_CHARS = 10_000;
 
+export function removeRecordEmoji(text: string): string {
+    // Match whole Unicode emoji sequences while retaining plain text symbols.
+    const emoji = new RegExp("\\p{RGI_Emoji}|[\\p{Extended_Pictographic}--[©®™↔↕]][\\uFE0E\\uFE0F]?|[★☆♡]", "gv");
+    const result = text.replace(emoji, "");
+    return result === text ? text : result.replace(/ {2,}/g, " ").trim();
+}
+
 export type ContinuationEvidence = { id: string; label: string };
 
 export const CONTINUATION_DECISION_INSTRUCTIONS = `

@@ -1,7 +1,7 @@
 import { callBudget, completionText, creditFailure, creditUser, CreditError, readAIJson, runCreditJob } from "@/lib/server/credits";
 import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { runRecordContinuation } from "@/lib/server/record-continuation";
-import { MAX_EXISTING_RECORD_CHARS } from "@/lib/record-generation";
+import { MAX_EXISTING_RECORD_CHARS, removeRecordEmoji } from "@/lib/record-generation";
 import type { AchievementLevel, SubjectAssessmentInfo } from "@/types";
 import { OpenAI } from "openai";
 import fs from "fs";
@@ -105,7 +105,12 @@ ${assessmentsText || "선택된 평가 항목이 없습니다."}
             ],
             ...(category === "subject" ? {} : { temperature: 0.7 }),
         };
-        return await runCreditJob(req, user, "generate", raw, [callBudget(params)], async complete => ({ result: completionText(await complete(params)) }));
+        return await runCreditJob(req, user, "generate", raw, [callBudget(params)], async complete => {
+            const text = completionText(await complete(params));
+            const result = category === "subject" ? removeRecordEmoji(text) : text;
+            if (!result) throw new CreditError("AI_INCOMPLETE", "학기말 종합의견을 받지 못했습니다. 다시 생성해주세요.", 502);
+            return { result };
+        });
     } catch (error: unknown) {
         return creditFailure(error);
     }

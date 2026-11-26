@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendRecordText, getContinuation, NO_NEW_RECORD_CONTENT, parseContinuationDecision } from "../lib/record-generation.ts";
+import { appendRecordText, getContinuation, NO_NEW_RECORD_CONTENT, parseContinuationDecision, removeRecordEmoji } from "../lib/record-generation.ts";
+
+test("subject records can remove entire emoji sequences without losing text and numbers", () => {
+    assert.equal(removeRecordEmoji("🎬 영상 편집을 함. 👩🏽‍💻 🇰🇷 1️⃣ ❤"), "영상 편집을 함.");
+    assert.equal(removeRecordEmoji("1번과 #2를 구별함. A↔B, 3.5cm."), "1번과 #2를 구별함. A↔B, 3.5cm.");
+    assert.equal(removeRecordEmoji("표에서 ✅ 값을 찾아 적음. ★☆♡"), "표에서 값을 찾아 적음.");
+    assert.equal(removeRecordEmoji("✅ 👨‍👩‍👧‍👦"), "");
+});
 
 test("an echoed original or repeated sentence cannot be appended twice", () => {
     const existing = "수업에 성실하게 참여함. 맡은 역할을 책임 있게 수행함.";
