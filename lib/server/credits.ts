@@ -107,7 +107,7 @@ export async function runCreditJob(req:Request,user:User,operation:CreditOperati
             throw new CreditError("CREDIT_REQUEST_FINISHED","이미 처리된 요청입니다. 결과가 필요하면 새 작업으로 요청해주세요.",409);
         }
         claimed=true;
-        const openai=new OpenAI({apiKey:process.env.OPENAI_API_KEY,maxRetries:0,timeout:operation==="subject_plan"?90000:45000});
+        const openai=new OpenAI({apiKey:process.env.OPENAI_API_KEY,maxRetries:0,timeout:operation==="subject_plan"?180_000:45_000});
         const complete:BilledChat=async params=>{
             const budget=budgets[callIndex];
             if(!budget||params.model!==budget.model||params.max_completion_tokens!==budget.maxOutput||inputTokenCeiling(params)>budget.inputCeiling)throw new CreditError("BUDGET_MISMATCH","요청 크기를 확인하지 못했습니다. 다시 시도해주세요.",400);
@@ -139,6 +139,9 @@ export async function runCreditJob(req:Request,user:User,operation:CreditOperati
                 const settled=await rpc(client,"finish_credit_job",{...args,p_status:uncertain?"uncertain":"failed",p_error_code:mapCreditError(error).code});
                 if(settled.status==="completed"&&settled.result)return NextResponse.json({...settled.result,credits:{requestId,chargedUnits:Number(settled.charged_units),replayed:true}},{headers:creditHeaders});
             } catch {uncertain=true;}
+        }
+        if (uncertain && operation === "subject_plan" && error instanceof OpenAI.APIConnectionTimeoutError) {
+            return creditFailure(new CreditError("CREDIT_SETTLEMENT_REQUIRED", "평가계획 분석 시간이 초과되었습니다. 문서가 길면 교과별 HWPX 파일로 나눠 가져와 주세요. 크레딧 사용량은 내역에서 확인할 수 있습니다.", 503), requestId);
         }
         return creditFailure(uncertain?mapCreditError(new Error("CREDIT_SETTLEMENT_REQUIRED")):error,requestId);
     }

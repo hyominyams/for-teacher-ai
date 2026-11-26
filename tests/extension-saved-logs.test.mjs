@@ -171,3 +171,20 @@ test('upgrading never reuses legacy web records even if the old popup had switch
   assert.equal(t.element('recordCount').textContent, '0명');
   assert.equal(t.data.neisUploadRecords, undefined);
 });
+
+test('a project groups subjects while loading only the selected subject', async () => {
+  const project = { id: 'project-1', title: '2학기 <6학년>' };
+  const math = { ...log('math', 'subject'), project };
+  const korean = { ...log('korean', 'subject'), project };
+  const t = await setup({
+    saved: { neisUploadCategory: 'subject' },
+    handler: url => url.includes('?') ? { logs: [math, korean], total: 2 } : korean,
+  });
+  assert.match(t.element('workLog').innerHTML, /<optgroup label="2학기 &lt;6학년&gt;">/);
+  assert.deepEqual(t.element('workLog').options.map(option => option.value), ['math', 'korean']);
+  t.element('workLog').value = 'korean';
+  await t.emit('loadWebData');
+  assert.equal(t.element('recordCount').textContent, '2명');
+  assert.match(t.element('recordTable').innerHTML, /korean 학생 1 결과/);
+  assert.doesNotMatch(t.element('recordTable').innerHTML, /math 학생/);
+});

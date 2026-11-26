@@ -24,7 +24,7 @@ const pause=(ms:number,signal?:AbortSignal|null)=>new Promise<void>((resolve,rej
     const timer=setTimeout(()=>{signal?.removeEventListener("abort",abort);resolve();},ms);
     signal?.addEventListener("abort",abort,{once:true});
 });
-export async function creditAIFetch(url:string,options:RequestInit):Promise<Response> {
+export async function creditAIFetch(url:string,options:RequestInit,pollTimeoutMs=110_000):Promise<Response> {
     const requestId=crypto.randomUUID();
     const headers=new Headers(options.headers);headers.set("Idempotency-Key",requestId);
     return limited(options.signal,async()=>{
@@ -38,7 +38,7 @@ export async function creditAIFetch(url:string,options:RequestInit):Promise<Resp
             }
             const data=await response.clone().json().catch(()=>({}));
             if(data.code!=="CREDIT_IN_PROGRESS")return response;
-            const deadline=Date.now()+110_000;
+            const deadline=Date.now()+pollTimeoutMs;
             while(Date.now()<deadline){
                 await pause(1000,options.signal);
                 const status=await fetch(`/api/credits/requests/${requestId}`,{headers,signal:options.signal,cache:"no-store"});

@@ -12,6 +12,7 @@ manifest = json.loads((source / 'manifest.json').read_text())
 version = manifest['version']
 name = f'for-teacher-ai-neis-uploader-v{version}'
 files = ['manifest.json', 'config.js', 'bridge-content.js', 'popup.html', 'popup.css', 'popup.js',
+         'file-import.js', 'vendor/xlsx.full.min.js', 'vendor/SHEETJS-LICENSE.txt',
          'icons/icon16.png', 'icons/icon32.png', 'icons/icon48.png', 'icons/icon128.png']
 assert manifest['host_permissions'] == ['https://for-teacher-ai.vercel.app/*']
 assert manifest['permissions'] == ['activeTab', 'scripting', 'storage', 'clipboardRead', 'tabs']

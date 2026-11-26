@@ -30,7 +30,7 @@ import { WorkspaceButton, WorkspaceNumberSelect, workspaceToolButtonClassName } 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getSavedWorkLog, workLogRequest, WorkLogError } from "@/lib/work-log-client";
 import { defaultWorkTitle, normalizeWorkData, type WorkCategory, workFingerprint, workLogCsv, stableWorkJson } from "@/lib/work-logs";
-import type { SavedWorkLog } from "@/lib/work-logs";
+import type { SavedWorkLog, SubjectProjectSummary } from "@/lib/work-logs";
 import { ClassPolishControl } from "@/components/workspace/ClassPolishControl";
 import type { PolishCategory } from "@/lib/class-polish";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
@@ -50,11 +50,21 @@ type WorkLogData = {
 type SubjectPlanImportResult = {
     subjects: ParsedSubjectPlanSubject[];
     warnings: string[];
+    scopeKeys: string[];
+    project: SubjectProjectSummary;
 };
 
-// Allow the server's 120-second window plus time for upload and connection overhead.
-const SUBJECT_PLAN_TIMEOUT_MS = 150_000;
-const SUBJECT_PLAN_TIMEOUT_MESSAGE = "평가계획 분석 응답을 기다리는 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.";
+type SubjectPlanTarget = "saved" | "drafts";
+
+function subjectPlanSelection(subjects: ParsedSubjectPlanSubject[], target: SubjectPlanTarget, currentSubject: string) {
+    if (target === "drafts") return subjects.map((_, index) => index);
+    const matches = subjects.flatMap((subject, index) => subject.subjectName.trim() === currentSubject.trim() ? [index] : []);
+    return matches.length === 1 ? matches : [];
+}
+
+// Allow the server's 210-second window plus time for upload and connection overhead.
+const SUBJECT_PLAN_TIMEOUT_MS = 240_000;
+const SUBJECT_PLAN_TIMEOUT_MESSAGE = "평가계획 분석 응답 시간이 초과되었습니다. 문서가 길면 교과별 HWPX 파일로 나눠 가져와 주세요.";
 
 const features = [
     {
@@ -106,6 +116,7 @@ const SUBJECT_ORDER_STORAGE_PREFIX = "for-teacher-ai:subject-order:";
 interface SubjectWorkLogSummary {
     scopeKey: string;
     scopeLabel: string;
+    project?: SubjectProjectSummary | null;
     updatedAt?: string;
     createdAt?: string;
 }
@@ -247,6 +258,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const router = useRouter();
     const params = useSearchParams();
     const requestedLogId = params.get("log");
+    const requestedSubjectScope = params.get("subjectScope");
     const isSavedEditor = !!requestedLogId;
     const workEpoch = useRef(0);
     const aiAbort = useRef(new AbortController());
@@ -286,6 +298,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const [subjectConfig, setSubjectConfig] = useState<SubjectGlobalConfig>(getDefaultSubjectConfig);
     const [subjectLogs, setSubjectLogs] = useState<SubjectWorkLogSummary[]>([]);
     const [activeSubjectScopeKey, setActiveSubjectScopeKey] = useState(DEFAULT_SCOPE_KEY);
+    const [activeSubjectProject, setActiveSubjectProject] = useState<SubjectProjectSummary | null>(null);
     const restoredSubjectUser = useRef<string | null>(null);
     const hydratedSubjectScope = useRef<{ userId: string; scopeKey: string; epoch: number } | null>(null);
     const [isWorkLogLoading, setIsWorkLogLoading] = useState(true);
@@ -294,9 +307,13 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const planAbort = useRef<AbortController | null>(null);
     const [isSubjectPlanImporting, setIsSubjectPlanImporting] = useState(false);
     const [subjectPlanImport, setSubjectPlanImport] = useState<SubjectPlanImportResult | null>(null);
+    const [subjectPlanTarget, setSubjectPlanTarget] = useState<SubjectPlanTarget>("drafts");
     const [selectedSubjectPlanIndexes, setSelectedSubjectPlanIndexes] = useState<number[]>([]);
+    const [importedDraftScope, setImportedDraftScope] = useState<string | null>(null);
     const planDialogRef = useRef<HTMLDivElement>(null);
     const hasSubjectPlanImport = Boolean(subjectPlanImport);
+    const applyingToSavedSubject = isSavedEditor && subjectPlanTarget === "saved";
+    const planApplyBusy = logBusy || isWorkLogLoading;
     useEffect(() => {
         if (!hasSubjectPlanImport) return;
         const previous = document.activeElement as HTMLElement | null;
@@ -313,14 +330,15 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const editorDirty = isSavedEditor && loadedSavedId === requestedLogId && workFingerprint(currentData, logTitle) !== savedBaseline;
     const editCacheKey = userId && requestedLogId ? `ftai:saved-edit:${userId}:${requestedLogId}` : null;
 
+    const activeProjectTitle = activeTabId === "subject" ? activeSubjectProject?.title : undefined;
     useEffect(() => {
-        if (!isSavedEditor) setLogTitle(defaultWorkTitle(activeTabId as "behavior" | "subject" | "creative" | "docs"));
-    }, [activeTabId, isSavedEditor]);
+        if (!isSavedEditor) setLogTitle(activeProjectTitle || defaultWorkTitle(activeTabId as WorkCategory));
+    }, [activeTabId, activeProjectTitle, isSavedEditor]);
 
     useEffect(() => {
         if (!userId || !requestedLogId) { savedLogRef.current = null; setSavedLog(null); setLoadedSavedId(""); return; }
         const abort = new AbortController();
-        invalidateWorkspace(); setIsWorkLogLoading(true); setLoadedSavedId(""); setLogError(""); setLogMessage(""); setStaleEdit(null);
+        invalidateWorkspace(); setIsWorkLogLoading(true); setLoadedSavedId(""); setLogError(""); setLogMessage(""); setStaleEdit(null); setImportedDraftScope(null);
         getSavedWorkLog(requestedLogId, abort.signal).then(log => {
             if (abort.signal.aborted) return;
             if (log.archived_at) { router.replace(`/app/logs?view=${log.id}`); return; }
@@ -455,7 +473,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
             if (activeTabId === 'subject') {
                 const { data, error } = await supabase
                     .from('work_logs')
-                    .select('scope_key, scope_label, data, created_at, updated_at')
+                    .select('scope_key, scope_label, data, created_at, updated_at, project:subject_projects!work_logs_subject_project_id_user_id_fkey(id,title)')
                     .eq('user_id', userId)
                     .eq('category', 'subject')
                     .order('created_at', { ascending: false });
@@ -466,6 +484,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                 let nextSubjectLogs: SubjectWorkLogSummary[] = logs.map(log => ({
                     scopeKey: log.scope_key || DEFAULT_SCOPE_KEY,
                     scopeLabel: log.scope_label || log.data?.globalConfig?.subjectName || "교과",
+                    project: Array.isArray(log.project) ? log.project[0] : log.project,
                     updatedAt: log.updated_at,
                     createdAt: log.created_at
                 }));
@@ -476,7 +495,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                     restoredSubjectUser.current = userId;
                     preferredScopeKey = DEFAULT_SCOPE_KEY;
                     try {
-                        const remembered = localStorage.getItem(`ftai:active-subject:${userId}`);
+                        const remembered = requestedSubjectScope || localStorage.getItem(`ftai:active-subject:${userId}`);
                         if (remembered && logs.some(log => log.scope_key === remembered)) preferredScopeKey = remembered;
                     } catch { /* Browser storage can be unavailable. */ }
                 }
@@ -517,7 +536,10 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                         setCharLimits(prev => ({ ...prev, subject: selectedLog.data.charLimit }));
                     }
                     setSubjectConfig(selectedLog.data.globalConfig || getDefaultSubjectConfig());
+                    const project = Array.isArray(selectedLog.project) ? selectedLog.project[0] : selectedLog.project;
+                    setActiveSubjectProject(project || null);
                 } else {
+                    setActiveSubjectProject(null);
                     setStudents(createInitialStudents(nextSubjectCount));
                     setSubjectConfig(getDefaultSubjectConfig());
                 }
@@ -555,9 +577,9 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
 
         void loadWorkLog();
         return () => { cancelled = true; };
-    }, [userId, activeTabId, activeSubjectScopeKey, isSavedEditor]); // studentCount 제거하여 수동 변경 시 데이터 덮어쓰기 방지
+    }, [userId, activeTabId, activeSubjectScopeKey, isSavedEditor, requestedSubjectScope]); // studentCount 제거하여 수동 변경 시 데이터 덮어쓰기 방지
 
-    const saveWorkLog = async (silent = false, overrideStudents?: Student[], overrideConfig?: SubjectGlobalConfig) => {
+    const saveWorkLog = async (silent = false, overrideStudents?: Student[], overrideConfig?: SubjectGlobalConfig, overrideProject?: SubjectProjectSummary | null) => {
         if (isSavedEditor) return persistSavedEdits(overrideStudents);
         if (!userId) return false;
 
@@ -583,6 +605,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                 category: activeTabId,
                 scope_key: scopeKey,
                 scope_label: scopeLabel,
+                ...(activeTabId === "subject" ? { subject_project_id: (overrideProject === undefined ? activeSubjectProject : overrideProject)?.id ?? null } : {}),
                 data: workLogData,
                 schema_version: 2,
                 updated_at: savedAt
@@ -606,6 +629,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                     const nextLog = {
                         scopeKey,
                         scopeLabel: scopeLabel || "교과",
+                        project: overrideProject === undefined ? activeSubjectProject : overrideProject,
                         updatedAt: savedAt,
                         createdAt: currentLog?.createdAt || savedAt
                     };
@@ -694,6 +718,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         hydratedSubjectScope.current = { userId, scopeKey, epoch: workEpoch.current };
         setActiveSubjectScopeKey(scopeKey);
         setSubjectConfig(defaultConfig);
+        setActiveSubjectProject(null);
         setStudents(initialStudents);
         setSubjectLogs(prev => {
             const nextLogs = [{ scopeKey, scopeLabel: "새 교과", updatedAt: savedAt, createdAt: savedAt }, ...prev];
@@ -739,6 +764,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                 hydratedSubjectScope.current = activeSubjectScopeKey !== DEFAULT_SCOPE_KEY ? { userId, scopeKey: DEFAULT_SCOPE_KEY, epoch: workEpoch.current } : null;
                 setActiveSubjectScopeKey(DEFAULT_SCOPE_KEY);
                 setSubjectConfig(getDefaultSubjectConfig());
+                setActiveSubjectProject(null);
                 setStudents(createInitialStudents(studentCount));
             }
         }
@@ -772,6 +798,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         hydratedSubjectScope.current = activeSubjectScopeKey !== DEFAULT_SCOPE_KEY ? { userId, scopeKey: DEFAULT_SCOPE_KEY, epoch: workEpoch.current } : null;
         setActiveSubjectScopeKey(DEFAULT_SCOPE_KEY);
         setSubjectConfig(getDefaultSubjectConfig());
+        setActiveSubjectProject(null);
         setStudents(createInitialStudents(studentCount));
         setIsWorkLogLoading(false);
     });
@@ -1345,12 +1372,15 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
             const response = await creditAIFetch("/api/subject-plan/parse", {
                 method: "POST", body: formData, signal,
                 headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
-            });
+            }, SUBJECT_PLAN_TIMEOUT_MS);
             const data = await response.json().catch(() => null);
             if (epoch !== workEpoch.current || signal.aborted) return;
 
             if (response.status === 408 || response.status === 504 || data?.code === "CREDIT_IN_PROGRESS") {
                 throw new Error(SUBJECT_PLAN_TIMEOUT_MESSAGE);
+            }
+            if (response.status === 413) {
+                throw new Error("파일이 너무 커서 전송하지 못했습니다. 교과별 HWPX 파일로 나눠 가져와 주세요.");
             }
             if (!response.ok) {
                 throw new Error(typeof data?.error === "string" && data.error.trim()
@@ -1365,13 +1395,17 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                 throw new Error("평가 영역, 성취기준, 평가기준을 찾지 못했습니다.");
             }
 
-            const matches = subjects.flatMap((subject, index) => subject.subjectName.trim() === subjectConfig.subjectName.trim() ? [index] : []);
+            const target = isSavedEditor && subjects.length === 1 ? "saved" : "drafts";
             setUploadOpen(false);
+            setLogError("");
             setSubjectPlanImport({
                 subjects,
                 warnings: Array.isArray(data.warnings) ? data.warnings : [],
+                scopeKeys: subjects.map(() => crypto.randomUUID()),
+                project: { id: crypto.randomUUID(), title: file.name.replace(/\.hwpx?$/i, "").trim().slice(0, 120) || "교과 평가계획" },
             });
-            setSelectedSubjectPlanIndexes(isSavedEditor ? (matches.length === 1 ? matches : []) : subjects.map((_, index) => index));
+            setSubjectPlanTarget(target);
+            setSelectedSubjectPlanIndexes(subjectPlanSelection(subjects, target, subjectConfig.subjectName));
         } catch (error: unknown) {
             if (epoch !== workEpoch.current || signal.aborted) return;
             const message = error instanceof TypeError ? "평가계획 분석 서버와의 연결이 끊겼습니다. 잠시 후 다시 시도해주세요."
@@ -1383,8 +1417,14 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         }
     };
 
+    const changeSubjectPlanTarget = (target: SubjectPlanTarget) => {
+        if (!subjectPlanImport || target === subjectPlanTarget) return;
+        setSubjectPlanTarget(target);
+        setSelectedSubjectPlanIndexes(subjectPlanSelection(subjectPlanImport.subjects, target, subjectConfig.subjectName));
+    };
+
     const toggleSubjectPlanSelection = (index: number) => {
-        if (isSavedEditor) { setSelectedSubjectPlanIndexes([index]); return; }
+        if (applyingToSavedSubject) { setSelectedSubjectPlanIndexes([index]); return; }
         setSelectedSubjectPlanIndexes(prev => (
             prev.includes(index)
                 ? prev.filter(item => item !== index)
@@ -1473,13 +1513,13 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     };
 
     const applySubjectPlanImport = async () => {
-        if (!userId || !subjectPlanImport) return;
+        if (!userId || !subjectPlanImport || planApplyBusy) return;
         if (!selectedSubjectPlanIndexes.length) {
             alert("적용할 교과를 선택해주세요.");
             return;
         }
 
-        if (isSavedEditor) {
+        if (applyingToSavedSubject) {
             if (selectedSubjectPlanIndexes.length !== 1) { setLogError("수정 중인 저장본에 적용할 교과를 하나만 선택해주세요."); return; }
             const subject = subjectPlanImport.subjects[selectedSubjectPlanIndexes[0]];
             if (!confirm("현재 저장본의 교과·평가기준을 교체하고 학생별 상·중·하 입력을 비웁니다. 작성 문장과 개별 메모는 유지됩니다. 적용할까요?")) return;
@@ -1489,89 +1529,82 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
             setLogMessage("평가계획을 적용했습니다. 학생별 평가를 입력한 뒤 수정 내용 저장을 눌러주세요.");
             return;
         }
-        const currentSaved = hasCurrentSubjectWork() ? await saveWorkLog(true) : true;
-        if (!currentSaved) { setLogError("현재 교과를 저장하지 못했습니다. 입력을 유지했습니다. 저장을 다시 시도한 뒤 가져오기를 적용해주세요."); return; }
+        await runSubjectAction(async epoch => {
+            const project = { ...subjectPlanImport.project, title: subjectPlanImport.project.title.trim() };
+            if (!project.title) { setLogError("프로젝트명을 입력해주세요."); return; }
+            if (!isSavedEditor && hasCurrentSubjectWork() && !await saveWorkLog(true)) {
+                setLogError("현재 교과를 저장하지 못했습니다. 저장한 뒤 가져오기를 다시 적용해주세요.");
+                return;
+            }
+            if (epoch !== workEpoch.current) return;
 
-        const savedAt = new Date().toISOString();
-        const selectedSubjects = selectedSubjectPlanIndexes
-            .map(index => subjectPlanImport.subjects[index])
-            .filter(Boolean);
-
-        const importedLogs = selectedSubjects.map((subject) => {
-            const scopeKey = crypto.randomUUID();
-            const globalConfig: SubjectGlobalConfig = {
-                schoolLevel: subject.schoolLevel || subjectConfig.schoolLevel || "elementary",
-                grade: subject.grade || subjectConfig.grade || "1",
-                subjectName: subject.subjectName || "가져온 교과",
-                assessments: subject.assessments.map((assessment) => ({
-                    id: crypto.randomUUID(),
-                    area: assessment.area,
-                    standard: assessment.standard,
-                    criteria: formatCriteriaFromLevels(getCriteriaLevels(assessment)) || assessment.criteria,
-                    criteriaLevels: getCriteriaLevels(assessment),
-                    competency: assessment.competency,
-                })),
-            };
-            const nextStudents = createInitialStudents(studentCount);
-            const scopeLabel = getSubjectScopeLabel(globalConfig);
-
-            return {
-                scopeKey,
-                scopeLabel,
-                globalConfig,
-                students: nextStudents,
-                row: {
-                    user_id: userId,
-                    category: "subject",
-                    scope_key: scopeKey,
-                    scope_label: scopeLabel,
-                    data: {
-                        students: nextStudents,
-                        studentCount,
-                        charLimits,
-                        globalConfig,
-                    },
-                    schema_version: 2,
-                    updated_at: savedAt,
-                },
-            };
-        });
-
-        setIsWorkLogLoading(true);
-        const { error } = await supabase
-            .from("work_logs")
-            .upsert(importedLogs.map(log => log.row), {
-                onConflict: "user_id, category, scope_key",
+            const savedAt = new Date().toISOString();
+            const importedLogs = selectedSubjectPlanIndexes.map(index => {
+                const subject = subjectPlanImport.subjects[index];
+                const scopeKey = subjectPlanImport.scopeKeys[index];
+                const globalConfig: SubjectGlobalConfig = {
+                    schoolLevel: subject.schoolLevel || subjectConfig.schoolLevel || "elementary",
+                    grade: subject.grade || subjectConfig.grade || "1",
+                    subjectName: subject.subjectName || "가져온 교과",
+                    assessments: subject.assessments.map(assessment => {
+                        const criteriaLevels = getCriteriaLevels(assessment);
+                        return {
+                            ...assessment,
+                            id: crypto.randomUUID(),
+                            criteria: formatCriteriaFromLevels(criteriaLevels) || assessment.criteria,
+                            criteriaLevels,
+                        };
+                    }),
+                };
+                const students = createInitialStudents(studentCount);
+                const scopeLabel = getSubjectScopeLabel(globalConfig);
+                return { scopeKey, scopeLabel, globalConfig, students };
             });
 
-        if (error) {
-            console.error("Subject Plan Import Save Error:", error);
-            alert("평가계획을 적용하지 못했습니다.");
-            setIsWorkLogLoading(false);
-            return;
-        }
-
-        const firstLog = importedLogs[0];
-        setSubjectLogs(prev => {
-            const nextLogs = [
-                ...importedLogs.map(log => ({
-                    scopeKey: log.scopeKey,
-                    scopeLabel: log.scopeLabel,
-                    updatedAt: savedAt,
-                    createdAt: savedAt,
+            const { error } = await supabase.rpc("import_subject_plan_project", {
+                p_id: project.id,
+                p_title: project.title,
+                p_drafts: importedLogs.map(log => ({
+                    scope_key: log.scopeKey,
+                    scope_label: log.scopeLabel,
+                    data: { students: log.students, studentCount, charLimits, globalConfig: log.globalConfig },
                 })),
-                ...prev,
-            ];
-            writeSubjectOrder(userId, nextLogs);
-            return nextLogs;
+            });
+            if (epoch !== workEpoch.current) return;
+            if (error) {
+                setLogError("평가계획을 교과 작업에 추가하지 못했습니다. 다시 시도해주세요.");
+                return;
+            }
+
+            const firstLog = importedLogs[0];
+            setSubjectPlanImport(null);
+            setSelectedSubjectPlanIndexes([]);
+            setLogMessage(`‘${project.title}’에 ${importedLogs.length}개 교과의 평가 기준을 추가했습니다. 각 교과에서 학생별 성취수준을 입력할 수 있습니다.`);
+            if (isSavedEditor) {
+                setImportedDraftScope(firstLog.scopeKey);
+                return;
+            }
+
+            setSubjectLogs(prev => {
+                const nextLogs = [
+                    ...importedLogs.map(log => ({
+                        scopeKey: log.scopeKey,
+                        scopeLabel: log.scopeLabel,
+                        project,
+                        updatedAt: savedAt,
+                        createdAt: savedAt,
+                    })),
+                    ...prev.filter(log => !importedLogs.some(imported => imported.scopeKey === log.scopeKey)),
+                ];
+                writeSubjectOrder(userId, nextLogs);
+                return nextLogs;
+            });
+            hydratedSubjectScope.current = { userId, scopeKey: firstLog.scopeKey, epoch: workEpoch.current };
+            setActiveSubjectScopeKey(firstLog.scopeKey);
+            setActiveSubjectProject(project);
+            setSubjectConfig(firstLog.globalConfig);
+            setStudents(firstLog.students);
         });
-        hydratedSubjectScope.current = { userId, scopeKey: firstLog.scopeKey, epoch: workEpoch.current };
-        setActiveSubjectScopeKey(firstLog.scopeKey);
-        setSubjectConfig(firstLog.globalConfig);
-        setStudents(firstLog.students);
-        setSubjectPlanImport(null);
-        setSelectedSubjectPlanIndexes([]);
-        setIsWorkLogLoading(false);
     };
 
     const leaveEditor = (url: string) => {
@@ -1592,15 +1625,42 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const clearCurrentDraft = async () => {
         invalidateWorkspace(); lastSnapshot.current = null;
         const empty = createInitialStudents(studentCount), config = getDefaultSubjectConfig();
-        setStudents(empty); if (activeTabId === "subject") setSubjectConfig(config);
+        setStudents(empty);
+        if (activeTabId === "subject") { setSubjectConfig(config); setActiveSubjectProject(null); }
         setSubjectPlanImport(null); setSelectedSubjectPlanIndexes([]); setIsAddingKeyword(null); setNewKeywordInput("");
         setLogTitle(defaultWorkTitle(activeTabId as "behavior" | "subject" | "creative" | "docs"));
-        const saved = await saveWorkLog(true, empty, config);
+        const saved = await saveWorkLog(true, empty, config, null);
         if (!saved) setLogError("저장본은 보존됐지만 새 작업의 임시 저장에 실패했습니다. 화면을 유지하고 다시 저장해주세요.");
     };
     const saveSnapshot = async (startNew: boolean) => {
         if (logBusy || students.some(s => s.isGenerating) || isWorkLogLoading) return;
         if (isSavedEditor) { await persistSavedEdits(); return; }
+        if (activeTabId === "subject" && activeSubjectProject && userId) {
+            await runSubjectAction(async epoch => {
+                setLogMessage("");
+                if (!await saveWorkLog(true)) { setLogError("현재 교과를 저장하지 못했습니다. 작업을 유지했습니다."); return; }
+                if (epoch !== workEpoch.current) return;
+                const { data, error } = await supabase.from("work_logs").select("scope_key,data")
+                    .eq("user_id", userId).eq("category", "subject").eq("subject_project_id", activeSubjectProject.id)
+                    .order("scope_key");
+                if (error || !data?.length) { setLogError("묶을 교과를 불러오지 못했습니다. 다시 시도해주세요."); return; }
+                const fingerprint = stableWorkJson({ project: activeSubjectProject.id, title: logTitle.trim(), drafts: data });
+                let count = data.length;
+                if (lastSnapshot.current?.fingerprint !== fingerprint) {
+                    if (snapshotAttempt.current?.fingerprint !== fingerprint) snapshotAttempt.current = { fingerprint, id: crypto.randomUUID() };
+                    const id = snapshotAttempt.current.id;
+                    const saved = await supabase.rpc("save_subject_project", { p_source_id: activeSubjectProject.id, p_id: id, p_title: logTitle });
+                    if (saved.error || !saved.data) { setLogError("프로젝트를 저장하지 못했습니다. 다시 시도해주세요."); return; }
+                    count = saved.data;
+                    lastSnapshot.current = { fingerprint, id };
+                    snapshotAttempt.current = null;
+                }
+                if (epoch !== workEpoch.current) return;
+                if (startNew) await clearCurrentDraft();
+                setLogMessage(`‘${logTitle.trim()}’ 프로젝트의 ${count}개 교과를 작업로그에 저장했습니다.`);
+            });
+            return;
+        }
         const payload = { category: activeTabId, title: logTitle, data: currentData, source_scope_key: activeTabId === "subject" ? activeSubjectScopeKey : DEFAULT_SCOPE_KEY };
         const fingerprint = stableWorkJson(payload), epoch = workEpoch.current;
         if (lastSnapshot.current?.fingerprint === fingerprint) {
@@ -1689,7 +1749,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             <a href="/extension/bridge" target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"><PlugZap aria-hidden="true" className="size-4" />나이스 확장 연결</a>
                         </div>
                     </header>
-                    <WorkLogSessionBar saving={logBusy} editing={isSavedEditor} title={logTitle} onTitle={setLogTitle}
+                    <WorkLogSessionBar saving={logBusy} editing={isSavedEditor} project={!!activeProjectTitle && !isSavedEditor} title={logTitle} onTitle={setLogTitle}
                         busy={logBusy || isWorkLogLoading || isSubjectPlanImporting || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} dirty={editorDirty}
                         message={logMessage} error={logError} draftStatus={isSavedEditor ? undefined : draftSaveStatus} onSave={() => void saveSnapshot(false)} onSaveNew={() => void saveSnapshot(true)}
                         onReset={() => void startEmptyDraft()} onBack={() => leaveEditor("/app/logs")}
@@ -1712,6 +1772,12 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                 </DropdownMenuContent>
                             </DropdownMenu>
                         </fieldset>} />
+                    {importedDraftScope && isSavedEditor && (
+                        <a href={`/app/workspace/subject?subjectScope=${encodeURIComponent(importedDraftScope)}`} target="_blank" rel="noreferrer"
+                            className="mb-4 inline-block text-sm font-semibold text-indigo-700 underline underline-offset-4 dark:text-indigo-300">
+                            가져온 교과 작업 열기
+                        </a>
+                    )}
                     {isWorkLogLoading && logError && <Button variant="outline" onClick={() => window.location.reload()} className="mb-4">다시 불러오기</Button>}
                     {staleEdit && <button className="mb-4 text-sm text-blue-700 underline" onClick={() => { const url = URL.createObjectURL(new Blob([workLogCsv({ category: activeTabId as "behavior", data: staleEdit.data })], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href = url; a.download = `${staleEdit.title}-임시수정.csv`; a.click(); URL.revokeObjectURL(url); }}>이전 임시 수정 내보내기</button>}
                     <fieldset disabled={workspaceLocked} className="min-w-0 border-0 p-0 m-0">
@@ -1799,7 +1865,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
             {subjectPlanImport && (
                 <div className="fixed inset-0 z-[10000] bg-slate-950/50 px-4 py-6 flex items-center justify-center">
                     <div ref={planDialogRef} role="dialog" aria-modal="true" aria-labelledby="plan-import-heading" onKeyDown={event => {
-                        if (event.key === "Escape" && !isWorkLogLoading) { setSubjectPlanImport(null); setSelectedSubjectPlanIndexes([]); }
+                        if (event.key === "Escape" && !planApplyBusy) { setSubjectPlanImport(null); setSelectedSubjectPlanIndexes([]); }
                         if (event.key === "Tab") {
                             const nodes = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]')).filter(node => node.getClientRects().length);
                             const first = nodes[0], last = nodes[nodes.length - 1];
@@ -1812,7 +1878,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                 <div className="text-xs font-semibold text-indigo-500 dark:text-indigo-400">평가계획 불러오기</div>
                                 <h3 id="plan-import-heading" className="text-xl font-bold text-slate-900 dark:text-slate-100">가져온 교과</h3>
                                 <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                                    {isSavedEditor ? "현재 저장본에 적용할 교과 하나를 선택하세요. 작성 문장과 개별 메모는 유지되며, 바뀐 기준의 학생별 평가는 다시 입력합니다." : "적용할 교과를 선택하세요. 선택한 교과마다 독립된 작업을 만들며 기존 교과는 유지됩니다."}
+                                    {applyingToSavedSubject ? "현재 저장본에 적용할 교과 하나를 선택하세요. 작성 문장과 개별 메모를 유지하고 학생별 평가는 다시 입력합니다." : "선택한 교과를 한 프로젝트에 추가합니다. 학생별 상·중·하는 각 교과 작업에서 입력합니다."}
                                 </p>
                             </div>
                             <button
@@ -1822,11 +1888,33 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                     setSelectedSubjectPlanIndexes([]);
                                 }}
                                 className="size-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-500 flex items-center justify-center transition-colors"
-                                title="닫기" aria-label="평가계획 미리보기 닫기" disabled={isWorkLogLoading}
+                                title="닫기" aria-label="평가계획 미리보기 닫기" disabled={planApplyBusy}
                             >
                                 <X className="size-5" />
                             </button>
                         </div>
+
+                        {isSavedEditor && (
+                            <fieldset disabled={planApplyBusy} className="mx-8 mt-4 grid min-w-0 gap-2 rounded-xl border border-slate-200 p-3 text-sm sm:grid-cols-2 dark:border-slate-700">
+                                <legend className="px-1 font-semibold">평가계획 적용 위치</legend>
+                                <label className="flex items-center gap-2">
+                                    <input type="radio" name="subject-plan-target" checked={!applyingToSavedSubject} onChange={() => changeSubjectPlanTarget("drafts")} />
+                                    교과 작업에 추가
+                                </label>
+                                <label className="flex items-center gap-2">
+                                    <input type="radio" name="subject-plan-target" checked={applyingToSavedSubject} onChange={() => changeSubjectPlanTarget("saved")} />
+                                    현재 저장본에 교과 하나 적용
+                                </label>
+                            </fieldset>
+                        )}
+                        {!applyingToSavedSubject && <label className="mx-8 mt-4 flex items-center gap-3 text-sm font-semibold">
+                            <span className="shrink-0">프로젝트명</span>
+                            <Input value={subjectPlanImport.project.title} maxLength={120} disabled={planApplyBusy}
+                                onChange={event => {
+                                    const title = event.target.value;
+                                    setSubjectPlanImport(prev => prev ? { ...prev, project: { ...prev.project, title } } : prev);
+                                }} />
+                        </label>}
 
                         {subjectPlanImport.warnings.length > 0 && (
                             <div className="mx-8 mt-5 rounded-2xl border border-amber-100 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 px-5 py-4 text-xs font-bold leading-6 text-amber-700 dark:text-amber-200">
@@ -1836,7 +1924,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             </div>
                         )}
 
-                        <div className="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-4">
+                        <fieldset disabled={planApplyBusy} className="min-w-0 flex-1 overflow-y-auto custom-scrollbar border-0 p-8 space-y-4">
                             {subjectPlanImport.subjects.map((subject, index) => {
                                 const selected = selectedSubjectPlanIndexes.includes(index);
                                 return (
@@ -1954,8 +2042,9 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                     </div>
                                 );
                             })}
-                        </div>
+                        </fieldset>
 
+                        {logError && <p role="alert" className="px-8 pb-2 text-sm text-red-700 dark:text-red-300">{logError}</p>}
                         <div className="px-8 py-6 border-t border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">
                                 {selectedSubjectPlanIndexes.length}개 교과 선택
@@ -1964,7 +2053,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    disabled={isWorkLogLoading}
+                                    disabled={planApplyBusy}
                                     onClick={() => {
                                         setSubjectPlanImport(null);
                                         setSelectedSubjectPlanIndexes([]);
@@ -1975,12 +2064,12 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                 </Button>
                                 <Button
                                     type="button"
-                                    disabled={isWorkLogLoading || selectedSubjectPlanIndexes.length === 0}
+                                    disabled={planApplyBusy || selectedSubjectPlanIndexes.length === 0 || (!applyingToSavedSubject && !subjectPlanImport.project.title.trim())}
                                     onClick={applySubjectPlanImport}
                                     className="h-12 rounded-xl px-8 font-semibold bg-indigo-600 text-white hover:bg-indigo-700 gap-2"
                                 >
-                                    {isWorkLogLoading ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                                    {isSavedEditor ? "평가기준 적용" : "선택한 교과 추가"}
+                                    {planApplyBusy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                                    {applyingToSavedSubject ? "평가기준 적용" : "선택한 교과 추가"}
                                 </Button>
                             </div>
                         </div>

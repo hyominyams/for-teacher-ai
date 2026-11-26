@@ -7,9 +7,10 @@ import { parse } from "kordoc";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject } from "@/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 210;
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_MARKDOWN_LENGTH = 60_000;
 const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx"]);
 
 type SubjectPlanExtraction = {
@@ -175,7 +176,7 @@ const buildPrompt = (markdown: string, hints: { schoolLevel: string; grade: stri
 - 현재 교과명: ${hints.subjectName || ""}
 
 Markdown:
-${markdown.slice(0, 60000)}
+${markdown}
 `.trim();
 
 export async function POST(req: Request) {
@@ -212,6 +213,10 @@ export async function POST(req: Request) {
 
         const markdown = parseResult.markdown.trim();
         const parseWarnings = (parseResult.warnings || []).map((warning) => warning.message);
+        const truncated = markdown.length > MAX_MARKDOWN_LENGTH;
+        if (truncated) {
+            parseWarnings.unshift("문서가 길어 앞부분만 분석했습니다. 빠진 교과가 있다면 교과별 HWPX 파일로 나눠 가져와 주세요.");
+        }
         if (markdown.length < 40) {
             return NextResponse.json(
                 { error: "텍스트를 읽을 수 없습니다. 다른 파일을 업로드해주세요." },
@@ -228,7 +233,7 @@ export async function POST(req: Request) {
                     role: "system",
                     content: "대한민국 학교 평가계획 문서에서 교과별 평가정보를 정확히 추출하는 데이터 정리 도우미입니다.",
                 },
-                { role: "user", content: buildPrompt(markdown, hints) },
+                { role: "user", content: buildPrompt(markdown.slice(0, MAX_MARKDOWN_LENGTH), hints) },
             ],
             temperature: 0,
             response_format: {
@@ -243,7 +248,12 @@ export async function POST(req: Request) {
         return await runCreditJob(req, user, "subject_plan", { markdown, hints, workLogId: formData.get("workLogId") }, [callBudget(params)], async complete => {
             const parsed = JSON.parse(completionText(await complete(params))) as SubjectPlanExtraction;
             const subjects = normalizeSubjects(parsed, hints);
-            if (!subjects.length) throw new CreditError("AI_INCOMPLETE", "평가 영역, 성취기준, 평가기준을 찾지 못했습니다. 크레딧은 차감하지 않습니다.", 400);
+            if (!subjects.length) {
+                const message = truncated
+                    ? "문서 앞부분에서 평가기준을 찾지 못했습니다. 교과별 HWPX 파일로 나눠 가져와 주세요."
+                    : "평가 영역, 성취기준, 평가기준을 찾지 못했습니다.";
+                throw new CreditError("AI_INCOMPLETE", `${message} 크레딧은 차감하지 않습니다.`, 400);
+            }
             return { subjects, warnings: parseWarnings };
         });
     } catch (error: unknown) {

@@ -14,7 +14,20 @@ export async function GET(req: Request) {
         if (search) query = query.ilike("title", `%${search.replace(/[\\%_]/g, "\\$&")}%`);
         const { data, count, error } = await query.order("updated_at", { ascending: false }).order("id", { ascending: false }).range(page * 30, page * 30 + 29);
         if (error) throw error;
-        return NextResponse.json({ logs: data || [], total: count || 0 }, { headers: { "Cache-Control": "no-store" } });
+        const logs = data || [];
+        const subjectIds = logs.filter(log => log.category === "subject").map(log => log.id);
+        const projects = new Map<string, { id: string; title: string }>();
+        if (subjectIds.length > 0) {
+            const links = await client.from("subject_project_saved_logs")
+                .select("saved_log_id,project:subject_projects(id,title)")
+                .eq("user_id", user.id).in("saved_log_id", subjectIds);
+            if (links.error) throw links.error;
+            for (const link of links.data || []) {
+                const project = Array.isArray(link.project) ? link.project[0] : link.project;
+                if (project) projects.set(link.saved_log_id, project);
+            }
+        }
+        return NextResponse.json({ logs: logs.map(log => ({ ...log, project: projects.get(log.id) })), total: count || 0 }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) { return workLogFailure(error); }
 }
 export async function POST(req: Request) {

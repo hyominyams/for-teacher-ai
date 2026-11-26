@@ -1,12 +1,12 @@
 "use client";
 import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Archive, Download, Edit3, FilePlus2, Loader2, LockKeyhole, Search, X } from "lucide-react";
+import { Archive, ChevronDown, Download, Edit3, FilePlus2, Folder, Loader2, LockKeyhole, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WorkLogCard } from "@/components/workspace/WorkLogCard";
 import { supabase } from "@/lib/supabase";
 import { getSavedWorkLog, listSavedWorkLogs, workLogRequest } from "@/lib/work-log-client";
-import { normalizeWorkData, WORK_CATEGORIES, workLogCsv } from "@/lib/work-logs";
+import { groupSavedWorkLogs, normalizeWorkData, WORK_CATEGORIES, workLogCsv } from "@/lib/work-logs";
 import type { SavedWorkLog, WorkLogSummary } from "@/lib/work-logs";
 const dateLabel = (v: string) => new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(v));
 
@@ -65,6 +65,14 @@ function WorkLogs() {
         finally { setArchiveTarget(null); setBusy(false); }
     };
     const closePreview = () => { setSelected(null); if (viewId) router.replace("/app/logs"); };
+    const { projects, ungrouped } = groupSavedWorkLogs(logs);
+    const renderLog = (log: WorkLogSummary) => (
+        <WorkLogCard key={log.id} log={log} busy={busy} dateLabel={dateLabel(log.updated_at)}
+            onPreview={() => void openPreview(log.id)}
+            onEdit={() => router.push(`/app/workspace/${log.category}?log=${encodeURIComponent(log.id)}`)}
+            onExport={() => void exportLog(log.id)}
+            onArchive={() => setArchiveTarget(log)} />
+    );
     const dialogClass = "fixed inset-0 m-auto max-w-none overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50 dark:border-slate-700 dark:bg-slate-950 dark:text-white";
     return <main className="min-h-screen bg-slate-50 px-4 pb-20 pt-28 md:px-10 dark:bg-slate-950"><div className="mx-auto max-w-7xl">
         <header className="mb-7 flex flex-wrap items-end justify-between gap-5"><div><p className="mb-2 text-xs font-semibold text-blue-600 dark:text-blue-400">선생님의 작성 기록</p><h1 className="text-3xl font-bold tracking-tight">작업로그</h1><p className="mt-3 text-sm leading-6 text-slate-500">저장본을 다시 열어 수정하거나, 완성된 기록을 보관하세요.</p></div><Button onClick={() => router.push("/app")} className="h-11 gap-2 rounded-xl"><FilePlus2 className="size-4" />작성 화면으로</Button></header>
@@ -73,13 +81,20 @@ function WorkLogs() {
             <div className="flex flex-wrap gap-3 border-b border-slate-100 p-4 md:px-6 dark:border-slate-800"><label className="flex min-w-48 flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 dark:border-slate-700"><Search className="size-4 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="작업 이름 검색" aria-label="작업 이름 검색" className="h-10 w-full bg-transparent text-sm outline-none" /></label><select aria-label="영역 필터" value={category} onChange={e => { setCategory(e.target.value); setPage(0); }} className="rounded-lg border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"><option value="all">모든 영역</option>{Object.entries(WORK_CATEGORIES).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div>
             {error && <div role="alert" className="m-4 rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{error}<button onClick={() => setRefresh(v => v + 1)} className="ml-3 underline">다시 불러오기</button></div>}{message && <p role="status" className="m-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">{message}</p>}
             {state === "archived" && <p className="mx-6 mt-4 text-xs leading-6 text-slate-500">보관본은 열람과 내보내기만 가능합니다. 제목 변경, AI 재생성, 내용 수정, 보관 해제와 삭제는 할 수 없습니다.</p>}
-            {loading && !page ? <div role="status" className="flex justify-center gap-3 p-16 text-sm text-slate-500"><Loader2 className="size-5 animate-spin" />기록을 불러오고 있습니다.</div> : !logs.length && !error ? <div className="px-6 py-20 text-center"><Archive className="mx-auto mb-4 size-9 text-slate-300" /><h2 className="font-semibold">{query || category !== "all" ? "조건에 맞는 기록이 없습니다." : state === "archived" ? "아직 보관한 기록이 없습니다." : "아직 저장된 작업로그가 없습니다."}</h2><p className="mt-3 text-sm text-slate-500">{state === "editable" ? "작성 화면에서 ‘작업로그에 저장’을 누르면 이곳에 쌓입니다." : "기록보기 탭에서 ‘보관하기’를 선택하세요."}</p></div> : <div className="grid grid-cols-1 gap-4 bg-slate-50/70 p-4 dark:bg-slate-950/40 md:grid-cols-2 md:gap-5 md:p-6 xl:grid-cols-3">{logs.map(log => (
-                <WorkLogCard key={log.id} log={log} busy={busy} dateLabel={dateLabel(log.updated_at)}
-                    onPreview={() => void openPreview(log.id)}
-                    onEdit={() => router.push(`/app/workspace/${log.category}?log=${encodeURIComponent(log.id)}`)}
-                    onExport={() => void exportLog(log.id)}
-                    onArchive={() => setArchiveTarget(log)} />
-            ))}</div>}
+            {loading && !page ? <div role="status" className="flex justify-center gap-3 p-16 text-sm text-slate-500"><Loader2 className="size-5 animate-spin" />기록을 불러오고 있습니다.</div> : !logs.length && !error ? <div className="px-6 py-20 text-center"><Archive className="mx-auto mb-4 size-9 text-slate-300" /><h2 className="font-semibold">{query || category !== "all" ? "조건에 맞는 기록이 없습니다." : state === "archived" ? "아직 보관한 기록이 없습니다." : "아직 저장된 작업로그가 없습니다."}</h2><p className="mt-3 text-sm text-slate-500">{state === "editable" ? "작성 화면에서 ‘작업로그에 저장’을 누르면 이곳에 쌓입니다." : "기록보기 탭에서 ‘보관하기’를 선택하세요."}</p></div> : <div className="grid grid-cols-1 gap-4 bg-slate-50/70 p-4 dark:bg-slate-950/40 md:grid-cols-2 md:gap-5 md:p-6 xl:grid-cols-3">
+                {projects.map(({ project, logs: projectLogs }) => (
+                    <details key={project.id} className="group col-span-full rounded-2xl border border-indigo-200 bg-white dark:border-indigo-900 dark:bg-slate-900">
+                        <summary className="flex cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden">
+                            <Folder aria-hidden="true" className="size-5 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                            <span className="min-w-0 flex-1 break-words font-semibold">{project.title}</span>
+                            <span className="text-sm text-slate-500">{projectLogs.length}개 교과</span>
+                            <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-slate-500 group-open:rotate-180" />
+                        </summary>
+                        <div className="grid grid-cols-1 gap-4 border-t border-slate-100 p-4 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-3">{projectLogs.map(renderLog)}</div>
+                    </details>
+                ))}
+                {ungrouped.map(renderLog)}
+            </div>}
             {logs.length < total && <div className="border-t border-slate-100 p-5 text-center"><Button variant="outline" onClick={() => setPage(v => v + 1)} disabled={loading}>{loading ? "불러오는 중" : "기록 더 보기"}</Button></div>}
         </section></div>
         <dialog ref={preview} onCancel={e => { e.preventDefault(); closePreview(); }} onClose={() => setSelected(null)} aria-labelledby="log-preview-title" className={`${dialogClass} max-h-[90dvh] w-[min(1000px,calc(100vw-24px))]`}>

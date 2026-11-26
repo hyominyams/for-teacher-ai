@@ -252,13 +252,24 @@ async function loadSelectedLog() {
 }
 
 function applyLoadedLog(log) {
-  loadedLog = log;
+  const project = logs.find(item => item.id === log.id)?.project;
+  loadedLog = { ...log, ...(project ? { project } : {}) };
   records = workLogToRecords(log.category, log.data, log.title);
   renderLogInfo(); renderRecords(getCategoryLabel());
 }
 
 function renderLogList() {
-  workLog.innerHTML = logs.length ? logs.map(log => `<option value="${escapeHTML(log.id)}">${escapeHTML(log.title)} · ${log.completed_count}명 · ${escapeHTML(formatDate(log.updated_at))}</option>`).join("") : '<option value="">저장된 작업로그 없음</option>';
+  const projects = new Map();
+  const ungrouped = [];
+  const option = log => `<option value="${escapeHTML(log.id)}">${escapeHTML(log.title)} · ${log.completed_count}명 · ${escapeHTML(formatDate(log.updated_at))}</option>`;
+  for (const log of logs) {
+    if (!log.project?.id || !log.project?.title) { ungrouped.push(option(log)); continue; }
+    const project = projects.get(log.project.id);
+    if (project) project.options.push(option(log));
+    else projects.set(log.project.id, { title: log.project.title, options: [option(log)] });
+  }
+  const grouped = [...projects.values()].map(project => `<optgroup label="${escapeHTML(project.title)}">${project.options.join("")}</optgroup>`);
+  workLog.innerHTML = logs.length ? [...grouped, ...ungrouped].join("") : '<option value="">저장된 작업로그 없음</option>';
   pageInfo.parentElement?.classList.toggle("hidden", total <= 30);
   pageInfo.textContent = `${page + 1} / ${Math.max(1, Math.ceil(total / 30))}쪽 · ${total}개`;
   renderLogInfo(); renderControls();
@@ -281,7 +292,10 @@ function formatDate(value) {
 }
 function getCategoryLabel() {
   const baseLabel = category.options[category.selectedIndex]?.text || category.value;
-  return activeSource === "web" && loadedLog ? `${baseLabel} · ${loadedLog.title}${loadedLog.archived_at ? " (보관본)" : ""}` : getFileBucket()?.label || `${baseLabel} · 내 파일`;
+  if (activeSource === "web" && loadedLog) {
+    return `${loadedLog.project?.title || baseLabel} · ${loadedLog.title}${loadedLog.archived_at ? " (보관본)" : ""}`;
+  }
+  return getFileBucket()?.label || `${baseLabel} · 내 파일`;
 }
 function renderAccount() {
   const email = session?.user?.email || "";

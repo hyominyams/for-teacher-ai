@@ -2,17 +2,10 @@ import { callBudget, completionText, creditFailure, creditUser, CreditError, rea
 import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { runRecordContinuation } from "@/lib/server/record-continuation";
 import { MAX_EXISTING_RECORD_CHARS } from "@/lib/record-generation";
+import type { AchievementLevel, SubjectAssessmentInfo } from "@/types";
 import { OpenAI } from "openai";
 import fs from "fs";
 import path from "path";
-
-type SubjectAssessment = {
-    id: string;
-    area: string;
-    standard: string;
-    criteria: string;
-    competency: string;
-};
 
 type StudentAssessment = {
     assessmentId: string;
@@ -21,17 +14,14 @@ type StudentAssessment = {
 
 const ACHIEVEMENT_LEVELS = ["상", "중", "하"] as const;
 
-const getCriteriaForLevel = (criteria: string, level: string) => {
-    if (!ACHIEVEMENT_LEVELS.some((item) => item === level)) return criteria;
+const getCriteriaForLevel = ({ criteria, criteriaLevels }: SubjectAssessmentInfo, level: AchievementLevel) => {
+    const explicit = criteriaLevels?.[level]?.trim();
+    if (explicit) return explicit;
 
-    const levelIndex = ACHIEVEMENT_LEVELS.findIndex((item) => item === level);
-    const nextLevel = ACHIEVEMENT_LEVELS[levelIndex + 1];
-    const pattern = nextLevel
-        ? new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*?)(?=\\n\\s*${nextLevel}\\s*[):：:\\-])`)
-        : new RegExp(`(?:^|\\n)\\s*${level}\\s*[):：:\\-]\\s*([\\s\\S]*)`);
-    const match = criteria.match(pattern);
-
-    return match?.[1]?.trim() || criteria;
+    // Older records can store the levels together in the criteria text.
+    const sections = [...(criteria || "").matchAll(/(?:^|\n)[^\S\n]*([상중하])[^\S\n]*[):：-]([\s\S]*?)(?=\n[^\S\n]*[상중하][^\S\n]*[):：-]|$)/g)];
+    if (sections.length) return sections.find((section) => section[1] === level)?.[2].trim() || "";
+    return criteria;
 };
 
 export const maxDuration = 90;
@@ -78,17 +68,18 @@ export async function POST(req: Request) {
             if (subjectMeta) {
                 const { schoolLevel, grade, subjectName, assessments, studentAssessments, individualNote } = subjectMeta;
 
-                const assessmentsText = ((assessments || []) as SubjectAssessment[]).map((a) => {
-                    const studentLevel = ((studentAssessments || []) as StudentAssessment[]).find((sa) => sa.assessmentId === a.id)?.level;
-                    if (!studentLevel || !ACHIEVEMENT_LEVELS.some(level => level === studentLevel)) return null;
-                    const criteria = getCriteriaForLevel(a.criteria, studentLevel);
+                const assessmentsText = ((assessments || []) as SubjectAssessmentInfo[]).flatMap((a) => {
+                    const selectedLevel = ((studentAssessments || []) as StudentAssessment[]).find((sa) => sa.assessmentId === a.id)?.level;
+                    const studentLevel = ACHIEVEMENT_LEVELS.find((level) => level === selectedLevel);
+                    if (!studentLevel) return [];
+                    const criteria = getCriteriaForLevel(a, studentLevel);
 
                     return `- 영역: ${a.area}
   - 성취기준: ${a.standard}
-  - 평가기준: ${criteria}
+  - 평가기준: ${criteria ?? ""}
   - 핵심역량: ${a.competency}
   - 성취도: ${studentLevel}`;
-                }).filter(Boolean).join("\n\n");
+                }).join("\n\n");
 
                 const subjectData = `
 학교급: ${schoolLevel}
@@ -100,19 +91,19 @@ export async function POST(req: Request) {
 ${assessmentsText || "선택된 평가 항목이 없습니다."}
                 `.trim();
 
-                prompt = prompt.replace("[SUBJECT_DATA]", subjectData);
+                prompt = prompt.replace("[SUBJECT_DATA]", () => subjectData);
             }
         }
 
         const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
             model: "gpt-6-luna",
-            reasoning_effort: "none",
+            reasoning_effort: category === "subject" ? "low" : "none",
             max_completion_tokens: Math.min(32768, Math.max(1024, targetChars * 4 + 256)),
             messages: [
                 { role: "system", content: "당신은 학생 생활기록부를 전문적으로 작성하는 대한민국 교사입니다. 학생의 이름이나 번호를 절대 언급하지 마세요." },
                 { role: "user", content: prompt }
             ],
-            temperature: 0.7,
+            ...(category === "subject" ? {} : { temperature: 0.7 }),
         };
         return await runCreditJob(req, user, "generate", raw, [callBudget(params)], async complete => ({ result: completionText(await complete(params)) }));
     } catch (error: unknown) {

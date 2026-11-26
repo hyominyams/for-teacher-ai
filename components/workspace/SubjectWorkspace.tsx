@@ -91,6 +91,7 @@ interface SubjectWorkspaceProps {
     subjectLogs: Array<{
         scopeKey: string;
         scopeLabel: string;
+        project?: { id: string; title: string } | null;
         updatedAt?: string;
         createdAt?: string;
     }>;
@@ -358,6 +359,13 @@ export const SubjectWorkspace = ({
                 : displayLabel,
         };
     });
+    const subjectProjects = new Map<string, { title?: string; logs: typeof subjectSelectItems }>();
+    for (const log of subjectSelectItems) {
+        const key = log.project?.id ?? "";
+        const group = subjectProjects.get(key);
+        if (group) group.logs.push(log);
+        else subjectProjects.set(key, { title: log.project?.title, logs: [log] });
+    }
     const selectedStudentCount = students.filter(s => s.selected).length;
 
     const handleSubjectDragStart = (event: React.DragEvent<HTMLButtonElement>, scopeKey: string) => {
@@ -489,8 +497,12 @@ export const SubjectWorkspace = ({
                         )}
                     </div>
                     {!savedEditor && (
-                    <div role="group" aria-label="교과 선택 · 드래그해서 순서 변경" className="custom-scrollbar flex flex-nowrap gap-2 overflow-x-auto overflow-y-hidden border-t border-indigo-100 pb-1 pr-1 pt-3 dark:border-indigo-900">
-                        {subjectSelectItems.map(log => {
+                    <div role="group" aria-label="교과 선택 · 드래그해서 순서 변경" className="space-y-2 border-t border-indigo-100 pb-1 pr-1 pt-3 dark:border-indigo-900">
+                        {[...subjectProjects].map(([key, project]) => (
+                          <div key={key} className="min-w-0 space-y-1">
+                            {project.title && <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">{project.title}</p>}
+                            <div className="custom-scrollbar flex flex-nowrap gap-2 overflow-x-auto pb-1">
+                              {project.logs.map(log => {
                             const isActive = log.scopeKey === activeSubjectScopeKey;
                             const isRealSubjectLog = subjectLogs.some(subjectLog => subjectLog.scopeKey === log.scopeKey);
                             const isDragging = draggedSubjectScopeKey === log.scopeKey;
@@ -532,7 +544,10 @@ export const SubjectWorkspace = ({
                                     </span>
                                 </button>
                             );
-                        })}
+                              })}
+                            </div>
+                          </div>
+                        ))}
                     </div>
                     )}
                 </section>

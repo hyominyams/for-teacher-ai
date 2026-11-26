@@ -53,7 +53,7 @@ export function SubjectPlanUploadDialog({ busy, error, onFileChange, onStart, on
                 <div role="status" className="flex flex-col items-center gap-3 py-12 text-center">
                     <Loader2 aria-hidden="true" className="size-8 animate-spin text-indigo-600 dark:text-indigo-300" />
                     <p className="font-semibold">평가계획 분석 중</p>
-                    <p className="text-sm text-muted-foreground">문서가 길면 1분 이상 걸릴 수 있습니다.</p>
+                    <p className="text-sm text-muted-foreground">문서가 길면 몇 분 걸릴 수 있습니다.</p>
                 </div>
             ) : (
                 <>

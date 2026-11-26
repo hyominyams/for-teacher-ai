@@ -8,7 +8,20 @@ export type SavedWorkLog = {
     source_scope_key: string; legacy_work_log_id?: string | null; student_count: number; completed_count: number;
     archived_at: string | null; created_at: string; updated_at: string;
 };
-export type WorkLogSummary = Omit<SavedWorkLog, "data">;
+export type SubjectProjectSummary = { id: string; title: string };
+export type WorkLogSummary = Omit<SavedWorkLog, "data"> & { project?: SubjectProjectSummary };
+
+export function groupSavedWorkLogs(logs: WorkLogSummary[]) {
+    const projects = new Map<string, { project: SubjectProjectSummary; logs: WorkLogSummary[] }>();
+    const ungrouped: WorkLogSummary[] = [];
+    for (const log of logs) {
+        if (!log.project) { ungrouped.push(log); continue; }
+        const entry = projects.get(log.project.id);
+        if (entry) entry.logs.push(log);
+        else projects.set(log.project.id, { project: log.project, logs: [log] });
+    }
+    return { projects: [...projects.values()], ungrouped };
+}
 export const isUuid = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 export const isWorkCategory = (value: unknown): value is WorkCategory => typeof value === "string" && Object.hasOwn(WORK_CATEGORIES, value);
 
