@@ -35,6 +35,7 @@ import { ClassPolishControl } from "@/components/workspace/ClassPolishControl";
 import type { PolishCategory } from "@/lib/class-polish";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
+import { SubjectPlanUploadDialog } from "@/components/workspace/SubjectPlanUploadDialog";
 import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
 import { PlaceholderWorkspace } from "@/components/workspace/PlaceholderWorkspace";
 import { studentKeywordPool, defaultKeywords } from "@/lib/constants/behavior-keywords";
@@ -50,6 +51,10 @@ type SubjectPlanImportResult = {
     subjects: ParsedSubjectPlanSubject[];
     warnings: string[];
 };
+
+// Allow the server's 120-second window plus time for upload and connection overhead.
+const SUBJECT_PLAN_TIMEOUT_MS = 150_000;
+const SUBJECT_PLAN_TIMEOUT_MESSAGE = "평가계획 분석 응답을 기다리는 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.";
 
 const features = [
     {
@@ -284,6 +289,9 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const restoredSubjectUser = useRef<string | null>(null);
     const hydratedSubjectScope = useRef<{ userId: string; scopeKey: string; epoch: number } | null>(null);
     const [isWorkLogLoading, setIsWorkLogLoading] = useState(true);
+    const [uploadOpen, setUploadOpen] = useState(false);
+    const [planUploadError, setPlanUploadError] = useState("");
+    const planAbort = useRef<AbortController | null>(null);
     const [isSubjectPlanImporting, setIsSubjectPlanImporting] = useState(false);
     const [subjectPlanImport, setSubjectPlanImport] = useState<SubjectPlanImportResult | null>(null);
     const [selectedSubjectPlanIndexes, setSelectedSubjectPlanIndexes] = useState<number[]>([]);
@@ -1297,15 +1305,30 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         finally { setLogBusy(false); }
     };
 
-    const handleSubjectPlanUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        e.target.value = "";
-        if (!file) return;
-        if (isWorkLogLoading || logBusy || isSubjectPlanImporting) { setLogError("진행 중인 작업이 끝난 뒤 파일을 다시 선택해주세요."); return; }
-
-        const epoch = workEpoch.current, signal = aiAbort.current.signal;
+    const handleSubjectPlanUpload = async (file: File) => {
+        if (isWorkLogLoading || logBusy || planAbort.current) return;
+        const epoch = workEpoch.current;
+        const controller = new AbortController();
+        planAbort.current = controller;
+        const signal = AbortSignal.any([aiAbort.current.signal, controller.signal]);
+        const timeout = new DOMException(SUBJECT_PLAN_TIMEOUT_MESSAGE, "TimeoutError");
+        const timer = window.setTimeout(() => controller.abort(timeout), SUBJECT_PLAN_TIMEOUT_MS);
+        const finish = () => {
+            window.clearTimeout(timer);
+            if (planAbort.current === controller) {
+                planAbort.current = null;
+                setIsSubjectPlanImporting(false);
+            }
+        };
+        const onAbort = () => {
+            if (signal.reason === timeout && planAbort.current === controller && epoch === workEpoch.current) {
+                setPlanUploadError(timeout.message);
+            }
+            finish();
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
         setIsSubjectPlanImporting(true);
-        setLogError("");
+        setPlanUploadError("");
         setSubjectPlanImport(null);
         setSelectedSubjectPlanIndexes([]);
 
@@ -1318,34 +1341,45 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
 
             const { data: { session } } = await supabase.auth.getSession();
             if (requestedLogId) formData.append("workLogId", requestedLogId);
-            if (epoch !== workEpoch.current) return;
+            if (epoch !== workEpoch.current || signal.aborted) return;
             const response = await creditAIFetch("/api/subject-plan/parse", {
                 method: "POST", body: formData, signal,
                 headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
             });
-            const data = await response.json();
+            const data = await response.json().catch(() => null);
             if (epoch !== workEpoch.current || signal.aborted) return;
 
+            if (response.status === 408 || response.status === 504 || data?.code === "CREDIT_IN_PROGRESS") {
+                throw new Error(SUBJECT_PLAN_TIMEOUT_MESSAGE);
+            }
             if (!response.ok) {
-                throw new Error(data.error || "평가계획을 읽을 수 없습니다.");
+                throw new Error(typeof data?.error === "string" && data.error.trim()
+                    ? data.error : "평가계획 분석을 완료하지 못했습니다. 잠시 후 다시 시도해주세요.");
+            }
+            if (!Array.isArray(data?.subjects)) {
+                throw new Error("평가계획 분석 응답을 읽을 수 없습니다. 잠시 후 다시 시도해주세요.");
             }
 
-            const subjects = (data.subjects || []) as ParsedSubjectPlanSubject[];
+            const subjects = data.subjects as ParsedSubjectPlanSubject[];
             if (!subjects.length) {
                 throw new Error("평가 영역, 성취기준, 평가기준을 찾지 못했습니다.");
             }
 
+            const matches = subjects.flatMap((subject, index) => subject.subjectName.trim() === subjectConfig.subjectName.trim() ? [index] : []);
+            setUploadOpen(false);
             setSubjectPlanImport({
                 subjects,
                 warnings: Array.isArray(data.warnings) ? data.warnings : [],
             });
-            const matches = subjects.flatMap((subject, index) => subject.subjectName.trim() === subjectConfig.subjectName.trim() ? [index] : []);
             setSelectedSubjectPlanIndexes(isSavedEditor ? (matches.length === 1 ? matches : []) : subjects.map((_, index) => index));
         } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : "평가계획을 읽을 수 없습니다.";
-            if (epoch === workEpoch.current && !signal.aborted) setLogError(message);
+            if (epoch !== workEpoch.current || signal.aborted) return;
+            const message = error instanceof TypeError ? "평가계획 분석 서버와의 연결이 끊겼습니다. 잠시 후 다시 시도해주세요."
+                : error instanceof Error ? error.message : "평가계획을 읽을 수 없습니다.";
+            setPlanUploadError(message);
         } finally {
-            if (epoch === workEpoch.current) setIsSubjectPlanImporting(false);
+            signal.removeEventListener("abort", onAbort);
+            finish();
         }
     };
 
@@ -1592,9 +1626,13 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         }
         setStudentCount(count);
     };
-    const cancelSubjectPlanImport = () => {
-        invalidateWorkspace(); setIsSubjectPlanImporting(false); setSubjectPlanImport(null); setSelectedSubjectPlanIndexes([]);
-        setLogMessage("평가계획 분석을 취소했습니다. 기존 입력은 유지됩니다.");
+    const closePlanUpload = () => {
+        if (planAbort.current) {
+            planAbort.current.abort();
+            setLogMessage("평가계획 분석을 취소했습니다.");
+        }
+        setUploadOpen(false);
+        setPlanUploadError("");
     };
     const startEmptyDraft = async () => {
         if (!confirm("현재 입력을 비우고 새 작업을 시작하시겠습니까? 작업로그에 저장된 기록은 바뀌지 않습니다.")) return;
@@ -1617,12 +1655,11 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const workspaceLocked = isWorkLogLoading || logBusy || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId);
     const planImportAction = activeTabId === "subject" ? (
         <>
-            <Button type="button" variant="outline" onClick={() => document.getElementById("subject-plan-upload")?.click()} disabled={isSubjectPlanImporting}
+            <Button type="button" variant="outline" onClick={() => { setPlanUploadError(""); setUploadOpen(true); }} disabled={workspaceLocked || isSubjectPlanImporting}
                 className={cn(workspaceToolButtonClassName, "border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 dark:border-indigo-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40")}>
                 {isSubjectPlanImporting ? <Loader2 aria-hidden="true" className="animate-spin" /> : <FileSearch aria-hidden="true" />}
                 {isSubjectPlanImporting ? "평가계획 분석 중…" : <>평가계획 가져오기<span className="font-medium text-indigo-500 dark:text-indigo-400">HWPX</span></>}
             </Button>
-            {isSubjectPlanImporting && <Button type="button" variant="outline" onClick={cancelSubjectPlanImport} className={workspaceToolButtonClassName}>분석 취소</Button>}
         </>
     ) : null;
 
@@ -1678,7 +1715,6 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                     {isWorkLogLoading && logError && <Button variant="outline" onClick={() => window.location.reload()} className="mb-4">다시 불러오기</Button>}
                     {staleEdit && <button className="mb-4 text-sm text-blue-700 underline" onClick={() => { const url = URL.createObjectURL(new Blob([workLogCsv({ category: activeTabId as "behavior", data: staleEdit.data })], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href = url; a.download = `${staleEdit.title}-임시수정.csv`; a.click(); URL.revokeObjectURL(url); }}>이전 임시 수정 내보내기</button>}
                     <fieldset disabled={workspaceLocked} className="min-w-0 border-0 p-0 m-0">
-                        {activeTabId === "subject" && <input type="file" id="subject-plan-upload" accept=".hwpx,.hwp" className="hidden" onChange={handleSubjectPlanUpload} />}
                         {activeTabId === "behavior" ? (
                             <BehaviorWorkspace
                             polishAction={polishAction}
@@ -1758,6 +1794,8 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                 </div>
             </main>
 
+            {uploadOpen && <SubjectPlanUploadDialog busy={isSubjectPlanImporting} error={planUploadError}
+                onFileChange={() => setPlanUploadError("")} onStart={handleSubjectPlanUpload} onClose={closePlanUpload} />}
             {subjectPlanImport && (
                 <div className="fixed inset-0 z-[10000] bg-slate-950/50 px-4 py-6 flex items-center justify-center">
                     <div ref={planDialogRef} role="dialog" aria-modal="true" aria-labelledby="plan-import-heading" onKeyDown={event => {

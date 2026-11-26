@@ -686,7 +686,7 @@ export const SubjectWorkspace = ({
                     <div className="w-fit min-w-full">
                         <div className={cn(workspaceStickyHeadClassName(isExpanded, tableFit), "rounded-t-xl")}>
                             <div
-                                className={cn("grid items-center gap-4 px-5 py-2.5", workspaceTableHeadClassName)}
+                                className={cn("grid items-center gap-4 px-[21px] py-2.5 sm:px-[25px]", workspaceTableHeadClassName)}
                                 style={{ gridTemplateColumns: gridTemplateCols }}
                             >
                                 <div className="flex items-center justify-center">
@@ -819,8 +819,9 @@ export const SubjectWorkspace = ({
                                             value={student.subjectData?.individualNote || ""}
                                             onChange={(e) => handleNoteChange(student.id, e.target.value)}
                                             aria-label={`${student.id}번 학생 개별 특이사항`}
+                                            rows={1}
                                             placeholder="학생 관찰 특이사항..."
-                                            className="h-9 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 outline-none transition-[height,border-color] placeholder:text-slate-400 focus:h-24 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:ring-indigo-900/50"
+                                            className="block h-9 w-full resize-none overflow-y-hidden rounded-xl border border-slate-200 bg-white px-3 py-[7px] focus:overflow-y-auto text-xs font-medium leading-5 text-slate-700 outline-none transition-[height,border-color] placeholder:text-slate-400 focus:h-24 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:ring-indigo-900/50"
                                         />
                                     </div>
 
