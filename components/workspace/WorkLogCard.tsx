@@ -33,22 +33,35 @@ export function WorkLogCard({ log, busy, dateLabel, onPreview, onEdit, onExport,
             <div aria-hidden="true" className={`absolute inset-x-6 top-0 h-1 rounded-b-full ${style.line}`} />
             <div className="flex flex-wrap items-center gap-2">
                 <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${style.badge}`}>
-                    <Icon aria-hidden="true" className="size-3.5" />{title !== category && category}
+                    <Icon aria-hidden="true" className="size-3.5" />{category}
                 </span>
-                {title === category && <h2 className="text-lg font-bold tracking-tight">{title}</h2>}
                 {log.archived_at && <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"><LockKeyhole className="size-3" />읽기 전용</span>}
             </div>
-            {title !== category && <h2 className="mt-3 break-words text-lg font-bold leading-7 tracking-tight text-slate-900 dark:text-slate-100">{title}</h2>}
+            <h2 className="mt-3 break-words text-lg font-bold leading-7 tracking-tight text-slate-900 dark:text-slate-100">{title}</h2>
             <time dateTime={log.updated_at} className="mt-2 flex items-center gap-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400"><CalendarDays className="size-3.5 shrink-0" />{dateLabel}</time>
-            <div className="mt-auto space-y-2 pt-5">
-                <div className={`grid gap-2 ${canEdit ? "grid-cols-2" : "grid-cols-1"}`}>
-                    <Button variant="outline" onClick={onPreview} disabled={busy} className="h-11 gap-2 rounded-xl"><Eye className="size-4" />보기</Button>
-                    {canEdit && <Button onClick={onEdit} disabled={busy} className="h-11 gap-2 rounded-xl bg-sky-600 text-white hover:bg-sky-700"><Edit3 className="size-4" />편집하기</Button>}
+            <div className="mt-auto flex items-start gap-2 pt-5">
+                <Button variant="outline" onClick={onPreview} disabled={busy} className="h-11 min-w-0 flex-1 gap-1.5 rounded-full px-2 text-xs shadow-none">
+                    <Eye aria-hidden="true" />보기
+                </Button>
+                {canEdit && (
+                    <Button onClick={onEdit} disabled={busy} className="h-11 min-w-0 flex-1 gap-1.5 rounded-full bg-sky-600 px-2 text-xs text-white shadow-none hover:bg-sky-700">
+                        <Edit3 aria-hidden="true" />편집하기
+                    </Button>
+                )}
+                <div className="flex shrink-0 flex-col items-center gap-1.5">
+                    <Button variant="outline" size="icon" onClick={onExport} disabled={busy || !log.completed_count} aria-label="내보내기" title="CSV 내보내기" className="size-11 rounded-2xl text-slate-500 shadow-none dark:text-slate-400">
+                        <Download aria-hidden="true" />
+                    </Button>
+                    <span aria-hidden="true" className="text-[10px] leading-4 text-slate-500 dark:text-slate-400">내보내기</span>
                 </div>
-                <div className={`grid gap-2 border-t border-slate-100 pt-2 dark:border-slate-800 ${log.archived_at ? "grid-cols-1" : "grid-cols-2"}`}>
-                    <Button variant="ghost" onClick={onExport} disabled={busy || !log.completed_count} className="h-9 gap-1.5 rounded-lg px-2 text-xs text-slate-600 dark:text-slate-300"><Download className="size-3.5" />내보내기</Button>
-                    {!log.archived_at && <Button variant="ghost" onClick={onArchive} disabled={busy} className="h-9 gap-1.5 rounded-lg px-2 text-xs text-slate-500 dark:text-slate-400"><Archive className="size-3.5" />보관하기</Button>}
-                </div>
+                {!log.archived_at && (
+                    <div className="flex shrink-0 flex-col items-center gap-1.5">
+                        <Button variant="outline" size="icon" onClick={onArchive} disabled={busy} aria-label="보관하기" title="보관하기" className="size-11 rounded-2xl text-slate-500 shadow-none dark:text-slate-400">
+                            <Archive aria-hidden="true" />
+                        </Button>
+                        <span aria-hidden="true" className="text-[10px] leading-4 text-slate-500 dark:text-slate-400">보관하기</span>
+                    </div>
+                )}
             </div>
         </article>
     );
