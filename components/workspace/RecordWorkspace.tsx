@@ -28,9 +28,9 @@ import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Studen
 import { WorkLogSessionBar } from "@/components/workspace/WorkLogSessionBar";
 import { WorkspaceButton, WorkspaceNumberSelect, workspaceToolButtonClassName } from "@/components/workspace/WorkspaceControls";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getSavedWorkLog, workLogRequest, WorkLogError } from "@/lib/work-log-client";
+import { getSavedWorkLog, listSubjectProjectLogs, workLogRequest, WorkLogError } from "@/lib/work-log-client";
 import { defaultWorkTitle, normalizeWorkData, type WorkCategory, workFingerprint, workLogCsv, stableWorkJson } from "@/lib/work-logs";
-import type { SavedWorkLog, SubjectProjectSummary } from "@/lib/work-logs";
+import type { SavedWorkLog, SubjectProjectSummary, WorkLogSummary } from "@/lib/work-logs";
 import { ClassPolishControl } from "@/components/workspace/ClassPolishControl";
 import type { PolishCategory } from "@/lib/class-polish";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
@@ -264,6 +264,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const aiAbort = useRef(new AbortController());
     const [workspaceVersion, setWorkspaceVersion] = useState(0);
     const [savedLog, setSavedLog] = useState<SavedWorkLog | null>(null);
+    const [savedProjectSubjects, setSavedProjectSubjects] = useState<{ id: string; logs: WorkLogSummary[]; error?: string } | null>(null);
     const savedLogRef = useRef<SavedWorkLog | null>(null);
     const [savedBaseline, setSavedBaseline] = useState("");
     const [logTitle, setLogTitle] = useState("");
@@ -328,6 +329,9 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
 
     const currentData = useMemo(() => normalizeWorkData({ ...(isSavedEditor ? savedLog?.data : {}), students, studentCount, charLimits, ...(activeTabId === "subject" ? { globalConfig: subjectConfig } : {}) }, activeTabId as keyof typeof import("@/lib/work-logs").WORK_CATEGORIES), [students, studentCount, charLimits, activeTabId, subjectConfig, savedLog, isSavedEditor]);
     const editorDirty = isSavedEditor && loadedSavedId === requestedLogId && workFingerprint(currentData, logTitle) !== savedBaseline;
+    const savedEditorProject = loadedSavedId === requestedLogId ? savedLog?.project : undefined;
+    const savedEditorProjectId = savedEditorProject?.id;
+    const projectSubjects = savedProjectSubjects?.id === savedEditorProjectId ? savedProjectSubjects : null;
     const editCacheKey = userId && requestedLogId ? `ftai:saved-edit:${userId}:${requestedLogId}` : null;
 
     const activeProjectTitle = activeTabId === "subject" ? activeSubjectProject?.title : undefined;
@@ -363,6 +367,17 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     }, [userId, requestedLogId, router]);
 
     useEffect(() => {
+        if (!savedEditorProjectId) return;
+        const abort = new AbortController();
+        listSubjectProjectLogs(savedEditorProjectId, abort.signal).then(logs => {
+            if (!abort.signal.aborted) setSavedProjectSubjects({ id: savedEditorProjectId, logs });
+        }).catch(error => {
+            if (!abort.signal.aborted) setSavedProjectSubjects({ id: savedEditorProjectId, logs: [], error: error instanceof Error ? error.message : "교과 목록을 불러오지 못했습니다." });
+        });
+        return () => abort.abort();
+    }, [savedEditorProjectId]);
+
+    useEffect(() => {
         if (!editCacheKey || !savedLog || loadedSavedId !== requestedLogId || isWorkLogLoading) return;
         try {
             if (editorDirty) sessionStorage.setItem(editCacheKey, JSON.stringify({ revision: savedLog.revision, title: logTitle, data: currentData }));
@@ -391,7 +406,10 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
             setLogBusy(true); setLogError("");
             try {
                 const updated = await workLogRequest<SavedWorkLog>(`/api/work-logs/${log.id}`, { method: "PUT", body: JSON.stringify({ id: log.id, category: log.category, revision: log.revision, title, data: snapshot }) });
-                if (epoch === workEpoch.current) { savedLogRef.current = updated; setSavedLog(updated); setSavedBaseline(workFingerprint(snapshot, title)); }
+                if (epoch === workEpoch.current) {
+                    const response = { ...updated, project: log.project };
+                    savedLogRef.current = response; setSavedLog(response); setSavedBaseline(workFingerprint(snapshot, title));
+                }
                 if (editCacheKey) sessionStorage.removeItem(editCacheKey);
                 if (epoch === workEpoch.current) setLogMessage("수정 내용을 작업로그에 저장했습니다."); return true;
             } catch (e) { setLogError(e instanceof Error ? e.message : "저장하지 못했습니다."); return false; }
@@ -1749,7 +1767,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             <a href="/extension/bridge" target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"><PlugZap aria-hidden="true" className="size-4" />나이스 확장 연결</a>
                         </div>
                     </header>
-                    <WorkLogSessionBar saving={logBusy} editing={isSavedEditor} project={!!activeProjectTitle && !isSavedEditor} title={logTitle} onTitle={setLogTitle}
+                    <WorkLogSessionBar saving={logBusy} editing={isSavedEditor} project={!!activeProjectTitle && !isSavedEditor} singleSubject={activeTabId === "subject"} title={logTitle} onTitle={setLogTitle}
                         busy={logBusy || isWorkLogLoading || isSubjectPlanImporting || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} dirty={editorDirty}
                         message={logMessage} error={logError} draftStatus={isSavedEditor ? undefined : draftSaveStatus} onSave={() => void saveSnapshot(false)} onSaveNew={() => void saveSnapshot(true)}
                         onReset={() => void startEmptyDraft()} onBack={() => leaveEditor("/app/logs")}
@@ -1772,6 +1790,25 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                 </DropdownMenuContent>
                             </DropdownMenu>
                         </fieldset>} />
+                    {savedEditorProject && (
+                        <nav aria-label="프로젝트 교과 선택" className="mb-4 rounded-2xl border border-indigo-100 bg-white px-4 py-3 dark:border-indigo-900 dark:bg-slate-900">
+                            <p className="mb-2 text-sm font-semibold text-indigo-800 dark:text-indigo-200">{savedEditorProject.title}</p>
+                            {projectSubjects?.error ? <p role="alert" className="text-sm text-red-700 dark:text-red-300">{projectSubjects.error}</p> : projectSubjects ? (
+                                <div className="flex flex-wrap gap-2">
+                                    {projectSubjects.logs.map(log => {
+                                        const active = log.id === requestedLogId;
+                                        return <button key={log.id} type="button" aria-current={active ? "page" : undefined}
+                                            disabled={workspaceLocked || isSubjectPlanImporting}
+                                            onClick={() => { if (!active) leaveEditor(`/app/workspace/subject?log=${encodeURIComponent(log.id)}`); }}
+                                            className={cn("min-h-9 rounded-xl border px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-50",
+                                                active ? "border-indigo-600 bg-indigo-600 text-white" : "border-indigo-100 bg-white text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-slate-950 dark:text-indigo-200 dark:hover:bg-indigo-950")}>
+                                            {active ? subjectConfig.subjectName || log.title : log.subject_name || log.title}
+                                        </button>;
+                                    })}
+                                </div>
+                            ) : <p role="status" className="text-xs text-slate-500">교과 목록을 불러오고 있습니다.</p>}
+                        </nav>
+                    )}
                     {importedDraftScope && isSavedEditor && (
                         <a href={`/app/workspace/subject?subjectScope=${encodeURIComponent(importedDraftScope)}`} target="_blank" rel="noreferrer"
                             className="mb-4 inline-block text-sm font-semibold text-indigo-700 underline underline-offset-4 dark:text-indigo-300">

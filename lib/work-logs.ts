@@ -3,13 +3,14 @@ import type { Student, SubjectGlobalConfig } from "@/types";
 export const WORK_CATEGORIES = { behavior: "행동특성", subject: "학기말 종합의견", creative: "창의적 체험활동", docs: "문서" } as const;
 export type WorkCategory = keyof typeof WORK_CATEGORIES;
 export type WorkLogData = { students: Student[]; studentCount: number; charLimits: Record<string, number>; charLimit?: number; globalConfig?: SubjectGlobalConfig };
+export type SubjectProjectSummary = { id: string; title: string };
 export type SavedWorkLog = {
     id: string; category: WorkCategory; title: string; revision: number; data: WorkLogData;
     source_scope_key: string; legacy_work_log_id?: string | null; student_count: number; completed_count: number;
     archived_at: string | null; created_at: string; updated_at: string;
+    project?: SubjectProjectSummary;
 };
-export type SubjectProjectSummary = { id: string; title: string };
-export type WorkLogSummary = Omit<SavedWorkLog, "data"> & { project?: SubjectProjectSummary };
+export type WorkLogSummary = Omit<SavedWorkLog, "data"> & { subject_name?: string | null };
 
 export function groupSavedWorkLogs(logs: WorkLogSummary[]) {
     const projects = new Map<string, { project: SubjectProjectSummary; logs: WorkLogSummary[] }>();

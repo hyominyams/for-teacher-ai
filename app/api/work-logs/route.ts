@@ -10,7 +10,7 @@ export async function GET(req: Request) {
         const state = params.get("state") || "editable", category = params.get("category"), search = (params.get("q") || "").trim().slice(0, 100);
         const projectId = params.get("project");
         if (projectId !== null && !isUuid(projectId)) return NextResponse.json({ error: "프로젝트를 다시 선택해주세요." }, { status: 400 });
-        const columns = "id,category,title,revision,source_scope_key,legacy_work_log_id,student_count,completed_count,archived_at,created_at,updated_at";
+        const columns = "id,category,title,revision,source_scope_key,legacy_work_log_id,student_count,completed_count,archived_at,created_at,updated_at,subject_name:data->globalConfig->>subjectName";
         const table = client.from("saved_work_logs");
         let query = (projectId
             ? table.select(`${columns},membership:subject_project_saved_logs!inner()` as const, { count: "exact" })

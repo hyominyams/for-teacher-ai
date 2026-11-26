@@ -12,3 +12,15 @@ export async function workLogRequest<T>(url: string, options: RequestInit = {}):
 }
 export const getSavedWorkLog = (id: string, signal?: AbortSignal) => workLogRequest<SavedWorkLog>(`/api/work-logs/${encodeURIComponent(id)}`, { signal });
 export const listSavedWorkLogs = (query: URLSearchParams, signal?: AbortSignal) => workLogRequest<{ logs: WorkLogSummary[]; total: number }>(`/api/work-logs?${query}`, { signal });
+
+export async function listSubjectProjectLogs(projectId: string, signal?: AbortSignal) {
+    const subjects = new Map<string, WorkLogSummary>();
+    for (let page = 0; page <= 100; page++) {
+        const { logs, total } = await listSavedWorkLogs(new URLSearchParams({ project: projectId, category: "subject", state: "editable", page: String(page) }), signal);
+        const previous = subjects.size;
+        for (const log of logs) if (log.category === "subject" && log.project?.id === projectId) subjects.set(log.id, log);
+        if (subjects.size >= total) return [...subjects.values()];
+        if (subjects.size === previous) break;
+    }
+    throw new Error("프로젝트의 교과 목록을 불러오지 못했습니다. 다시 불러와 주세요.");
+}

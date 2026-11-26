@@ -26,7 +26,8 @@ export function WorkLogCard({ log, busy, dateLabel, onPreview, onEdit, onExport,
     const style = categoryStyles[log.category];
     const Icon = style.icon;
     const category = WORK_CATEGORIES[log.category];
-    const title = log.title.replace(/ · \d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.?(?:\s+\d{1,2}:\d{2})?$/, "") || category;
+    const displayTitle = log.project && log.subject_name ? log.subject_name : log.title;
+    const title = displayTitle.replace(/ · \d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.?(?:\s+\d{1,2}:\d{2})?$/, "") || category;
     const canEdit = !log.archived_at && log.category !== "docs";
     return (
         <article className="relative flex min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900 sm:p-6">

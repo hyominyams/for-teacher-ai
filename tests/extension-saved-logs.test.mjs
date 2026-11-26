@@ -83,15 +83,19 @@ test('all categories select independent saved logs; old unowned cache is discard
   assert.equal(t.calls.every(c => !c.options.method || c.options.method === 'GET'), true);
 });
 
-test('archive is read-only, explicitly marked, and still exportable', async () => {
-  const a = log('archived', 'creative', true);
-  const t = await setup({ handler: url => url.includes('?') ? { logs: [a], total: 1 } : a });
-  await t.emit('category', 'change', 'creative'); await t.emit('logState', 'change', 'archived'); await t.emit('loadWebData');
-  assert.match(t.element('logInfo').textContent, /보관본 · 읽기 전용/);
+test('archived records stay out of the chooser and cannot enter the paste panel', async () => {
+  const active = log('active');
+  const archived = log('archived', 'behavior', true);
+  let moved = false;
+  const t = await setup({ handler: url => url.includes('?') ? { logs: [active, archived], total: 2 } : { ...active, archived_at: moved ? archived.archived_at : null } });
+  assert.deepEqual(t.element('workLog').options.map(o => o.value), ['active']);
+  await t.emit('loadWebData');
+  assert.equal(t.element('recordCount').textContent, '2명');
+  moved = true;
   await t.emit('openOverlay');
-  assert.equal(t.injections[0].args[1].category, 'creative');
-  assert.match(t.injections[0].args[1].categoryLabel, /보관본/);
-  assert.ok(t.calls.some(c => c.url.includes('state=archived')));
+  assert.equal(t.injections.length, 0);
+  assert.equal(t.element('openOverlay').disabled, true);
+  assert.ok(t.calls[0].url.includes('state=editable'));
 });
 
 test('empty refresh and failed refresh invalidate old loaded results', async () => {
@@ -181,10 +185,10 @@ test('upgrading never reuses legacy web records even if the old popup had switch
   assert.equal(t.data.neisUploadRecords, undefined);
 });
 
-test('loading a project presents every subject tab and opens only the selected records', async () => {
+test('selecting a project immediately presents every subject tab and loads only the selected records', async () => {
   const project = { id: 'project-1', title: '2학기 <6학년>' };
-  const math = { ...log('math', 'subject'), project };
-  const korean = { ...log('korean', 'subject'), project };
+  const math = { ...log('math', 'subject'), project, subject_name: '수학' };
+  const korean = { ...log('korean', 'subject'), project, subject_name: '국어' };
   const t = await setup({
     saved: { neisUploadCategory: 'subject' },
     handler: url => {
@@ -196,8 +200,8 @@ test('loading a project presents every subject tab and opens only the selected r
   });
   assert.match(t.element('workLog').innerHTML, /2학기 &lt;6학년&gt;/);
   assert.deepEqual(t.element('workLog').options.map(option => option.value), ['project:project-1']);
-  await t.emit('loadWebData');
   assert.deepEqual(t.element('subjectTabs').tabs.map(tab => tab.dataset.logId), ['math', 'korean']);
+  assert.match(t.element('subjectTabs').innerHTML, />국어<\/button>/);
   assert.equal(t.element('recordCount').textContent, '0명');
   assert.equal(t.element('openOverlay').disabled, true);
   assert.ok(t.calls.some(c => c.url.includes('project=project-1') && c.url.includes('page=1')));
@@ -211,7 +215,7 @@ test('loading a project presents every subject tab and opens only the selected r
   assert.match(t.element('recordTable').innerHTML, /korean 학생 1 결과/);
   assert.doesNotMatch(t.element('recordTable').innerHTML, /math 학생/);
   await t.emit('openOverlay');
-  assert.equal(t.injections[0].args[1].categoryLabel, '2학기 <6학년> · korean 반');
+  assert.equal(t.injections[0].args[1].categoryLabel, '2학기 <6학년> · 국어');
   assert.ok(t.injections[0].args[1].records.every(r => r.text.startsWith('korean')));
 });
 
@@ -224,7 +228,6 @@ test('a late result cannot replace a newer subject tab selection', async () => {
     saved: { neisUploadCategory: 'subject' },
     handler: url => url.includes('?') ? { logs: [math, korean], total: 2 } : url.endsWith('/math') ? pending.promise : korean,
   });
-  await t.emit('loadWebData');
   const [mathTab, koreanTab] = t.element('subjectTabs').tabs;
   const loading = t.emit('subjectTabs', 'click', undefined, { target: mathTab }); await tick();
   assert.equal(t.element('openOverlay').disabled, true);
@@ -235,4 +238,14 @@ test('a late result cannot replace a newer subject tab selection', async () => {
   await t.emit('logoutWebApp');
   assert.equal(t.element('subjectTabs').tabs.length, 0);
   assert.equal(t.element('openOverlay').disabled, true);
+});
+
+test('a standalone subject also waits for its named tab before reading student results', async () => {
+  const only = { ...log('korean', 'subject'), title: '학기말 종합의견', subject_name: '국어' };
+  const t = await setup({ saved: { neisUploadCategory: 'subject' }, handler: url => url.includes('?') ? { logs: [only], total: 1 } : only });
+  assert.match(t.element('subjectTabs').innerHTML, />국어<\/button>/);
+  assert.equal(t.calls.length, 1);
+  assert.equal(t.element('openOverlay').disabled, true);
+  await t.emit('subjectTabs', 'click', undefined, { target: t.element('subjectTabs').tabs[0] });
+  assert.match(t.element('recordTable').innerHTML, /korean 학생 1 결과/);
 });

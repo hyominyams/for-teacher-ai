@@ -81,7 +81,7 @@ async function harness(saved = {}) {
 
 const session = { access_token: "test-token", user: { id: "test-owner", email: "teacher@example.test" } };
 
-test("saved/archived log selection, paging and latest revision review survive file feature merge", async () => {
+test("saved log selection, paging and latest revision review survive file feature merge", async () => {
   const h = await harness({ forteacherSession: session, neisUploadRecords: [{ id: "99", text: "stale web" }] });
   assert.equal(h.storage.neisUploadRecords, undefined);
   assert.ok(h.element("openOverlay").disabled);
@@ -96,18 +96,16 @@ test("saved/archived log selection, paging and latest revision review survive fi
   await h.click("openOverlay");
   assert.equal(h.injections[0][1].records[0].text, "최신 윤문 결과");
   assert.equal(h.injections[0][1].matchStudentNumber, false);
-  await h.change("logState", "archived");
-  await h.click("loadWebData");
-  assert.match(h.element("logInfo").textContent, /보관본 · 읽기 전용/);
   await h.click("nextPage");
   assert.match(h.requests.at(-1).url, /page=1/);
   await h.change("category", "subject");
   assert.equal(h.element("recordCount").textContent, "0명");
-  await h.click("loadWebData");
-  assert.match(h.element("recordTable").innerHTML, /subject-archived 결과/);
+  assert.match(h.element("subjectTabs").innerHTML, /subject editable/);
+  await h.context.loadLogDetail("subject-editable", true);
+  assert.match(h.element("recordTable").innerHTML, /subject-editable 결과/);
   assert.ok(h.requests.every((request) => request.options.cache === "no-store"));
   assert.ok(!JSON.stringify(h.storage).includes("최신 윤문 결과"));
-  assert.ok(!JSON.stringify(h.storage).includes("subject-archived 결과"));
+  assert.ok(!JSON.stringify(h.storage).includes("subject-editable 결과"));
 });
 
 test("file buckets persist independently, failed imports preserve data, and logout clears students", async () => {

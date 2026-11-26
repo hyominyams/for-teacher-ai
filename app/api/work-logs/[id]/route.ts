@@ -11,6 +11,13 @@ export async function GET(req: Request, context: Context) {
         const { data, error } = await client.from("saved_work_logs").select("*").eq("id", id).eq("user_id", user.id).maybeSingle();
         if (error) throw error;
         if (!data) throw new WorkLogAccessError("작업로그를 찾을 수 없습니다.", 404, "WORK_LOG_NOT_FOUND");
+        if (data.category === "subject") {
+            const links = await client.from("subject_project_saved_logs").select("project:subject_projects(id,title)")
+                .eq("user_id", user.id).eq("saved_log_id", id).maybeSingle();
+            if (links.error) throw links.error;
+            const project = Array.isArray(links.data?.project) ? links.data.project[0] : links.data?.project;
+            if (project) return NextResponse.json({ ...data, project }, { headers: { "Cache-Control": "no-store" } });
+        }
         return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
     } catch (error) { return workLogFailure(error); }
 }

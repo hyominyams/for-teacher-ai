@@ -4,7 +4,7 @@ import { AlertCircle, ArrowLeft, Check, Circle, Ellipsis, FilePlus2, Loader2, Pe
 import { cn } from "@/lib/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { WorkspaceButton, workspaceCardClassName, workspaceControlClassName } from "./WorkspaceControls";
-type Props = { draftStatus?: string; editing: boolean; project?: boolean; title: string; onTitle: (value: string) => void; busy: boolean; saving?: boolean; dirty: boolean; message: string; error: string; onSave: () => void; onSaveNew: () => void; onReset: () => void; onBack: () => void; settings?: ReactNode };
+type Props = { draftStatus?: string; editing: boolean; project?: boolean; singleSubject?: boolean; title: string; onTitle: (value: string) => void; busy: boolean; saving?: boolean; dirty: boolean; message: string; error: string; onSave: () => void; onSaveNew: () => void; onReset: () => void; onBack: () => void; settings?: ReactNode };
 export function WorkLogSessionBar(p: Props) {
     const failed = !p.editing && p.draftStatus?.includes("실패");
     const savingDraft = !p.editing && p.draftStatus?.includes("저장 중");
@@ -30,7 +30,7 @@ export function WorkLogSessionBar(p: Props) {
             </div>
             {p.settings}
             <div className="flex items-center gap-2">
-                <WorkspaceButton onClick={p.onSave} disabled={p.busy || !p.title.trim()} className="flex-1 sm:flex-none">{p.busy ? <Loader2 aria-hidden="true" className="animate-spin" /> : <Save aria-hidden="true" />}{p.editing ? "수정 내용 저장" : p.project ? "프로젝트 저장" : "작업로그 저장"}</WorkspaceButton>
+                <WorkspaceButton onClick={p.onSave} disabled={p.busy || !p.title.trim()} className="flex-1 sm:flex-none">{p.busy ? <Loader2 aria-hidden="true" className="animate-spin" /> : <Save aria-hidden="true" />}{p.editing ? "수정 내용 저장" : p.project ? "프로젝트 저장" : p.singleSubject ? "현재 교과 저장" : "작업로그 저장"}</WorkspaceButton>
                 {p.editing ? <WorkspaceButton variant="outline" onClick={p.onBack} disabled={p.saving} className="border-slate-200 dark:border-slate-700"><ArrowLeft aria-hidden="true" />목록으로</WorkspaceButton> : (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>

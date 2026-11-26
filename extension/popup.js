@@ -31,7 +31,7 @@ const downloadTemplate = $("downloadTemplate"), fileHelp = $("fileHelp");
 const recordCount = $("recordCount"), recordSummary = $("recordSummary"), recordTable = $("recordTable");
 const delay = $("delay"), accountState = $("accountState"), accountBadge = $("accountBadge");
 const connectWebApp = $("connectWebApp"), logoutWebApp = $("logoutWebApp");
-const category = $("category"), logState = $("logState"), workLog = $("workLog"), logInfo = $("logInfo");
+const category = $("category"), workLog = $("workLog"), logInfo = $("logInfo");
 const refreshLogs = $("refreshLogs"), previousPage = $("previousPage"), nextPage = $("nextPage"), pageInfo = $("pageInfo");
 const loadWebData = $("loadWebData"), resetData = $("resetData");
 const webSourcePanel = $("webSourcePanel"), csvSourcePanel = $("csvSourcePanel");
@@ -99,11 +99,10 @@ on(category, "change", async () => {
   await chrome.storage.local.set({ neisUploadCategory: category.value });
   if (activeSource === "web") await loadLogList();
 } );
-on(logState, "change", () => { page = 0; return loadLogList(); });
 on(refreshLogs, "click", () => { page = 0; return loadLogList(); });
 on(previousPage, "click", () => { page = Math.max(0, page - 1); return loadLogList(); });
 on(nextPage, "click", () => { page += 1; return loadLogList(); });
-on(workLog, "change", () => { invalidate(); setStatus("선택한 작업로그를 불러오세요."); });
+on(workLog, "change", prepareSelectedLog);
 
 on(subjectTabs, "click", event => {
   const id = event.target.closest("button[data-log-id]")?.dataset.logId;
@@ -192,6 +191,7 @@ on(openOverlay, "click", async () => {
       const current = await requestLog(`/api/work-logs/${encodeURIComponent(loadedLog.id)}`);
       if (requestEpoch !== epoch) return;
       if (current.category !== category.value || current.id !== loadedLog.id) throw new Error("작업로그를 다시 선택하세요.");
+      if (current.archived_at) throw new Error("보관함으로 이동한 기록입니다. 저장본을 다시 선택하세요.");
       if (current.revision !== loadedLog.revision) {
         applyLoadedLog(current);
         setStatus("작업로그가 변경되어 최신 내용을 불러왔습니다. 목록을 확인한 뒤 다시 패널을 띄우세요.");
@@ -252,12 +252,13 @@ async function loadLogList() {
   logs = []; total = 0; busy = true; renderLogList();
   setStatus("작업로그 목록을 불러오는 중입니다.");
   try {
-    const params = new URLSearchParams({ category: category.value, state: logState.value, page: String(page) });
+    const params = new URLSearchParams({ category: category.value, state: "editable", page: String(page) });
     const body = await requestLog(`/api/work-logs?${params}`);
     if (requestEpoch !== epoch) return;
-    logs = Array.isArray(body.logs) ? body.logs : []; total = body.total || 0;
+    logs = Array.isArray(body.logs) ? body.logs.filter(log => log.category === category.value && !log.archived_at) : []; total = body.total || 0;
     renderLogList();
-    setStatus(logs.length ? "작업로그를 고른 뒤 선택한 작업로그 불러오기를 누르세요." : "저장된 작업로그가 없습니다. 웹앱에서 작업로그에 저장을 먼저 눌러주세요.");
+    if (logs.length) await prepareSelectedLog();
+    else setStatus("저장된 작업로그가 없습니다. 웹앱의 작업로그에 먼저 저장하세요.");
   } catch (error) { if (requestEpoch === epoch) setStatus(`목록을 불러오지 못했습니다: ${error.message}`); }
   finally { if (requestEpoch === epoch) { busy = false; renderControls(); } }
 }
@@ -265,8 +266,23 @@ async function loadLogList() {
 async function loadSelectedLog() {
   const key = workLog.value;
   if (!key || busy) return;
-  const project = logs.find(log => log.project && key === `project:${log.project.id}`)?.project;
-  return project ? loadProject(project) : loadLogDetail(key);
+  return category.value === "subject" ? prepareSelectedLog() : loadLogDetail(key);
+}
+
+async function prepareSelectedLog() {
+  const key = workLog.value;
+  if (category.value === "subject") {
+    const project = logs.find(log => log.project && key === `project:${log.project.id}`)?.project;
+    if (project) return loadProject(project);
+    const subject = logs.find(log => log.id === key);
+    if (subject) {
+      invalidate();
+      showSubjectTabs({ title: subject.title }, [subject]);
+      return;
+    }
+  }
+  invalidate();
+  if (key) setStatus("선택한 작업로그를 불러오세요.");
 }
 
 async function loadProject(project) {
@@ -277,13 +293,13 @@ async function loadProject(project) {
     let projectPage = 0;
     let projectTotal;
     do {
-      const params = new URLSearchParams({ project: project.id, category: "subject", state: logState.value, page: String(projectPage++) });
+      const params = new URLSearchParams({ project: project.id, category: "subject", state: "editable", page: String(projectPage++) });
       const body = await requestLog(`/api/work-logs?${params}`);
       if (requestEpoch !== epoch) return;
       const list = body.logs;
       projectTotal = Number(body.total);
       if (!Array.isArray(list) || !Number.isInteger(projectTotal) || projectTotal < 0
-        || list.some(log => log.category !== "subject" || log.project?.id !== project.id)) {
+        || list.some(log => log.category !== "subject" || log.archived_at || log.project?.id !== project.id)) {
         throw new Error("프로젝트 목록을 새로고침한 뒤 다시 선택하세요.");
       }
       const count = members.size;
@@ -291,12 +307,16 @@ async function loadProject(project) {
       if (members.size === count && count < projectTotal) throw new Error("교과 목록이 바뀌었습니다. 다시 불러오세요.");
     } while (members.size < projectTotal && projectPage <= 100);
     if (members.size < projectTotal) throw new Error("교과 목록을 모두 불러오지 못했습니다.");
-    loadedProject = project;
-    subjectLogs = [...members.values()];
-    renderSubjectTabs(); renderLogInfo(); renderRecords();
-    setStatus(subjectLogs.length ? "붙여넣을 교과를 탭에서 선택하세요." : "이 프로젝트에 불러올 교과가 없습니다.");
+    showSubjectTabs(project, [...members.values()]);
   } catch (error) { if (requestEpoch === epoch) setStatus(`프로젝트를 불러오지 못했습니다: ${error.message}`); }
   finally { if (requestEpoch === epoch) { busy = false; renderControls(); } }
+}
+
+function showSubjectTabs(project, members) {
+  loadedProject = project;
+  subjectLogs = members;
+  renderSubjectTabs(); renderLogInfo(); renderRecords(); renderControls();
+  setStatus(subjectLogs.length ? "붙여넣을 교과를 탭에서 선택하세요." : "이 프로젝트에 불러올 교과가 없습니다.");
 }
 
 async function loadLogDetail(id, keepProject = false) {
@@ -310,6 +330,7 @@ async function loadLogDetail(id, keepProject = false) {
     const log = await requestLog(`/api/work-logs/${encodeURIComponent(id)}`);
     if (requestEpoch !== epoch) return;
     if (log.id !== id || log.category !== category.value) throw new Error("작업로그 영역이 일치하지 않습니다.");
+    if (log.archived_at) throw new Error("보관함으로 이동한 기록입니다. 저장본을 다시 선택하세요.");
     applyLoadedLog(log);
     setStatus(records.length ? `${records.length}명의 작성 결과를 불러왔습니다.` : "이 작업로그에는 작성 결과가 없습니다.");
   } catch (error) { if (requestEpoch === epoch) setStatus(`작업로그를 불러오지 못했습니다: ${error.message}`); }
@@ -317,8 +338,8 @@ async function loadLogDetail(id, keepProject = false) {
 }
 
 function applyLoadedLog(log) {
-  const project = subjectLogs.find(item => item.id === log.id)?.project || logs.find(item => item.id === log.id)?.project;
-  loadedLog = { ...log, ...(project ? { project } : {}) };
+  const summary = subjectLogs.find(item => item.id === log.id) || logs.find(item => item.id === log.id);
+  loadedLog = { ...log, project: summary?.project || log.project, subjectName: log.data.globalConfig?.subjectName || summary?.subject_name };
   records = workLogToRecords(log.category, log.data, log.title);
   renderLogInfo(); renderRecords(getCategoryLabel());
 }
@@ -342,15 +363,15 @@ function renderLogList() {
 }
 function renderLogInfo() {
   const log = loadedLog || logs.find(log => log.id === workLog.value);
-  if (log) logInfo.textContent = `${log.archived_at ? "보관본 · 읽기 전용" : "저장본"} · ${formatDate(log.updated_at)} 저장 · 작성 ${log.completed_count}/${log.student_count}명`;
-  else if (loadedProject) logInfo.textContent = `${logState.value === "archived" ? "보관본" : "저장본"} · ${subjectLogs.length}개 교과`;
+  if (log) logInfo.textContent = `저장본 · ${formatDate(log.updated_at)} 저장 · 작성 ${log.completed_count}/${log.student_count}명`;
+  else if (loadedProject) logInfo.textContent = `저장본 · ${subjectLogs.length}개 교과`;
   else logInfo.textContent = "웹앱에서 작업로그에 저장한 결과를 선택하세요.";
 }
 
 function renderSubjectTabs() {
   projectSubjects.classList.toggle("hidden", !loadedProject || !subjectLogs.length);
   projectTitle.textContent = loadedProject?.title || "";
-  subjectTabs.innerHTML = subjectLogs.map(log => `<button type="button" class="subject-tab" role="tab" id="subject-tab-${escapeHTML(log.id)}" data-log-id="${escapeHTML(log.id)}" aria-controls="recordPanel">${escapeHTML(log.title)}</button>`).join("");
+  subjectTabs.innerHTML = subjectLogs.map(log => `<button type="button" class="subject-tab" role="tab" id="subject-tab-${escapeHTML(log.id)}" data-log-id="${escapeHTML(log.id)}" aria-controls="recordPanel">${escapeHTML(log.subject_name || log.title)}</button>`).join("");
   updateSubjectSelection();
 }
 
@@ -373,6 +394,7 @@ function updateSubjectSelection() {
 function renderControls() {
   workLog.disabled = busy || !logs.length;
   loadWebData.disabled = busy || !workLog.value;
+  loadWebData.classList.toggle("hidden", category.value === "subject" && !!loadedProject);
   refreshLogs.disabled = busy;
   previousPage.disabled = busy || page <= 0;
   nextPage.disabled = busy || (page + 1) * 30 >= total || page >= 100;
@@ -385,7 +407,7 @@ function formatDate(value) {
 function getCategoryLabel() {
   const baseLabel = category.options[category.selectedIndex]?.text || category.value;
   if (activeSource === "web" && loadedLog) {
-    return `${loadedLog.project?.title || baseLabel} · ${loadedLog.title}${loadedLog.archived_at ? " (보관본)" : ""}`;
+    return `${loadedLog.project?.title || baseLabel} · ${loadedLog.subjectName || loadedLog.title}`;
   }
   return getFileBucket()?.label || `${baseLabel} · 내 파일`;
 }
