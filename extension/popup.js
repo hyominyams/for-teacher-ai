@@ -35,9 +35,12 @@ const category = $("category"), logState = $("logState"), workLog = $("workLog")
 const refreshLogs = $("refreshLogs"), previousPage = $("previousPage"), nextPage = $("nextPage"), pageInfo = $("pageInfo");
 const loadWebData = $("loadWebData"), resetData = $("resetData");
 const webSourcePanel = $("webSourcePanel"), csvSourcePanel = $("csvSourcePanel");
+const projectSubjects = $("projectSubjects"), projectTitle = $("projectTitle"), subjectTabs = $("subjectTabs");
+const recordPanel = $("recordPanel");
 const openOverlay = $("openOverlay"), statusEl = $("status");
 const sourceModeInputs = [...document.querySelectorAll("input[name='sourceMode']")];
 let records = [], csvRecords = [], logs = [], loadedLog = null;
+let loadedProject = null, subjectLogs = [], selectedSubjectId = "";
 let fileRecordsByCategory = {};
 let activeSource = "web", session = null, page = 0, total = 0, epoch = 0, busy = false;
 
@@ -64,10 +67,16 @@ async function init() {
   if (activeSource === "web" && session?.access_token) await loadLogList();
 }
 
-function invalidate() {
+function invalidate({ keepProject = false } = {}) {
   epoch += 1;
   busy = false;
   loadedLog = null;
+  selectedSubjectId = "";
+  if (!keepProject) {
+    loadedProject = null;
+    subjectLogs = [];
+    renderSubjectTabs();
+  }
   csvRecords = getFileBucket()?.records || [];
   records = activeSource === "csv" ? csvRecords : [];
   renderLogInfo(); renderRecords(activeSource === "csv" ? getFileBucket()?.label : ""); renderControls();
@@ -95,6 +104,23 @@ on(refreshLogs, "click", () => { page = 0; return loadLogList(); });
 on(previousPage, "click", () => { page = Math.max(0, page - 1); return loadLogList(); });
 on(nextPage, "click", () => { page += 1; return loadLogList(); });
 on(workLog, "change", () => { invalidate(); setStatus("선택한 작업로그를 불러오세요."); });
+
+on(subjectTabs, "click", event => {
+  const id = event.target.closest("button[data-log-id]")?.dataset.logId;
+  if (loadedProject && subjectLogs.some(log => log.id === id)) return loadLogDetail(id, true);
+});
+on(subjectTabs, "keydown", event => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const tabs = [...subjectTabs.querySelectorAll("button[data-log-id]")];
+  const index = tabs.indexOf(event.target);
+  if (index < 0) return;
+  event.preventDefault();
+  const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+    : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+  tabs[index].tabIndex = -1;
+  tabs[next].tabIndex = 0;
+  tabs[next].focus();
+});
 
 on(csvFile, "change", async () => {
   const file = csvFile.files?.[0];
@@ -237,10 +263,49 @@ async function loadLogList() {
 }
 
 async function loadSelectedLog() {
-  const id = workLog.value;
-  if (!id || busy) return;
+  const key = workLog.value;
+  if (!key || busy) return;
+  const project = logs.find(log => log.project && key === `project:${log.project.id}`)?.project;
+  return project ? loadProject(project) : loadLogDetail(key);
+}
+
+async function loadProject(project) {
   const requestEpoch = invalidate();
-  busy = true; renderControls(); setStatus("선택한 작업로그를 불러오는 중입니다.");
+  busy = true; renderControls(); setStatus("프로젝트의 교과 목록을 불러오는 중입니다.");
+  try {
+    const members = new Map();
+    let projectPage = 0;
+    let projectTotal;
+    do {
+      const params = new URLSearchParams({ project: project.id, category: "subject", state: logState.value, page: String(projectPage++) });
+      const body = await requestLog(`/api/work-logs?${params}`);
+      if (requestEpoch !== epoch) return;
+      const list = body.logs;
+      projectTotal = Number(body.total);
+      if (!Array.isArray(list) || !Number.isInteger(projectTotal) || projectTotal < 0
+        || list.some(log => log.category !== "subject" || log.project?.id !== project.id)) {
+        throw new Error("프로젝트 목록을 새로고침한 뒤 다시 선택하세요.");
+      }
+      const count = members.size;
+      for (const log of list) members.set(log.id, log);
+      if (members.size === count && count < projectTotal) throw new Error("교과 목록이 바뀌었습니다. 다시 불러오세요.");
+    } while (members.size < projectTotal && projectPage <= 100);
+    if (members.size < projectTotal) throw new Error("교과 목록을 모두 불러오지 못했습니다.");
+    loadedProject = project;
+    subjectLogs = [...members.values()];
+    renderSubjectTabs(); renderLogInfo(); renderRecords();
+    setStatus(subjectLogs.length ? "붙여넣을 교과를 탭에서 선택하세요." : "이 프로젝트에 불러올 교과가 없습니다.");
+  } catch (error) { if (requestEpoch === epoch) setStatus(`프로젝트를 불러오지 못했습니다: ${error.message}`); }
+  finally { if (requestEpoch === epoch) { busy = false; renderControls(); } }
+}
+
+async function loadLogDetail(id, keepProject = false) {
+  const requestEpoch = invalidate({ keepProject });
+  if (keepProject) {
+    selectedSubjectId = id;
+    updateSubjectSelection();
+  }
+  busy = true; renderControls(); setStatus(keepProject ? "선택한 교과 결과를 불러오는 중입니다." : "선택한 작업로그를 불러오는 중입니다.");
   try {
     const log = await requestLog(`/api/work-logs/${encodeURIComponent(id)}`);
     if (requestEpoch !== epoch) return;
@@ -252,32 +317,59 @@ async function loadSelectedLog() {
 }
 
 function applyLoadedLog(log) {
-  const project = logs.find(item => item.id === log.id)?.project;
+  const project = subjectLogs.find(item => item.id === log.id)?.project || logs.find(item => item.id === log.id)?.project;
   loadedLog = { ...log, ...(project ? { project } : {}) };
   records = workLogToRecords(log.category, log.data, log.title);
   renderLogInfo(); renderRecords(getCategoryLabel());
 }
 
 function renderLogList() {
-  const projects = new Map();
-  const ungrouped = [];
-  const option = log => `<option value="${escapeHTML(log.id)}">${escapeHTML(log.title)} · ${log.completed_count}명 · ${escapeHTML(formatDate(log.updated_at))}</option>`;
+  const seenProjects = new Set();
+  const options = [];
   for (const log of logs) {
-    if (!log.project?.id || !log.project?.title) { ungrouped.push(option(log)); continue; }
-    const project = projects.get(log.project.id);
-    if (project) project.options.push(option(log));
-    else projects.set(log.project.id, { title: log.project.title, options: [option(log)] });
+    if (log.category === "subject" && log.project?.id && log.project.title) {
+      if (seenProjects.has(log.project.id)) continue;
+      seenProjects.add(log.project.id);
+      options.push(`<option value="project:${escapeHTML(log.project.id)}">${escapeHTML(log.project.title)} · 프로젝트</option>`);
+    } else {
+      options.push(`<option value="${escapeHTML(log.id)}">${escapeHTML(log.title)} · ${log.completed_count}명 · ${escapeHTML(formatDate(log.updated_at))}</option>`);
+    }
   }
-  const grouped = [...projects.values()].map(project => `<optgroup label="${escapeHTML(project.title)}">${project.options.join("")}</optgroup>`);
-  workLog.innerHTML = logs.length ? [...grouped, ...ungrouped].join("") : '<option value="">저장된 작업로그 없음</option>';
+  workLog.innerHTML = options.length ? options.join("") : '<option value="">저장된 작업로그 없음</option>';
   pageInfo.parentElement?.classList.toggle("hidden", total <= 30);
   pageInfo.textContent = `${page + 1} / ${Math.max(1, Math.ceil(total / 30))}쪽 · ${total}개`;
   renderLogInfo(); renderControls();
 }
 function renderLogInfo() {
   const log = loadedLog || logs.find(log => log.id === workLog.value);
-  logInfo.textContent = log ? `${log.archived_at ? "보관본 · 읽기 전용" : "저장본"} · ${formatDate(log.updated_at)} 저장 · 작성 ${log.completed_count}/${log.student_count}명` : "웹앱에서 작업로그에 저장한 결과를 선택하세요.";
+  if (log) logInfo.textContent = `${log.archived_at ? "보관본 · 읽기 전용" : "저장본"} · ${formatDate(log.updated_at)} 저장 · 작성 ${log.completed_count}/${log.student_count}명`;
+  else if (loadedProject) logInfo.textContent = `${logState.value === "archived" ? "보관본" : "저장본"} · ${subjectLogs.length}개 교과`;
+  else logInfo.textContent = "웹앱에서 작업로그에 저장한 결과를 선택하세요.";
 }
+
+function renderSubjectTabs() {
+  projectSubjects.classList.toggle("hidden", !loadedProject || !subjectLogs.length);
+  projectTitle.textContent = loadedProject?.title || "";
+  subjectTabs.innerHTML = subjectLogs.map(log => `<button type="button" class="subject-tab" role="tab" id="subject-tab-${escapeHTML(log.id)}" data-log-id="${escapeHTML(log.id)}" aria-controls="recordPanel">${escapeHTML(log.title)}</button>`).join("");
+  updateSubjectSelection();
+}
+
+function updateSubjectSelection() {
+  const buttons = [...subjectTabs.querySelectorAll("button[data-log-id]")];
+  for (const [index, button] of buttons.entries()) {
+    const selected = button.dataset.logId === selectedSubjectId;
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected || (!selectedSubjectId && index === 0) ? 0 : -1;
+  }
+  if (selectedSubjectId) {
+    recordPanel.setAttribute("role", "tabpanel");
+    recordPanel.setAttribute("aria-labelledby", `subject-tab-${selectedSubjectId}`);
+  } else {
+    recordPanel.removeAttribute("role");
+    recordPanel.removeAttribute("aria-labelledby");
+  }
+}
+
 function renderControls() {
   workLog.disabled = busy || !logs.length;
   loadWebData.disabled = busy || !workLog.value;
@@ -327,7 +419,7 @@ function renderRecords(label) {
   openOverlay.disabled = records.length === 0;
 
   if (!records.length) {
-    recordTable.innerHTML = `<div class="empty-records">아직 불러온 데이터가 없습니다.</div>`;
+    recordTable.innerHTML = `<div class="empty-records">${loadedProject && !selectedSubjectId && subjectLogs.length ? "교과 탭을 선택하면 학생별 결과가 표시됩니다." : "아직 불러온 데이터가 없습니다."}</div>`;
     return;
   }
 
@@ -422,6 +514,7 @@ async function runOnActiveTab(action, payload, requestEpoch = epoch) {
       func: runUploaderInPage,
       args: [action, payload]
     });
+    if (requestEpoch !== epoch) return;
 
     const successful = results
       .map((item) => item.result)
@@ -429,7 +522,7 @@ async function runOnActiveTab(action, payload, requestEpoch = epoch) {
     const best = successful[0] || results.map((item) => item.result).find(Boolean);
     setStatus(best?.message || "나이스 화면에 패널을 띄우지 못했습니다.");
   } catch (error) {
-    setStatus(`실행 실패: ${error.message}`);
+    if (requestEpoch === epoch) setStatus(`실행 실패: ${error.message}`);
   }
 }
 

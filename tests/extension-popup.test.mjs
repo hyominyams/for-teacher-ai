@@ -17,6 +17,7 @@ async function harness(saved = {}) {
       id, value: "", textContent: "", disabled: false, listeners: {},
       classList: { toggle() {} }, parentElement: { classList: { toggle() {} } },
       addEventListener(event, handler) { this.listeners[event] = handler; },
+      querySelectorAll() { return []; }, setAttribute() {}, removeAttribute() {},
       get selectedIndex() { return this.options?.findIndex((option) => option.value === this.value) || 0; },
       get innerHTML() { return this.html || ""; },
       set innerHTML(value) {

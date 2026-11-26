@@ -18,14 +18,23 @@ async function setup({ saved = {}, handler = () => ({ logs: [], total: 0 }) } = 
   const elements = new Map();
   class Element {
     value = ''; disabled = false; textContent = ''; handlers = {}; options = []; checked = false;
+    attributes = {}; dataset = {}; tabs = [];
     classList = { toggle() {} };
     addEventListener(name, callback) { this.handlers[name] = callback; }
+    querySelectorAll() { return this.tabs; }
+    setAttribute(name, value) { this.attributes[name] = value; }
+    removeAttribute(name) { delete this.attributes[name]; }
+    focus() { this.hasFocus = true; }
+    closest() { return this; }
     set innerHTML(value) {
       this.html = value;
       if (value.includes('<option')) {
         this.options = [...value.matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map(m => ({ value: m[1], text: m[2] }));
         this.value = this.options[0]?.value || '';
       }
+      this.tabs = [...value.matchAll(/data-log-id="([^"]*)"/g)].map(match => {
+        const tab = new Element(); tab.dataset.logId = match[1]; return tab;
+      });
     }
     get innerHTML() { return this.html || ''; }
     get selectedIndex() { return this.options.findIndex(o => o.value === this.value); }
@@ -53,7 +62,7 @@ async function setup({ saved = {}, handler = () => ({ logs: [], total: 0 }) } = 
   vm.runInContext(importer, context);
   vm.runInContext(source, context);
   await tick(); await tick();
-  const emit = async (id, event = 'click', value) => { if (value !== undefined) element(id).value = value; await element(id).handlers[event](); await tick(); };
+  const emit = async (id, event = 'click', value, details) => { if (value !== undefined) element(id).value = value; await element(id).handlers[event](details); await tick(); };
   return { element, emit, context, data, storage, calls, injections };
 }
 
@@ -172,19 +181,58 @@ test('upgrading never reuses legacy web records even if the old popup had switch
   assert.equal(t.data.neisUploadRecords, undefined);
 });
 
-test('a project groups subjects while loading only the selected subject', async () => {
+test('loading a project presents every subject tab and opens only the selected records', async () => {
   const project = { id: 'project-1', title: '2학기 <6학년>' };
   const math = { ...log('math', 'subject'), project };
   const korean = { ...log('korean', 'subject'), project };
   const t = await setup({
     saved: { neisUploadCategory: 'subject' },
-    handler: url => url.includes('?') ? { logs: [math, korean], total: 2 } : korean,
+    handler: url => {
+      const { pathname, searchParams } = new URL(url);
+      if (searchParams.has('project')) return { logs: searchParams.get('page') === '0' ? [math] : [korean], total: 2 };
+      if (pathname === '/api/work-logs') return { logs: [math, korean], total: 2 };
+      return pathname.endsWith('/math') ? math : korean;
+    },
   });
-  assert.match(t.element('workLog').innerHTML, /<optgroup label="2학기 &lt;6학년&gt;">/);
-  assert.deepEqual(t.element('workLog').options.map(option => option.value), ['math', 'korean']);
-  t.element('workLog').value = 'korean';
+  assert.match(t.element('workLog').innerHTML, /2학기 &lt;6학년&gt;/);
+  assert.deepEqual(t.element('workLog').options.map(option => option.value), ['project:project-1']);
   await t.emit('loadWebData');
+  assert.deepEqual(t.element('subjectTabs').tabs.map(tab => tab.dataset.logId), ['math', 'korean']);
+  assert.equal(t.element('recordCount').textContent, '0명');
+  assert.equal(t.element('openOverlay').disabled, true);
+  assert.ok(t.calls.some(c => c.url.includes('project=project-1') && c.url.includes('page=1')));
+  assert.ok(t.calls.every(c => new URL(c.url).pathname === '/api/work-logs'));
+  const [mathTab, koreanTab] = t.element('subjectTabs').tabs;
+  await t.emit('subjectTabs', 'keydown', undefined, { key: 'ArrowRight', target: mathTab, preventDefault() {} });
+  assert.equal(koreanTab.hasFocus, true);
+  await t.emit('subjectTabs', 'click', undefined, { target: koreanTab });
+  assert.equal(koreanTab.attributes['aria-selected'], 'true');
   assert.equal(t.element('recordCount').textContent, '2명');
   assert.match(t.element('recordTable').innerHTML, /korean 학생 1 결과/);
   assert.doesNotMatch(t.element('recordTable').innerHTML, /math 학생/);
+  await t.emit('openOverlay');
+  assert.equal(t.injections[0].args[1].categoryLabel, '2학기 <6학년> · korean 반');
+  assert.ok(t.injections[0].args[1].records.every(r => r.text.startsWith('korean')));
+});
+
+test('a late result cannot replace a newer subject tab selection', async () => {
+  const project = { id: 'project-1', title: '교과 프로젝트' };
+  const math = { ...log('math', 'subject'), project };
+  const korean = { ...log('korean', 'subject'), project };
+  const pending = deferred();
+  const t = await setup({
+    saved: { neisUploadCategory: 'subject' },
+    handler: url => url.includes('?') ? { logs: [math, korean], total: 2 } : url.endsWith('/math') ? pending.promise : korean,
+  });
+  await t.emit('loadWebData');
+  const [mathTab, koreanTab] = t.element('subjectTabs').tabs;
+  const loading = t.emit('subjectTabs', 'click', undefined, { target: mathTab }); await tick();
+  assert.equal(t.element('openOverlay').disabled, true);
+  await t.emit('subjectTabs', 'click', undefined, { target: koreanTab });
+  pending.resolve(math); await loading;
+  assert.match(t.element('recordTable').innerHTML, /korean 학생 1 결과/);
+  assert.doesNotMatch(t.element('recordTable').innerHTML, /math 학생/);
+  await t.emit('logoutWebApp');
+  assert.equal(t.element('subjectTabs').tabs.length, 0);
+  assert.equal(t.element('openOverlay').disabled, true);
 });

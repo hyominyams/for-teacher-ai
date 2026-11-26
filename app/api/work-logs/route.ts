@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isWorkCategory, parseSavedLogInput } from "@/lib/work-logs";
+import { isUuid, isWorkCategory, parseSavedLogInput } from "@/lib/work-logs";
 import { workLogFailure, workLogUser } from "@/lib/server/work-log-access";
 
 export async function GET(req: Request) {
@@ -8,9 +8,16 @@ export async function GET(req: Request) {
         const params = new URL(req.url).searchParams;
         const page = Math.min(100, Math.max(0, Math.floor(Number(params.get("page")) || 0)));
         const state = params.get("state") || "editable", category = params.get("category"), search = (params.get("q") || "").trim().slice(0, 100);
-        let query = client.from("saved_work_logs").select("id,category,title,revision,source_scope_key,legacy_work_log_id,student_count,completed_count,archived_at,created_at,updated_at", { count: "exact" }).eq("user_id", user.id);
+        const projectId = params.get("project");
+        if (projectId !== null && !isUuid(projectId)) return NextResponse.json({ error: "프로젝트를 다시 선택해주세요." }, { status: 400 });
+        const columns = "id,category,title,revision,source_scope_key,legacy_work_log_id,student_count,completed_count,archived_at,created_at,updated_at";
+        const table = client.from("saved_work_logs");
+        let query = (projectId
+            ? table.select(`${columns},membership:subject_project_saved_logs!inner()` as const, { count: "exact" })
+            : table.select(columns, { count: "exact" })).eq("user_id", user.id);
         query = state === "archived" ? query.not("archived_at", "is", null) : query.is("archived_at", null);
-        if (isWorkCategory(category)) query = query.eq("category", category);
+        if (projectId) query = query.eq("category", "subject").eq("membership.project_id", projectId);
+        else if (isWorkCategory(category)) query = query.eq("category", category);
         if (search) query = query.ilike("title", `%${search.replace(/[\\%_]/g, "\\$&")}%`);
         const { data, count, error } = await query.order("updated_at", { ascending: false }).order("id", { ascending: false }).range(page * 30, page * 30 + 29);
         if (error) throw error;

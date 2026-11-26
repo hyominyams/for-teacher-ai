@@ -74,6 +74,10 @@
             <button id="nextPage" type="button" class="button compact" disabled>다음</button>
           </div>
           <button id="loadWebData" type="button" class="button primary full" disabled>선택한 작업로그 불러오기</button>
+          <div id="projectSubjects" class="project-subjects hidden">
+            <p id="projectTitle" class="project-title"></p>
+            <div id="subjectTabs" class="subject-tabs" role="tablist" aria-label="붙여넣을 교과"></div>
+          </div>
         </div>
 
         <div id="csvSourcePanel" class="source-panel hidden">
@@ -87,7 +91,7 @@
         </div>
       </section>
 
-      <section class="card">
+      <section id="recordPanel" class="card">
         <div class="card-head">
           <div>
             <h2>불러온 목록</h2>
