@@ -53,6 +53,18 @@ export function parseSubjectOverlapInput(value: unknown): SubjectOverlapInput {
 
 const comparableText = (text: string) => text.trim().replace(/\s+/gu, " ");
 const numbers = (text: string) => JSON.stringify((text.match(/\d+(?:[.,]\d+)*/gu) ?? []).sort());
+const sentenceSegmenter = new Intl.Segmenter("ko", { granularity: "sentence" });
+const sentencesByLine = (text: string) => text.split(/\r\n|[\n\r\u2028\u2029]/u).filter(line => line.trim())
+    .map(line => Array.from(sentenceSegmenter.segment(line.trim()), part => comparableText(part.segment)));
+
+function keepsSentenceStructure(before: string, after: string) {
+    const original = sentencesByLine(before);
+    const proposed = sentencesByLine(after);
+    if (original.length !== proposed.length || original.some((line, index) => line.length !== proposed[index].length)) return false;
+
+    const opening = proposed[0]?.[0];
+    return opening === original[0]?.[0] || !original.flat().slice(1).includes(opening);
+}
 
 export function parseSubjectOverlapOutput(records: SubjectOverlapRecord[], value: unknown) {
     const message = "학생 번호와 겹침 제거 결과를 일대일로 확인하지 못했습니다. 원문을 유지했습니다.";
@@ -77,7 +89,7 @@ export function parseSubjectOverlapOutput(records: SubjectOverlapRecord[], value
         const key = comparableText(after);
         if (key === comparableText(before)) continue;
         // Mechanical checks only. The teacher sees each proposed record and its evidence before saving.
-        if (numbers(after) !== numbers(before) || originalTexts.has(key) || (responseCounts.get(key) ?? 0) > 1) {
+        if (!keepsSentenceStructure(before, after) || numbers(after) !== numbers(before) || originalTexts.has(key) || (responseCounts.get(key) ?? 0) > 1) {
             excludedIds.push(studentId);
             continue;
         }

@@ -44,6 +44,32 @@ test("unchanged and whitespace-only output stays untouched and new exact duplica
     assert.deepEqual(parseSubjectOverlapOutput(records, { records: sameRewrite }), { proposals: [], excludedIds: [2, 11] });
 });
 
+test("the opening sentence and the first line cannot be removed or replaced by a later sentence", () => {
+    const opening = "도형의 특징을 파악함.";
+    const rest = "알맞은 공식을 적용하여 넓이를 구함.";
+    const cases = [
+        [`${opening} ${rest}`, rest],
+        [`도형의 특징을 파악함\n${rest}`, rest],
+        [`${opening}${rest}`, rest],
+        [`${opening}\n${rest}`, `${rest}\n${opening}`],
+    ];
+    for (const [before, after] of cases) {
+        const remaining = records[2];
+        assert.deepEqual(parseSubjectOverlapOutput([{ studentId: 2, text: before }, remaining], {
+            records: [{ studentId: 2, text: after }, remaining],
+        }), { proposals: [], excludedIds: [2] });
+    }
+});
+
+test("rewriting the opening in place still works with the original sentence and line structure", () => {
+    const before = "두 가락의 어울림을 찾아 설명함. 1.5박을 유지함.\n노랫말을 읽음.";
+    const after = "가락이 어우러지는 부분을 짚어 설명함. 1.5박을 유지함.\n노랫말을 읽음.";
+    const remaining = records[2];
+    assert.deepEqual(parseSubjectOverlapOutput([{ studentId: 2, text: before }, remaining], {
+        records: [{ studentId: 2, text: after }, remaining],
+    }), { proposals: [{ studentId: 2, before, after }], excludedIds: [] });
+});
+
 test("legacy level-specific criteria use the same slice as subject generation", () => {
     const assessment = { criteria: "상: 앞뒤 관계를 설명함.\n중: 내용을 정리함.\n하: 안내에 따라 찾음." };
     assert.equal(getSubjectCriteriaForLevel(assessment, "중"), "내용을 정리함.");
