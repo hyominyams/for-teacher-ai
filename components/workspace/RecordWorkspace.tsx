@@ -37,6 +37,7 @@ import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
 import { SubjectPlanUploadDialog } from "@/components/workspace/SubjectPlanUploadDialog";
 import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
+import type { SubjectRemarkDraft } from "@/components/workspace/SubjectRemarkLibrary";
 import { PlaceholderWorkspace } from "@/components/workspace/PlaceholderWorkspace";
 import { studentKeywordPool, defaultKeywords } from "@/lib/constants/behavior-keywords";
 
@@ -297,6 +298,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const [isExpanded, setIsExpanded] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [subjectConfig, setSubjectConfig] = useState<SubjectGlobalConfig>(getDefaultSubjectConfig);
+    const [subjectRemarkDraft, setSubjectRemarkDraft] = useState<SubjectRemarkDraft>({ customSubjects: [], phrases: {} });
     const [subjectLogs, setSubjectLogs] = useState<SubjectWorkLogSummary[]>([]);
     const [activeSubjectScopeKey, setActiveSubjectScopeKey] = useState(DEFAULT_SCOPE_KEY);
     const [activeSubjectProject, setActiveSubjectProject] = useState<SubjectProjectSummary | null>(null);
@@ -1853,6 +1855,15 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             savedEditor={isSavedEditor}
                             polishAction={polishAction}
                             planImportAction={planImportAction}
+                            remarkDraft={subjectRemarkDraft}
+                            setRemarkDraft={setSubjectRemarkDraft}
+                            savedRemarkSubjects={isSavedEditor && requestedLogId ? {
+                                currentId: `saved:${requestedLogId}`,
+                                others: (projectSubjects?.logs ?? []).flatMap(log => {
+                                    const name = log.subject_name?.trim();
+                                    return log.id === requestedLogId || !name ? [] : [{ id: `saved:${log.id}`, name }];
+                                }),
+                            } : undefined}
                             handleClearSelection={handleResetSelection}
                             students={students}
                             setStudents={setStudents}
