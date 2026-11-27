@@ -314,6 +314,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const [activeSubjectProject, setActiveSubjectProject] = useState<SubjectProjectSummary | null>(null);
     const restoredSubjectUser = useRef<string | null>(null);
     const hydratedSubjectScope = useRef<{ userId: string; scopeKey: string; epoch: number } | null>(null);
+    const blankSubjectBaseline = useRef<string | null>(null);
     const [isWorkLogLoading, setIsWorkLogLoading] = useState(true);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [planUploadError, setPlanUploadError] = useState("");
@@ -340,6 +341,14 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     };
 
     const currentData = useMemo(() => normalizeWorkData({ ...(isSavedEditor ? savedLog?.data : {}), students, studentCount, charLimits, ...(activeTabId === "subject" ? { globalConfig: subjectConfig } : {}) }, activeTabId as keyof typeof import("@/lib/work-logs").WORK_CATEGORIES), [students, studentCount, charLimits, activeTabId, subjectConfig, savedLog, isSavedEditor]);
+    const resetBlankSubject = useCallback((count: number, limits: Record<string, number>) => {
+        const empty = createInitialStudents(count);
+        const config = getDefaultSubjectConfig();
+        blankSubjectBaseline.current = workFingerprint(normalizeWorkData({ students: empty, studentCount: count, charLimits: limits, globalConfig: config }, "subject"), "");
+        setActiveSubjectProject(null);
+        setStudents(empty);
+        setSubjectConfig(config);
+    }, []);
     const editorDirty = isSavedEditor && loadedSavedId === requestedLogId && workFingerprint(currentData, logTitle) !== savedBaseline;
     const savedEditorProject = loadedSavedId === requestedLogId ? savedLog?.project : undefined;
     const savedEditorProjectId = savedEditorProject?.id;
@@ -556,16 +565,19 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                 nextSubjectLogs = applySubjectOrder(nextSubjectLogs, readSubjectOrder(userId));
 
                 let preferredScopeKey = activeSubjectScopeKey;
+                let choosePopulatedSubject = false;
                 if (restoredSubjectUser.current !== userId) {
                     restoredSubjectUser.current = userId;
                     preferredScopeKey = DEFAULT_SCOPE_KEY;
+                    let remembered = requestedSubjectScope;
                     try {
-                        const remembered = requestedSubjectScope || localStorage.getItem(`ftai:active-subject:${userId}`);
-                        if (remembered && logs.some(log => log.scope_key === remembered)) preferredScopeKey = remembered;
+                        remembered ||= localStorage.getItem(`ftai:active-subject:${userId}`);
                     } catch { /* Browser storage can be unavailable. */ }
+                    if (remembered && nextSubjectLogs.some(log => log.scopeKey === remembered)) preferredScopeKey = remembered;
+                    else choosePopulatedSubject = true;
                 }
                 let selectedLog = logs.find(log => (log.scope_key || DEFAULT_SCOPE_KEY) === preferredScopeKey);
-                if (preferredScopeKey === DEFAULT_SCOPE_KEY && !selectedLog?.data?.globalConfig?.subjectName && !selectedLog?.data?.globalConfig?.assessments?.length) {
+                if (choosePopulatedSubject && !selectedLog?.data?.globalConfig?.subjectName && !selectedLog?.data?.globalConfig?.assessments?.length) {
                     selectedLog = nextSubjectLogs.map(summary => logs.find(log => log.scope_key === summary.scopeKey)).find(log => log?.data?.globalConfig?.subjectName || log?.data?.globalConfig?.assessments?.length) || selectedLog;
                 }
                 if (!selectedLog && preferredScopeKey !== DEFAULT_SCOPE_KEY) {
@@ -589,6 +601,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                 setStudentCounts(prev => ({ ...prev, subject: nextSubjectCount }));
 
                 if (selectedLog?.data) {
+                    blankSubjectBaseline.current = null;
                     const nextScopeKey = selectedLog.scope_key || DEFAULT_SCOPE_KEY;
                     try { localStorage.setItem(`ftai:active-subject:${userId}`, nextScopeKey); } catch { /* Optional preference. */ }
                     if (nextScopeKey !== activeSubjectScopeKey) {
@@ -604,9 +617,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                     const project = Array.isArray(selectedLog.project) ? selectedLog.project[0] : selectedLog.project;
                     setActiveSubjectProject(project || null);
                 } else {
-                    setActiveSubjectProject(null);
-                    setStudents(createInitialStudents(nextSubjectCount));
-                    setSubjectConfig(getDefaultSubjectConfig());
+                    resetBlankSubject(nextSubjectCount, charLimits);
                 }
 
                 setIsWorkLogLoading(false);
@@ -642,7 +653,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
 
         void loadWorkLog();
         return () => { cancelled = true; };
-    }, [userId, activeTabId, activeSubjectScopeKey, isSavedEditor, requestedSubjectScope]); // studentCount 제거하여 수동 변경 시 데이터 덮어쓰기 방지
+    }, [userId, activeTabId, activeSubjectScopeKey, isSavedEditor, requestedSubjectScope, resetBlankSubject]); // 학생 수와 글자 수를 바꿀 때 기존 작업을 다시 불러오지 않는다.
 
     const saveWorkLog = async (silent = false, overrideStudents?: Student[], overrideConfig?: SubjectGlobalConfig, overrideProject?: SubjectProjectSummary | null) => {
         if (isSavedEditor) return persistSavedEdits(overrideStudents);
@@ -691,6 +702,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
             return false;
         } else {
             if (activeTabId === 'subject') {
+                if (epoch === workEpoch.current && scopeKey === DEFAULT_SCOPE_KEY) blankSubjectBaseline.current = null;
                 setSubjectLogs(prev => {
                     const currentLog = prev.find(log => log.scopeKey === scopeKey);
                     const nextLog = {
@@ -795,11 +807,12 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         setIsWorkLogLoading(false);
     });
 
-    const handleDeleteSubjectLog = async (scopeKey: string) => runSubjectAction(async (epoch) => {
+    const handleDeleteSubjectLog = async (scopeKey: string, displayLabel?: string) => runSubjectAction(async (epoch) => {
         if (!userId) return;
         const target = subjectLogs.find(log => log.scopeKey === scopeKey);
-        const label = target?.scopeLabel || "교과";
-        if (!confirm(`${label} 교과의 임시 작업을 삭제할까요? 작업로그에 저장한 기록은 유지됩니다.`)) return;
+        if (!target) return;
+        const label = displayLabel || target.scopeLabel || "교과";
+        if (!confirm(`‘${label}’ 임시 작업을 삭제할까요? 작업로그에 저장한 기록은 유지됩니다.`)) return;
 
         setIsWorkLogLoading(true);
         await draftSaveQueue.current;
@@ -830,9 +843,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
             } else {
                 hydratedSubjectScope.current = activeSubjectScopeKey !== DEFAULT_SCOPE_KEY ? { userId, scopeKey: DEFAULT_SCOPE_KEY, epoch: workEpoch.current } : null;
                 setActiveSubjectScopeKey(DEFAULT_SCOPE_KEY);
-                setSubjectConfig(getDefaultSubjectConfig());
-                setActiveSubjectProject(null);
-                setStudents(createInitialStudents(studentCount));
+                resetBlankSubject(studentCount, charLimits);
             }
         }
 
@@ -864,9 +875,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         writeSubjectOrder(userId, []);
         hydratedSubjectScope.current = activeSubjectScopeKey !== DEFAULT_SCOPE_KEY ? { userId, scopeKey: DEFAULT_SCOPE_KEY, epoch: workEpoch.current } : null;
         setActiveSubjectScopeKey(DEFAULT_SCOPE_KEY);
-        setSubjectConfig(getDefaultSubjectConfig());
-        setActiveSubjectProject(null);
-        setStudents(createInitialStudents(studentCount));
+        resetBlankSubject(studentCount, charLimits);
         setIsWorkLogLoading(false);
     });
 
@@ -889,6 +898,11 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     // Auto-save logic (Debounced)
     useEffect(() => {
         if (!userId || !students.length || isWorkLogLoading || isSavedEditor || logBusy) return;
+        if (activeTabId === "subject" && activeSubjectScopeKey === DEFAULT_SCOPE_KEY
+            && blankSubjectBaseline.current !== null && workFingerprint(currentData, "") === blankSubjectBaseline.current) {
+            setDraftSaveStatus("");
+            return;
+        }
 
         setDraftSaveStatus("임시 작업 저장 중…");
         const timer = setTimeout(() => {
@@ -896,7 +910,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         }, 1000);
 
         return () => clearTimeout(timer);
-    }, [students, studentCount, charLimits, userId, activeTabId, activeSubjectScopeKey, subjectConfig, isWorkLogLoading, isSavedEditor, logBusy]);
+    }, [students, studentCount, charLimits, userId, activeTabId, activeSubjectScopeKey, subjectConfig, isWorkLogLoading, isSavedEditor, logBusy, currentData]);
 
     // 학생 수 변경 시 처리
     useEffect(() => {

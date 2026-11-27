@@ -15,7 +15,8 @@ import {
     Target,
     ChevronDown,
     ChevronUp,
-    GripVertical
+    GripVertical,
+    X
 } from "lucide-react";
 import { normalizeSchoolLevel } from "@/lib/subject-plan-values";
 import { cn } from "@/lib/utils";
@@ -103,7 +104,7 @@ interface SubjectWorkspaceProps {
     activeSubjectScopeKey: string;
     onSubjectScopeChange: (scopeKey: string) => void;
     onCreateSubjectLog: () => void;
-    onDeleteSubjectLog: (scopeKey: string) => void;
+    onDeleteSubjectLog: (scopeKey: string, displayLabel?: string) => void;
     onDeleteAllSubjectLogs: () => void;
     onReorderSubjectLogs: (fromScopeKey: string, toScopeKey: string) => void;
     handleGenerate: (id: number) => void;
@@ -350,7 +351,7 @@ export const SubjectWorkspace = ({
     const tableFit: WorkspaceTableFit = assessmentCount <= 3 ? "xl" : assessmentCount <= 5 ? "2xl" : "none";
     const currentSubjectLabel = globalConfig.subjectName.trim() || "새 교과";
     const activeSubjectLogExists = subjectLogs.some(log => log.scopeKey === activeSubjectScopeKey);
-    const rawSubjectSelectItems = activeSubjectLogExists
+    const rawSubjectSelectItems = activeSubjectLogExists || !subjectLogs.length
         ? subjectLogs
         : [{ scopeKey: activeSubjectScopeKey, scopeLabel: currentSubjectLabel }, ...subjectLogs];
     const subjectLabelCounts = rawSubjectSelectItems.reduce<Record<string, number>>((counts, log) => {
@@ -370,6 +371,7 @@ export const SubjectWorkspace = ({
                 : displayLabel,
         };
     });
+    const activeSubjectLabel = subjectSelectItems.find(log => log.scopeKey === activeSubjectScopeKey)?.shortLabel;
     const subjectProjects = new Map<string, { title?: string; logs: typeof subjectSelectItems }>();
     for (const log of subjectSelectItems) {
         const key = log.project?.id ?? "";
@@ -392,7 +394,7 @@ export const SubjectWorkspace = ({
         event.dataTransfer.setData("text/plain", scopeKey);
     };
 
-    const handleSubjectDragOver = (event: React.DragEvent<HTMLButtonElement>, scopeKey: string) => {
+    const handleSubjectDragOver = (event: React.DragEvent<HTMLElement>, scopeKey: string) => {
         if (!draggedSubjectScopeKey || draggedSubjectScopeKey === scopeKey) return;
 
         event.preventDefault();
@@ -412,7 +414,7 @@ export const SubjectWorkspace = ({
         }, 0);
     };
 
-    const handleSubjectDrop = (event: React.DragEvent<HTMLButtonElement>, scopeKey: string) => {
+    const handleSubjectDrop = (event: React.DragEvent<HTMLElement>, scopeKey: string) => {
         event.preventDefault();
         const fromScopeKey = draggedSubjectScopeKey || event.dataTransfer.getData("text/plain");
         if (fromScopeKey && fromScopeKey !== scopeKey) {
@@ -503,7 +505,7 @@ export const SubjectWorkspace = ({
                                     </PopoverTrigger>
                                     <PopoverContent align="end" className="w-56 rounded-xl border-slate-200 bg-white p-1.5 dark:border-slate-700 dark:bg-slate-900">
                                         <p className="px-2.5 py-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">교과 삭제</p>
-                                        <Button variant="ghost" onClick={() => onDeleteSubjectLog(activeSubjectScopeKey)} disabled={subjectLogs.length === 0} className="h-10 w-full justify-start gap-2 rounded-lg px-2.5 text-sm font-medium text-slate-700 dark:text-slate-300">
+                                        <Button variant="ghost" onClick={() => onDeleteSubjectLog(activeSubjectScopeKey, activeSubjectLabel)} disabled={!activeSubjectLogExists} className="h-10 w-full justify-start gap-2 rounded-lg px-2.5 text-sm font-medium text-slate-700 dark:text-slate-300">
                                             <Trash2 aria-hidden="true" /> 현재 교과 삭제
                                         </Button>
                                         <Button variant="ghost" onClick={onDeleteAllSubjectLogs} disabled={subjectLogs.length === 0 && globalConfig.assessments.length === 0 && !globalConfig.subjectName.trim()} className="h-10 w-full justify-start gap-2 rounded-lg px-2.5 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/40">
@@ -514,7 +516,7 @@ export const SubjectWorkspace = ({
                             </div>
                         )}
                     </div>
-                    {!savedEditor && (
+                    {!savedEditor && subjectSelectItems.length > 0 && (
                     <div role="group" aria-label="교과 선택 · 드래그해서 순서 변경" className="space-y-2 border-t border-indigo-100 pb-1 pr-1 pt-3 dark:border-indigo-900">
                         {[...subjectProjects].map(([key, project]) => (
                           <div key={key} className="min-w-0 space-y-1">
@@ -526,41 +528,60 @@ export const SubjectWorkspace = ({
                             const isDragging = draggedSubjectScopeKey === log.scopeKey;
                             const isDragOver = dragOverSubjectScopeKey === log.scopeKey;
                             return (
-                                <button
+                                <div
                                     key={log.scopeKey}
-                                    type="button"
-                                    aria-pressed={isActive}
-                                    draggable={isRealSubjectLog}
-                                    onDragStart={(event) => handleSubjectDragStart(event, log.scopeKey)}
                                     onDragOver={(event) => handleSubjectDragOver(event, log.scopeKey)}
                                     onDragLeave={() => {
                                         if (isDragOver) setDragOverSubjectScopeKey(null);
                                     }}
                                     onDrop={(event) => handleSubjectDrop(event, log.scopeKey)}
-                                    onDragEnd={() => {
-                                        if (draggedSubjectScopeKey) suppressNextSubjectClick();
-                                        resetSubjectDragState();
-                                    }}
-                                    onClick={() => {
-                                        if (suppressSubjectClickRef.current) return;
-                                        onSubjectScopeChange(log.scopeKey);
-                                    }}
                                     className={cn(
-                                        "h-9 min-w-16 max-w-[160px] shrink-0 rounded-xl border px-3 text-xs font-semibold transition-colors",
-                                        isRealSubjectLog ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+                                        "group/subject-tab flex h-9 min-w-16 max-w-[180px] shrink-0 items-center rounded-xl border text-xs font-semibold transition-colors",
                                         isActive
                                             ? "border-indigo-600 bg-indigo-600 text-white"
                                             : "border-indigo-100 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-700 dark:border-indigo-900 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-indigo-800 dark:hover:text-indigo-300",
                                         isDragging && "opacity-50",
                                         isDragOver && "border-indigo-300 ring-4 ring-indigo-100 dark:ring-indigo-900/60"
                                     )}
-                                    title={`${log.scopeLabel || "교과"}${isRealSubjectLog ? " - 드래그해서 순서 변경" : ""}`}
                                 >
-                                    <span className="flex min-w-0 items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        aria-pressed={isActive}
+                                        draggable={isRealSubjectLog}
+                                        onDragStart={(event) => handleSubjectDragStart(event, log.scopeKey)}
+                                        onDragEnd={() => {
+                                            if (draggedSubjectScopeKey) suppressNextSubjectClick();
+                                            resetSubjectDragState();
+                                        }}
+                                        onClick={() => {
+                                            if (suppressSubjectClickRef.current) return;
+                                            onSubjectScopeChange(log.scopeKey);
+                                        }}
+                                        className={cn(
+                                            "flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-xl pl-3 text-left focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400",
+                                            isRealSubjectLog ? "cursor-grab pr-1 active:cursor-grabbing" : "cursor-pointer pr-3"
+                                        )}
+                                        title={`${log.shortLabel}${isRealSubjectLog ? " - 드래그해서 순서 변경" : ""}`}
+                                    >
                                         <GripVertical aria-hidden="true" className="size-3 shrink-0 opacity-50" />
                                         <span className="truncate">{log.shortLabel}</span>
-                                    </span>
-                                </button>
+                                    </button>
+                                    {isRealSubjectLog && <button
+                                        type="button"
+                                        aria-label={`${log.shortLabel} 삭제`}
+                                        title={`${log.shortLabel} 삭제`}
+                                        disabled={!!draggedSubjectScopeKey}
+                                        onClick={() => onDeleteSubjectLog(log.scopeKey, log.shortLabel)}
+                                        className={cn(
+                                            "mr-0.5 grid size-7 shrink-0 place-items-center rounded-lg transition-opacity focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400 disabled:opacity-0",
+                                            isActive
+                                                ? "text-indigo-100 hover:bg-indigo-700 hover:text-white"
+                                                : "pointer-events-none text-slate-500 opacity-0 hover:bg-red-50 hover:text-red-700 dark:text-slate-300 dark:hover:bg-red-950/50 dark:hover:text-red-300 group-hover/subject-tab:pointer-events-auto group-hover/subject-tab:opacity-100 group-focus-within/subject-tab:pointer-events-auto group-focus-within/subject-tab:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100"
+                                        )}
+                                    >
+                                        <X aria-hidden="true" className="size-3.5" />
+                                    </button>}
+                                </div>
                             );
                               })}
                             </div>

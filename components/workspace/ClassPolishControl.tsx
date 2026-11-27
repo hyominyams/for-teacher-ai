@@ -43,7 +43,8 @@ export function ClassPolishControl({ students, setStudents, category, workLogId,
     const [message, setMessage] = useState("");
     const [error, setError] = useState("");
     const [saveFailed, setSaveFailed] = useState(false);
-    const records = toPolishRecords(students, category);
+    const canReview = category !== "subject";
+    const records = canReview ? toPolishRecords(students, category) : [];
     const busy = disabled || students.some(s => s.isGenerating);
     const pending = stage === "reviewing" || stage === "saving";
     const undo = latestPolishBatch(students);
@@ -67,7 +68,7 @@ export function ClassPolishControl({ students, setStudents, category, workLogId,
     };
 
     const review = async () => {
-        if (busy || pending) return;
+        if (!canReview || busy || pending) return;
         setError(""); setMessage(""); setProposals([]); setSelected(new Set());
         let input;
         try { input = parsePolishRequest({ category, records }); }
@@ -137,13 +138,15 @@ export function ClassPolishControl({ students, setStudents, category, workLogId,
         await persist(result.students, `${result.restored.length}명을 윤문 전 원문으로 되돌려 저장했습니다.${result.skipped.length ? ` 이후 수정된 ${result.skipped.length}명은 유지했습니다.` : ""}`);
     };
 
+    if (!canReview && !undo?.count && !saveFailed && !open) return null;
+
     return <>
         <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => setOpen(true)} disabled={busy || records.length < 2 || pending}
+            {canReview && <Button variant="outline" onClick={() => setOpen(true)} disabled={busy || records.length < 2 || pending}
                 title={records.length < 2 ? "완성된 학생 기록이 2명 이상 필요합니다." : "완성된 학급 기록 전체의 반복 표현을 검토합니다."}
                 className="h-10 gap-2 rounded-xl border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                 <PenLine className="size-4" />학급 표현 다듬기
-            </Button>
+            </Button>}
             {undo && <Button variant="ghost" onClick={restore} disabled={busy || pending || !undo.count} title={undo.skipped ? "윤문 후 직접 수정한 기록은 유지합니다." : "최근 적용한 윤문을 원문으로 되돌립니다."}
                 className="h-10 gap-1.5 rounded-xl px-3 text-xs text-slate-500 dark:text-slate-400"><RotateCcw className="size-3.5" />최근 윤문 되돌리기 ({undo.count}명)</Button>}
             {saveFailed && <button onClick={() => { setOpen(true); void persist(students, "현재 기록과 윤문 원문을 저장했습니다."); }} disabled={pending} className="text-xs font-semibold text-red-600 underline">저장 다시 시도</button>}
@@ -152,11 +155,15 @@ export function ClassPolishControl({ students, setStudents, category, workLogId,
             className="fixed inset-0 m-auto max-h-[92dvh] w-[min(1100px,calc(100vw-24px))] max-w-none overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100">
             <div className="flex max-h-[92dvh] flex-col">
                 <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 md:px-7 dark:border-slate-800">
-                    <div><h2 id="class-polish-title" className="text-xl font-bold tracking-tight">학급 표현 다듬기</h2><p className="mt-1.5 text-sm leading-6 text-slate-500 dark:text-slate-400">완성된 {records.length}명의 기록을 함께 읽고 반복이 심한 표현만 제안합니다.</p></div>
+                    <div>
+                        <h2 id="class-polish-title" className="text-xl font-bold tracking-tight">{canReview ? "학급 표현 다듬기" : "최근 윤문 되돌리기"}</h2>
+                        {canReview && <p className="mt-1.5 text-sm leading-6 text-slate-500 dark:text-slate-400">완성된 {records.length}명의 기록을 함께 읽고 반복이 심한 표현만 제안합니다.</p>}
+                    </div>
                     <button onClick={close} disabled={stage === "saving"} aria-label="윤문 창 닫기" className="rounded-lg p-2 hover:bg-slate-100 disabled:opacity-40 dark:hover:bg-slate-800"><X className="size-5" /></button>
                 </header>
                 <div className="min-h-0 flex-1 overflow-y-auto p-5 md:p-7">
-                    <div className="mb-5 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600 dark:bg-slate-900 dark:text-slate-300">활동 내용과 평가 수준은 유지하고, 단어와 문장 표현만 다듬습니다. 원문과 비교한 뒤 필요한 학생만 선택해 적용하세요.</div>
+                    {canReview && <div className="mb-5 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600 dark:bg-slate-900 dark:text-slate-300">활동 내용과 평가 수준은 유지하고, 단어와 문장 표현만 다듬습니다. 원문과 비교한 뒤 필요한 학생만 선택해 적용하세요.</div>}
+                    {!canReview && stage === "saving" && <p role="status" className="flex items-center gap-2 text-sm"><Loader2 aria-hidden="true" className="size-4 animate-spin" />저장 중</p>}
                     {error && <p role="alert" className="mb-5 rounded-lg bg-red-50 p-4 text-sm leading-6 text-red-700 dark:bg-red-950 dark:text-red-200">{error}</p>}
                     {message && <p role="status" className="mb-5 flex gap-2 rounded-lg bg-emerald-50 p-4 text-sm leading-6 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"><Check className="mt-0.5 size-4 shrink-0" />{message}</p>}
                     {stage === "reviewing" && <div role="status" className="flex flex-col items-center gap-4 py-12 text-center"><Loader2 className="size-7 animate-spin text-primary" /><p className="text-sm leading-7">학급 전체의 반복 표현과 수정 전후의 의미를 확인하고 있습니다.<br />원문은 아직 변경되지 않았습니다.</p></div>}
@@ -171,11 +178,11 @@ export function ClassPolishControl({ students, setStudents, category, workLogId,
                     })}</div>
                 </div>
                 <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-4 md:px-7 dark:border-slate-800 dark:bg-slate-950">
-                    <span className="text-xs text-slate-500">선택 적용 전까지 원문은 바뀌지 않습니다.</span>
+                    {canReview && <span className="text-xs text-slate-500">선택 적용 전까지 원문은 바뀌지 않습니다.</span>}
                     <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={close} disabled={stage === "saving"} className="rounded-lg">{stage === "reviewing" ? "검토 취소" : "닫기"}</Button>
                         {saveFailed ? <Button disabled={pending} onClick={() => void persist(students, "현재 기록과 윤문 원문을 저장했습니다.")} className="rounded-lg">저장 다시 시도</Button>
-                            : stage === "ready" && proposals.length ? <><Button variant="outline" disabled={pending || busy} onClick={review} className="rounded-lg">다시 검토</Button><Button onClick={apply} disabled={!applicable.length || pending || busy} className="gap-2 rounded-lg"><Check className="size-4" />선택 {applicable.length}명 적용</Button></>
-                                : <Button onClick={review} disabled={pending || busy || records.length < 2} className="gap-2 rounded-lg">{pending ? <Loader2 className="size-4 animate-spin" /> : <PenLine className="size-4" />}{stage === "saving" ? "저장 중" : stage === "reviewing" ? "검토 중" : "학급 전체 검토"}</Button>}
+                            : canReview && (stage === "ready" && proposals.length ? <><Button variant="outline" disabled={pending || busy} onClick={review} className="rounded-lg">다시 검토</Button><Button onClick={apply} disabled={!applicable.length || pending || busy} className="gap-2 rounded-lg"><Check className="size-4" />선택 {applicable.length}명 적용</Button></>
+                                : <Button onClick={review} disabled={pending || busy || records.length < 2} className="gap-2 rounded-lg">{pending ? <Loader2 className="size-4 animate-spin" /> : <PenLine className="size-4" />}{stage === "saving" ? "저장 중" : stage === "reviewing" ? "검토 중" : "학급 전체 검토"}</Button>)}
                     </div>
                 </footer>
             </div>
