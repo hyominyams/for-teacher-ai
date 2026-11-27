@@ -6,11 +6,13 @@ do $$
 declare
   item jsonb;
   identifier uuid=gen_random_uuid();
+  editable_id uuid=gen_random_uuid();
   owner_id uuid=auth.uid();
   body jsonb='{"students":[{"id":1,"aiResult":"원문"}],"studentCount":1,"charLimits":{"behavior":300}}';
 begin
   if owner_id is null then raise exception 'Test account missing'; end if;
   item=public.create_saved_work_log(identifier,'behavior','QA 저장본',body,'default');
+  perform public.create_saved_work_log(editable_id,'behavior','QA 삭제 대상',body,'default');
   if (item->>'revision')::int<>1 then raise exception 'Create failed'; end if;
   perform public.create_saved_work_log(identifier,'behavior','QA 저장본',body,'default');
   if (select count(*) from public.saved_work_logs where id=identifier)<>1 then raise exception 'Idempotency failed'; end if;
@@ -28,6 +30,11 @@ begin
     raise exception 'Other user update accepted';
   exception when no_data_found then null;
   end;
+  begin
+    perform public.delete_saved_work_log(editable_id,1);
+    raise exception 'Other user delete accepted';
+  exception when no_data_found then null;
+  end;
   perform set_config('request.jwt.claims',jsonb_build_object('sub',owner_id,'role','authenticated')::text,true);
   begin
     update public.saved_work_logs set title='동시 변경',archived_at=now(),revision=3 where id=identifier;
@@ -38,10 +45,23 @@ begin
   if item->>'archived_at' is null or item#>>'{data,students,0,aiResult}'<>'수정문' then raise exception 'Archive failed'; end if;
   perform public.archive_saved_work_log(identifier,2);
   begin
+    perform public.delete_saved_work_log(identifier,3);
+    raise exception 'Archived delete RPC allowed';
+  exception when object_not_in_prerequisite_state then null;
+  end;
+  begin
     perform public.update_saved_work_log(identifier,3,'수정 시도',body);
     raise exception 'Archived update accepted';
   exception when object_not_in_prerequisite_state then null;
   end;
+  perform public.update_saved_work_log(editable_id,1,'QA 최근 변경',body);
+  begin
+    perform public.delete_saved_work_log(editable_id,1);
+    raise exception 'Stale deletion accepted';
+  exception when raise_exception then if sqlerrm <> 'WORK_LOG_CONFLICT' then raise; end if;
+  end;
+  perform public.delete_saved_work_log(editable_id,2);
+  if exists (select 1 from public.saved_work_logs where id=editable_id) then raise exception 'Editable deletion failed'; end if;
   update public.saved_work_logs set archived_at=null,revision=4 where id=identifier;
   if found then raise exception 'RLS allowed unarchive'; end if;
   begin
@@ -74,6 +94,11 @@ begin
   begin
     perform public.archive_saved_work_log(gen_random_uuid(),1);
     raise exception 'Anonymous execute allowed';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.delete_saved_work_log(gen_random_uuid(),1);
+    raise exception 'Anonymous deletion allowed';
   exception when insufficient_privilege then null;
   end;
 end;

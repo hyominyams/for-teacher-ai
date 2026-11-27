@@ -11,6 +11,7 @@ declare
   owner_id uuid := auth.uid();
   import_id uuid := gen_random_uuid();
   snapshot_id uuid := gen_random_uuid();
+  saved_math_id uuid;
   math_scope text := gen_random_uuid()::text;
   korean_scope text := gen_random_uuid()::text;
   drafts jsonb := jsonb_build_array(
@@ -33,6 +34,21 @@ begin
     join work_logs original on original.scope_key=saved.source_scope_key and original.subject_project_id=import_id
     where link.project_id=snapshot_id and original.data is distinct from saved.data
   ) then raise exception 'Saved student data changed'; end if;
+  select saved.id into strict saved_math_id
+  from subject_project_saved_logs link join saved_work_logs saved on saved.id=link.saved_log_id
+  where link.project_id=snapshot_id and saved.source_scope_key=math_scope;
+  perform delete_saved_work_log(saved_math_id,1);
+  if exists(select 1 from saved_work_logs where id=saved_math_id)
+    or exists(select 1 from subject_project_saved_logs where saved_log_id=saved_math_id)
+    then raise exception 'Deleted subject or its membership remains'; end if;
+  if (select count(*) from subject_project_saved_logs where project_id=snapshot_id) <> 1
+    or not exists (
+      select 1 from subject_project_saved_logs link join saved_work_logs saved on saved.id=link.saved_log_id
+      where link.project_id=snapshot_id and saved.source_scope_key=korean_scope and saved.data=(drafts->1->'data')
+    )
+    or (select count(*) from work_logs where subject_project_id=import_id) <> 2
+    then raise exception 'Deletion changed another subject or a draft'; end if;
+
   perform set_config('request.jwt.claims',jsonb_build_object('sub',gen_random_uuid(),'role','authenticated')::text,true);
   if exists(select 1 from subject_projects where id in (import_id,snapshot_id)) then raise exception 'RLS exposed another user project'; end if;
   if exists(select 1 from subject_project_saved_logs where project_id=snapshot_id) then raise exception 'RLS exposed another user membership'; end if;

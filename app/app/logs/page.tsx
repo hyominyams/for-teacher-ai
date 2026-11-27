@@ -1,11 +1,11 @@
 "use client";
 import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Archive, ChevronDown, Download, Edit3, FilePlus2, Folder, Loader2, LockKeyhole, Search, X } from "lucide-react";
+import { Archive, ChevronDown, Download, Edit3, FilePlus2, Folder, Loader2, LockKeyhole, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WorkLogCard } from "@/components/workspace/WorkLogCard";
 import { supabase } from "@/lib/supabase";
-import { getSavedWorkLog, listSavedWorkLogs, workLogRequest } from "@/lib/work-log-client";
+import { getSavedWorkLog, listSavedWorkLogs, WorkLogError, workLogRequest } from "@/lib/work-log-client";
 import { groupSavedWorkLogs, normalizeWorkData, WORK_CATEGORIES, workLogCsv } from "@/lib/work-logs";
 import type { SavedWorkLog, WorkLogSummary } from "@/lib/work-logs";
 const dateLabel = (v: string) => new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(v));
@@ -21,7 +21,10 @@ function WorkLogs() {
     const [error, setError] = useState(""), [message, setMessage] = useState("");
     const [selected, setSelected] = useState<SavedWorkLog | null>(null);
     const [archiveTarget, setArchiveTarget] = useState<WorkLogSummary | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<WorkLogSummary | null>(null);
+    const [deleteIssue, setDeleteIssue] = useState<{ message: string; retryable: boolean } | null>(null);
     const preview = useRef<HTMLDialogElement>(null), archiveDialog = useRef<HTMLDialogElement>(null);
+    const deleteDialog = useRef<HTMLDialogElement>(null);
     const viewId = params.get("view");
     useEffect(() => {
         const apply = (id?: string) => { if (id) setUserId(id); else { setUserId(null); router.replace("/login"); } };
@@ -46,6 +49,10 @@ function WorkLogs() {
     }, [userId, viewId]);
     useEffect(() => { if (selected && !preview.current?.open) preview.current?.showModal(); if (!selected) preview.current?.close(); }, [selected]);
     useEffect(() => { if (archiveTarget && !archiveDialog.current?.open) archiveDialog.current?.showModal(); if (!archiveTarget) archiveDialog.current?.close(); }, [archiveTarget]);
+    useEffect(() => {
+        if (deleteTarget && !deleteDialog.current?.open) deleteDialog.current?.showModal();
+        if (!deleteTarget) deleteDialog.current?.close();
+    }, [deleteTarget]);
     const openPreview = async (id: string) => { setBusy(true); setError(""); try { const log = await getSavedWorkLog(id); setSelected(log); if (log.archived_at) { setState("archived"); setPage(0); } } catch (e) { setError(e instanceof Error ? e.message : "저장본을 읽지 못했습니다."); } finally { setBusy(false); } };
     const exportLog = async (id: string) => {
         setBusy(true); setError("");
@@ -64,6 +71,27 @@ function WorkLogs() {
         } catch (e) { setError(e instanceof Error ? e.message : "보관하지 못했습니다."); setRefresh(v => v + 1); }
         finally { setArchiveTarget(null); setBusy(false); }
     };
+    const deleteLog = async () => {
+        if (!deleteTarget || busy || deleteIssue?.retryable === false) return;
+        setBusy(true); setDeleteIssue(null); setMessage("");
+        try {
+            await workLogRequest<{ id: string }>(`/api/work-logs/${deleteTarget.id}`, {
+                method: "DELETE", body: JSON.stringify({ revision: deleteTarget.revision }),
+            });
+            setLogs(previous => previous.filter(log => log.id !== deleteTarget.id));
+            setMessage("작업로그를 삭제했습니다.");
+            setDeleteTarget(null);
+            setPage(0); setRefresh(value => value + 1);
+        } catch (error) {
+            const changed = error instanceof WorkLogError && [404, 409].includes(error.status);
+            setDeleteIssue({
+                message: changed ? "작업로그 상태가 바뀌었습니다. 창을 닫고 최신 목록을 확인해주세요."
+                    : error instanceof Error ? error.message : "작업로그를 삭제하지 못했습니다.",
+                retryable: !changed,
+            });
+            if (changed) { setPage(0); setRefresh(value => value + 1); }
+        } finally { setBusy(false); }
+    };
     const closePreview = () => { setSelected(null); if (viewId) router.replace("/app/logs"); };
     const { projects, ungrouped } = groupSavedWorkLogs(logs);
     const renderLog = (log: WorkLogSummary) => (
@@ -71,7 +99,8 @@ function WorkLogs() {
             onPreview={() => void openPreview(log.id)}
             onEdit={() => router.push(`/app/workspace/${log.category}?log=${encodeURIComponent(log.id)}`)}
             onExport={() => void exportLog(log.id)}
-            onArchive={() => setArchiveTarget(log)} />
+            onArchive={() => setArchiveTarget(log)}
+            onDelete={() => { setDeleteIssue(null); setDeleteTarget(log); }} />
     );
     const dialogClass = "fixed inset-0 m-auto max-w-none overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/50 dark:border-slate-700 dark:bg-slate-950 dark:text-white";
     return <main className="min-h-screen bg-slate-50 px-4 pb-20 pt-28 md:px-10 dark:bg-slate-950"><div className="mx-auto max-w-7xl">
@@ -101,6 +130,23 @@ function WorkLogs() {
             {selected && <div className="flex max-h-[90dvh] flex-col"><header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800"><div className="min-w-0"><p className="mb-2 text-xs text-slate-500">{WORK_CATEGORIES[selected.category]} · {selected.archived_at ? "보관본 · 읽기 전용" : "수정 가능한 저장본"}</p><h2 id="log-preview-title" className="break-words text-xl font-bold">{selected.title}</h2><p className="mt-2 text-xs text-slate-500">{dateLabel(selected.updated_at)} · 학생 {selected.student_count}명</p></div><button aria-label="기록 보기 닫기" onClick={closePreview} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="size-5" /></button></header><div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">{(selected.data.students || []).map(student => <article key={student.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><div className="mb-3 flex flex-wrap gap-3"><h3 className="text-sm font-bold">{student.id}번 학생</h3><span className="text-xs text-slate-500">{(selected.category === "creative" ? student.participatedEvents || [] : student.selectedKeywords || []).join(" · ")}</span></div><p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700 dark:text-slate-200">{student.aiResult || "작성된 결과가 없습니다."}</p></article>)}</div><footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-slate-200 p-4 dark:border-slate-800"><Button variant="outline" onClick={() => void exportLog(selected.id)} disabled={busy || !selected.completed_count} className="gap-2 rounded-lg"><Download className="size-4" />CSV 내보내기</Button>{!selected.archived_at && selected.category !== "docs" && <Button onClick={() => router.push(`/app?log=${selected.id}`)} className="gap-2 rounded-lg"><Edit3 className="size-4" />편집하기</Button>}<Button variant="ghost" onClick={closePreview} className="rounded-lg">닫기</Button></footer></div>}
         </dialog>
         <dialog ref={archiveDialog} onCancel={e => { if (busy) e.preventDefault(); else setArchiveTarget(null); }} onClose={() => setArchiveTarget(null)} aria-labelledby="archive-title" className={`${dialogClass} w-[min(460px,calc(100vw-24px))]`}><div className="p-6"><LockKeyhole className="mb-4 size-7 text-slate-500" /><h2 id="archive-title" className="text-xl font-bold">이 기록을 보관하시겠습니까?</h2><p className="my-4 break-words text-sm font-semibold">{archiveTarget?.title}</p><p className="text-sm leading-7 text-slate-500">보관한 뒤에는 열람과 내보내기만 가능합니다. 내용 수정, 특정 학생 AI 재생성, 삭제, 보관 해제는 불가능합니다.</p><div className="mt-6 flex justify-end gap-2"><Button variant="outline" onClick={() => setArchiveTarget(null)} disabled={busy} className="rounded-lg">취소</Button><Button onClick={() => void archive()} disabled={busy} className="gap-2 rounded-lg">{busy ? <Loader2 className="size-4 animate-spin" /> : <Archive className="size-4" />}수정 불가 상태로 보관</Button></div></div></dialog>
+        <dialog ref={deleteDialog} onCancel={event => { event.preventDefault(); if (!busy) setDeleteTarget(null); }}
+            aria-labelledby="delete-log-title" aria-describedby="delete-log-description"
+            className={`${dialogClass} w-[min(440px,calc(100vw-24px))] p-6`}>
+            <Trash2 aria-hidden="true" className="mb-3 size-6 text-red-600 dark:text-red-400" />
+            <h2 id="delete-log-title" className="text-xl font-bold">작업로그를 삭제할까요?</h2>
+            {deleteTarget && <p className="my-3 break-words text-sm font-semibold">
+                {deleteTarget.project ? `${deleteTarget.project.title} · ${deleteTarget.subject_name || deleteTarget.title}` : deleteTarget.title}
+            </p>}
+            <p id="delete-log-description" className="text-sm leading-6 text-slate-600 dark:text-slate-300">이 작업로그를 삭제하면 복구할 수 없습니다.</p>
+            {deleteIssue && <p role="alert" className="mt-3 text-sm leading-6 text-red-700 dark:text-red-300">{deleteIssue.message}</p>}
+            <div className="mt-6 flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={busy} className="rounded-lg">취소</Button>
+                <Button variant="destructive" onClick={() => void deleteLog()} disabled={busy || deleteIssue?.retryable === false} className="rounded-lg">
+                    {busy && <Loader2 aria-hidden="true" className="animate-spin" />}삭제
+                </Button>
+            </div>
+        </dialog>
     </main>;
 }
 export default function Page() { return <Suspense fallback={<main className="p-12 pt-32">작업로그를 불러오는 중입니다.</main>}><WorkLogs /></Suspense>; }

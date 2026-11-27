@@ -13,13 +13,13 @@ export async function workLogUser(req: Request) {
     if (error || !data.user) throw new WorkLogAccessError("로그인이 만료되었습니다.", 401, "AUTH_REQUIRED");
     return { client, user: data.user };
 }
-export function workLogFailure(error: unknown) {
+export function workLogFailure(error: unknown, fallback = "저장 요청을 처리하지 못했습니다. 현재 내용을 유지한 채 다시 시도해주세요.") {
     if (error instanceof WorkLogAccessError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     const message = error && typeof error === "object" && "message" in error ? String(error.message) : "";
     if (message.includes("WORK_LOG_ARCHIVED")) return NextResponse.json({ error: "보관된 작업은 수정하거나 AI를 재생성할 수 없습니다.", code: "WORK_LOG_ARCHIVED" }, { status: 409 });
     if (message.includes("WORK_LOG_CONFLICT")) return NextResponse.json({ error: "다른 창에서 이 기록이 변경되었습니다. 현재 수정 내용은 유지됩니다. 최신 저장본을 확인해주세요.", code: "WORK_LOG_CONFLICT" }, { status: 409 });
     if (message.includes("WORK_LOG_NOT_FOUND")) return NextResponse.json({ error: "작업로그를 찾을 수 없습니다.", code: "WORK_LOG_NOT_FOUND" }, { status: 404 });
-    return NextResponse.json({ error: "저장 요청을 처리하지 못했습니다. 현재 내용을 유지한 채 다시 시도해주세요.", code: "SAVE_FAILED" }, { status: 500 });
+    return NextResponse.json({ error: fallback, code: "SAVE_FAILED" }, { status: 500 });
 }
 export async function assertEditableWorkLog(req: Request, id: unknown) {
     if (id === undefined || id === null || id === "") return;

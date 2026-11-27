@@ -37,9 +37,23 @@ export async function PATCH(req: Request, context: Context) {
         const { id } = await context.params;
         const { client } = await workLogUser(req);
         const body = await req.json().catch(() => ({}));
-        if (!isUuid(id) || body.action !== "archive" || !Number.isInteger(body.revision) || body.revision < 1) return NextResponse.json({ error: "보관 요청을 확인해주세요." }, { status: 400 });
+        if (!isUuid(id) || body?.action !== "archive" || !Number.isInteger(body.revision) || body.revision < 1) return NextResponse.json({ error: "보관 요청을 확인해주세요." }, { status: 400 });
         const { data, error } = await client.rpc("archive_saved_work_log", { p_id: id, p_revision: body.revision });
         if (error) throw error;
         return NextResponse.json(data);
     } catch (error) { return workLogFailure(error); }
+}
+
+export async function DELETE(req: Request, context: Context) {
+    try {
+        const { id } = await context.params;
+        const { client } = await workLogUser(req);
+        const body = await req.json().catch(() => null);
+        if (!isUuid(id) || !Number.isInteger(body?.revision) || body.revision < 1 || body.revision > 2147483647) {
+            return NextResponse.json({ error: "삭제할 작업로그와 버전을 확인해주세요." }, { status: 400 });
+        }
+        const { error } = await client.rpc("delete_saved_work_log", { p_id: id, p_revision: body.revision });
+        if (error) throw error;
+        return NextResponse.json({ id });
+    } catch (error) { return workLogFailure(error, "작업로그를 삭제하지 못했습니다. 다시 시도해주세요."); }
 }
