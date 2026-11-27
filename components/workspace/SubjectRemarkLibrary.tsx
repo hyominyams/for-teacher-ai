@@ -1,21 +1,19 @@
 "use client";
 
-import { useId, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
-import { BookOpenText, Plus, Sparkles } from "lucide-react";
+import { useEffect, useId, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
+import { BookOpenText, Plus, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { workspaceToolButtonClassName } from "@/components/workspace/WorkspaceControls";
+import { normalizeRemarkSubjectName, subjectRemarkLevels, type SubjectRemarkLevel, type SubjectRemarkPhrases } from "@/lib/subject-remarks";
 import { cn } from "@/lib/utils";
-
-const remarkLevels = ["공통", "상", "중", "하"] as const;
-type RemarkLevel = (typeof remarkLevels)[number];
 
 export type RemarkSubject = { id: string; name: string; detail?: string };
 
 export type SubjectRemarkDraft = {
     customSubjects: RemarkSubject[];
-    phrases: Record<string, Partial<Record<RemarkLevel, string>>>;
+    phrases: Record<string, SubjectRemarkPhrases>;
 };
 
 interface SubjectRemarkLibraryProps {
@@ -34,13 +32,26 @@ export function SubjectRemarkLibrary({ id, open, subjects, currentSubjectId, ass
     const headingId = useId();
     const inputId = useId();
     const subjectInputId = useId();
+    const deleteHeadingId = useId();
+    const deleteDescriptionId = useId();
     const phraseInput = useRef<HTMLTextAreaElement>(null);
+    const addSubjectButton = useRef<HTMLButtonElement>(null);
+    const deleteDialog = useRef<HTMLDialogElement>(null);
     const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
-    const [level, setLevel] = useState<RemarkLevel>("공통");
+    const [level, setLevel] = useState<SubjectRemarkLevel>("공통");
     const [addingSubject, setAddingSubject] = useState(false);
     const [subjectName, setSubjectName] = useState("");
+    const [deleteTarget, setDeleteTarget] = useState<RemarkSubject | null>(null);
+
+    useEffect(() => {
+        const dialog = deleteDialog.current;
+        if (!dialog) return;
+        if (deleteTarget && !dialog.open) dialog.showModal();
+        if (!deleteTarget && dialog.open) dialog.close();
+    }, [deleteTarget]);
 
     const allSubjects = [...subjects, ...draft.customSubjects];
+    const customSubjectIds = new Set(draft.customSubjects.map(subject => subject.id));
     const subjectIdsByName = new Map<string, string[]>();
     for (const subject of allSubjects) {
         const ids = subjectIdsByName.get(subject.name);
@@ -60,10 +71,10 @@ export function SubjectRemarkLibrary({ id, open, subjects, currentSubjectId, ass
 
     function addSubject(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
-        const name = subjectName.trim().replace(/\s+/g, " ");
+        const name = normalizeRemarkSubjectName(subjectName);
         if (!name) return;
 
-        const existing = allSubjects.find(subject => subject.name === name);
+        const existing = allSubjects.find(subject => normalizeRemarkSubjectName(subject.name) === name);
         if (existing) {
             selectSubject(existing.id);
         } else {
@@ -74,6 +85,22 @@ export function SubjectRemarkLibrary({ id, open, subjects, currentSubjectId, ass
         setSubjectName("");
         setAddingSubject(false);
         requestAnimationFrame(() => phraseInput.current?.focus());
+    }
+
+    function removeSubject() {
+        if (!deleteTarget) return;
+        const subjectId = deleteTarget.id;
+        setDraft(previous => {
+            const phrases = { ...previous.phrases };
+            delete phrases[subjectId];
+            return { customSubjects: previous.customSubjects.filter(subject => subject.id !== subjectId), phrases };
+        });
+        if (activeSubject?.id === subjectId) {
+            setSelectedSubjectId(null);
+            setLevel("공통");
+        }
+        setDeleteTarget(null);
+        requestAnimationFrame(() => addSubjectButton.current?.focus());
     }
 
     function updatePhrases(subjectId: string, value: string) {
@@ -93,10 +120,10 @@ export function SubjectRemarkLibrary({ id, open, subjects, currentSubjectId, ass
                         </div>
                         <div>
                             <h3 id={headingId} className="text-sm font-bold text-slate-900 dark:text-white">과목별 참고 평어</h3>
-                            <p className="mt-0.5 text-xs leading-5 text-slate-600 dark:text-slate-300">AI가 종합의견을 작성할 때 참고할 문장을 과목과 수준별로 모아두세요.</p>
+                            <p className="mt-0.5 text-xs leading-5 text-slate-600 dark:text-slate-300">공통 평어만 넣어도 AI가 학생의 평가별 성취 수준에 맞춰 바꿔 써요.</p>
                         </div>
                     </div>
-                    <p className="text-xs leading-5 text-slate-600 dark:text-slate-400">UI 시안 · 새로고침하면 입력이 초기화돼요.</p>
+                    <p className="text-xs leading-5 text-slate-600 dark:text-slate-400">새로고침하면 평어 입력이 초기화돼요.</p>
                 </div>
 
                 <Tabs value={activeSubject?.id ?? ""} onValueChange={selectSubject} className="gap-0">
@@ -107,16 +134,25 @@ export function SubjectRemarkLibrary({ id, open, subjects, currentSubjectId, ass
                                 {allSubjects.map(subject => {
                                     const matchingIds = subjectIdsByName.get(subject.name) ?? [];
                                     const label = matchingIds.length > 1 ? `${subject.name} #${matchingIds.indexOf(subject.id) + 1}` : subject.name;
+                                    const canDelete = customSubjectIds.has(subject.id);
                                     return (
-                                        <TabsTrigger key={subject.id} value={subject.id} title={subject.detail ? `${label} · ${subject.detail}` : label}
-                                            className="h-8 min-w-0 max-w-full flex-none rounded-lg border-slate-200 px-3 text-xs font-semibold text-slate-700 data-[state=active]:border-indigo-200 data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-800 data-[state=active]:shadow-none dark:border-slate-700 dark:text-slate-300 dark:data-[state=active]:border-indigo-800 dark:data-[state=active]:bg-indigo-950/60 dark:data-[state=active]:text-indigo-200">
-                                            <span className="truncate">{label}</span>
-                                        </TabsTrigger>
+                                        <div key={subject.id} className="group relative min-w-0 max-w-full">
+                                            <TabsTrigger value={subject.id} title={subject.detail ? `${label} · ${subject.detail}` : label}
+                                                className={cn("h-8 min-w-0 max-w-full flex-none rounded-lg border-slate-200 px-3 text-xs font-semibold text-slate-700 data-[state=active]:border-indigo-200 data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-800 data-[state=active]:shadow-none dark:border-slate-700 dark:text-slate-300 dark:data-[state=active]:border-indigo-800 dark:data-[state=active]:bg-indigo-950/60 dark:data-[state=active]:text-indigo-200", canDelete && "pr-8")}>
+                                                <span className="truncate">{label}</span>
+                                            </TabsTrigger>
+                                            {canDelete && (
+                                                <button type="button" aria-label={`${label} 과목 삭제`} title={`${label} 과목 삭제`} onClick={() => setDeleteTarget(subject)}
+                                                    className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-slate-500 transition-opacity hover:bg-slate-200 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-indigo-500 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
+                                                    <X aria-hidden="true" className="size-3.5" />
+                                                </button>
+                                            )}
+                                        </div>
                                     );
                                 })}
                             </TabsList>
                         )}
-                        <Button type="button" variant="outline" aria-expanded={addingSubject} onClick={() => setAddingSubject(!addingSubject)}
+                        <Button ref={addSubjectButton} type="button" variant="outline" aria-expanded={addingSubject} onClick={() => setAddingSubject(!addingSubject)}
                             className={cn(workspaceToolButtonClassName, "h-8 rounded-lg border-dashed border-indigo-300 px-2.5 text-indigo-700 dark:border-indigo-800 dark:text-indigo-300")}>
                             <Plus aria-hidden="true" /> 과목 추가
                         </Button>
@@ -132,9 +168,9 @@ export function SubjectRemarkLibrary({ id, open, subjects, currentSubjectId, ass
 
                     {activeSubject ? (
                         <TabsContent value={activeSubject.id} className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.4fr)] lg:items-start">
-                            <Tabs value={level} onValueChange={value => setLevel(value as RemarkLevel)} className="min-w-0 gap-3">
+                            <Tabs value={level} onValueChange={value => setLevel(value as SubjectRemarkLevel)} className="min-w-0 gap-3">
                                 <TabsList aria-label="평어 수준" className="grid h-auto w-full grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800 sm:w-fit">
-                                    {remarkLevels.map(value => (
+                                    {subjectRemarkLevels.map(value => (
                                         <TabsTrigger key={value} value={value} className="h-8 gap-1 rounded-lg px-2 text-xs data-[state=active]:bg-white data-[state=active]:text-indigo-800 dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-indigo-200 sm:min-w-[70px] sm:px-3">
                                             {value}<span className="text-[11px] tabular-nums text-slate-500 dark:text-slate-400" aria-hidden="true">{countPhrases(phrases?.[value])}</span>
                                         </TabsTrigger>
@@ -160,7 +196,7 @@ export function SubjectRemarkLibrary({ id, open, subjects, currentSubjectId, ass
                                     </div>
                                     <div>
                                         <dt className="break-words font-semibold text-slate-800 dark:text-slate-200">{activeSubject.name} 참고 평어</dt>
-                                        <dd>공통 평어와 학생의 수준에 해당하는 평어</dd>
+                                        <dd>공통 평어는 평가별 수준에 맞춰 바꿔 쓰고, 상·중·하 평어는 해당 수준에서 참고해요.</dd>
                                     </div>
                                 </dl>
                             </aside>
@@ -170,6 +206,16 @@ export function SubjectRemarkLibrary({ id, open, subjects, currentSubjectId, ass
                     )}
                 </Tabs>
             </div>
+            <dialog ref={deleteDialog} aria-labelledby={deleteHeadingId} aria-describedby={deleteDescriptionId}
+                onCancel={event => { event.preventDefault(); setDeleteTarget(null); }}
+                className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl backdrop:bg-slate-950/50 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+                <h4 id={deleteHeadingId} className="break-words text-base font-bold">‘{deleteTarget?.name}’ 과목을 삭제할까요?</h4>
+                <p id={deleteDescriptionId} className="mt-2 text-sm text-slate-600 dark:text-slate-300">이 과목에 입력한 평어도 함께 삭제돼요.</p>
+                <div className="mt-5 flex justify-end gap-2">
+                    <Button type="button" variant="outline" autoFocus onClick={() => setDeleteTarget(null)} className="rounded-xl">취소</Button>
+                    <Button type="button" variant="destructive" onClick={removeSubject} className="rounded-xl">삭제</Button>
+                </div>
+            </dialog>
         </section>
     );
 }

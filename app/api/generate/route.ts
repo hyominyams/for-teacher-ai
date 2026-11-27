@@ -2,6 +2,7 @@ import { callBudget, completionText, creditFailure, creditUser, CreditError, rea
 import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-access";
 import { runRecordContinuation } from "@/lib/server/record-continuation";
 import { MAX_EXISTING_RECORD_CHARS, removeRecordEmoji } from "@/lib/record-generation";
+import { selectSubjectRemarkReferences, SUBJECT_REMARK_INSTRUCTIONS } from "@/lib/subject-remarks";
 import type { AchievementLevel, SubjectAssessmentInfo } from "@/types";
 import { OpenAI } from "openai";
 import fs from "fs";
@@ -63,15 +64,18 @@ export async function POST(req: Request) {
             .replaceAll("[EVENTS]", keywords.join(", ")) // 창체의 경우 keywords에 행사가 들어옴
             .replaceAll("[OFFICER_INFO]", officerInfo)
             .replaceAll("[TARGET_CHARS]", targetChars.toString());
+        let remarkReferences: ReturnType<typeof selectSubjectRemarkReferences>;
 
         if (category === "subject") {
             if (subjectMeta) {
-                const { schoolLevel, grade, subjectName, assessments, studentAssessments, individualNote } = subjectMeta;
+                const { schoolLevel, grade, subjectName, assessments, studentAssessments, individualNote, remarkPhrases } = subjectMeta;
+                const assessedLevels = new Set<AchievementLevel>();
 
                 const assessmentsText = ((assessments || []) as SubjectAssessmentInfo[]).flatMap((a) => {
                     const selectedLevel = ((studentAssessments || []) as StudentAssessment[]).find((sa) => sa.assessmentId === a.id)?.level;
                     const studentLevel = ACHIEVEMENT_LEVELS.find((level) => level === selectedLevel);
                     if (!studentLevel) return [];
+                    assessedLevels.add(studentLevel);
                     const criteria = getCriteriaForLevel(a, studentLevel);
 
                     return `- 영역: ${a.area}
@@ -92,6 +96,7 @@ ${assessmentsText || "선택된 평가 항목이 없습니다."}
                 `.trim();
 
                 prompt = prompt.replace("[SUBJECT_DATA]", () => subjectData);
+                remarkReferences = selectSubjectRemarkReferences(remarkPhrases, assessedLevels);
             }
         }
 
@@ -100,8 +105,10 @@ ${assessmentsText || "선택된 평가 항목이 없습니다."}
             reasoning_effort: category === "subject" ? "low" : "none",
             max_completion_tokens: Math.min(32768, Math.max(1024, targetChars * 4 + 256)),
             messages: [
-                { role: "system", content: "당신은 학생 생활기록부를 전문적으로 작성하는 대한민국 교사입니다. 학생의 이름이나 번호를 절대 언급하지 마세요." },
-                { role: "user", content: prompt }
+                { role: "system", content: "당신은 학생 생활기록부를 전문적으로 작성하는 대한민국 교사입니다. 학생의 이름이나 번호를 절대 언급하지 마세요."
+                    + (remarkReferences ? SUBJECT_REMARK_INSTRUCTIONS : "") },
+                { role: "user", content: prompt },
+                ...(remarkReferences ? [{ role: "user" as const, content: `과목별 참고 평어 (JSON 데이터)\n${JSON.stringify(remarkReferences)}` }] : [])
             ],
             ...(category === "subject" ? {} : { temperature: 0.7 }),
         };

@@ -87,7 +87,8 @@ interface SubjectWorkspaceProps {
     planImportAction?: React.ReactNode;
     remarkDraft: SubjectRemarkDraft;
     setRemarkDraft: React.Dispatch<React.SetStateAction<SubjectRemarkDraft>>;
-    savedRemarkSubjects?: { currentId: string; others: RemarkSubject[] };
+    remarkSubjectId: string;
+    savedRemarkSubjects?: RemarkSubject[];
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
     globalConfig: SubjectGlobalConfig;
@@ -184,6 +185,7 @@ export const SubjectWorkspace = ({
     planImportAction,
     remarkDraft,
     setRemarkDraft,
+    remarkSubjectId,
     savedRemarkSubjects,
     students,
     setStudents,
@@ -375,13 +377,12 @@ export const SubjectWorkspace = ({
         if (group) group.logs.push(log);
         else subjectProjects.set(key, { title: log.project?.title, logs: [log] });
     }
-    const currentRemarkSubjectId = savedRemarkSubjects?.currentId ?? `draft:${activeSubjectScopeKey}`;
     const currentRemarkSubjectName = globalConfig.subjectName.trim();
-    const otherRemarkSubjects = savedRemarkSubjects?.others ?? subjectSelectItems
+    const otherRemarkSubjects = savedRemarkSubjects ?? subjectSelectItems
         .filter(log => log.scopeKey !== activeSubjectScopeKey && log.displayLabel !== "새 교과" && log.displayLabel !== "교과")
         .map(log => ({ id: `draft:${log.scopeKey}`, name: log.displayLabel, detail: log.project?.title }));
     const remarkSubjects = currentRemarkSubjectName
-        ? [{ id: currentRemarkSubjectId, name: currentRemarkSubjectName }, ...otherRemarkSubjects]
+        ? [{ id: remarkSubjectId, name: currentRemarkSubjectName }, ...otherRemarkSubjects]
         : otherRemarkSubjects;
     const selectedStudentCount = students.filter(s => s.selected).length;
 
@@ -622,7 +623,7 @@ export const SubjectWorkspace = ({
                         id={remarksPanelId}
                         open={remarksOpen}
                         subjects={remarkSubjects}
-                        currentSubjectId={currentRemarkSubjectId}
+                        currentSubjectId={remarkSubjectId}
                         assessmentAreas={[...new Set(globalConfig.assessments.map(assessment => assessment.area.trim()).filter(Boolean))]}
                         draft={remarkDraft}
                         setDraft={setRemarkDraft}
