@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useSyncExternalStore } from "react";
+import React, { useId, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import {
     Zap,
     BookOpen,
@@ -54,6 +54,7 @@ import {
 } from "@/components/workspace/WorkspaceControls";
 import { createPortal } from "react-dom";
 import { AchievementLevel, CriteriaLevels, Student, SubjectGlobalConfig, SubjectAssessmentInfo } from "@/types";
+import { SubjectRemarkLibrary, type RemarkSubject, type SubjectRemarkDraft } from "@/components/workspace/SubjectRemarkLibrary";
 
 interface WrapperProps {
     children: React.ReactNode;
@@ -84,6 +85,10 @@ interface SubjectWorkspaceProps {
     polishAction?: React.ReactNode;
     /** 평가계획 HWPX 가져오기 버튼(파일 입력과 처리는 RecordWorkspace에 있다) */
     planImportAction?: React.ReactNode;
+    remarkDraft: SubjectRemarkDraft;
+    setRemarkDraft: React.Dispatch<React.SetStateAction<SubjectRemarkDraft>>;
+    remarkSubjectId: string;
+    savedRemarkSubjects?: RemarkSubject[];
     students: Student[];
     setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
     globalConfig: SubjectGlobalConfig;
@@ -178,6 +183,10 @@ export const SubjectWorkspace = ({
     savedEditor = false,
     polishAction,
     planImportAction,
+    remarkDraft,
+    setRemarkDraft,
+    remarkSubjectId,
+    savedRemarkSubjects,
     students,
     setStudents,
     globalConfig,
@@ -201,6 +210,8 @@ export const SubjectWorkspace = ({
 }: SubjectWorkspaceProps) => {
     const [bulkAssessmentId, setBulkAssessmentId] = useState<string | null>(null);
     const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
+    const [remarksOpen, setRemarksOpen] = useState(false);
+    const remarksPanelId = useId();
     // 평가 기준 섹션: 사용자가 직접 열고 닫기 전에는 평가가 없을 때만 펼친다. 교과를 바꾸면 다시 자동으로 돌아간다.
     const [criteriaOpenOverride, setCriteriaOpenOverride] = useState<boolean | null>(null);
     const [criteriaScopeKey, setCriteriaScopeKey] = useState(activeSubjectScopeKey);
@@ -366,6 +377,13 @@ export const SubjectWorkspace = ({
         if (group) group.logs.push(log);
         else subjectProjects.set(key, { title: log.project?.title, logs: [log] });
     }
+    const currentRemarkSubjectName = globalConfig.subjectName.trim();
+    const otherRemarkSubjects = savedRemarkSubjects ?? subjectSelectItems
+        .filter(log => log.scopeKey !== activeSubjectScopeKey && log.displayLabel !== "새 교과" && log.displayLabel !== "교과")
+        .map(log => ({ id: `draft:${log.scopeKey}`, name: log.displayLabel, detail: log.project?.title }));
+    const remarkSubjects = currentRemarkSubjectName
+        ? [{ id: remarkSubjectId, name: currentRemarkSubjectName }, ...otherRemarkSubjects]
+        : otherRemarkSubjects;
     const selectedStudentCount = students.filter(s => s.selected).length;
 
     const handleSubjectDragStart = (event: React.DragEvent<HTMLButtonElement>, scopeKey: string) => {
@@ -587,8 +605,29 @@ export const SubjectWorkspace = ({
                             >
                                 <Plus aria-hidden="true" /> 평가정보 추가
                             </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                aria-expanded={remarksOpen}
+                                aria-controls={remarksPanelId}
+                                onClick={() => setRemarksOpen(!remarksOpen)}
+                                className={cn(workspaceToolButtonClassName, "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 hover:text-indigo-900 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200 dark:hover:bg-indigo-900/60")}
+                            >
+                                {remarksOpen ? <ChevronUp aria-hidden="true" /> : <Plus aria-hidden="true" />}
+                                과목별 평어 추가
+                            </Button>
                         </div>
                     </div>
+
+                    <SubjectRemarkLibrary
+                        id={remarksPanelId}
+                        open={remarksOpen}
+                        subjects={remarkSubjects}
+                        currentSubjectId={remarkSubjectId}
+                        assessmentAreas={[...new Set(globalConfig.assessments.map(assessment => assessment.area.trim()).filter(Boolean))]}
+                        draft={remarkDraft}
+                        setDraft={setRemarkDraft}
+                    />
 
                     {criteriaOpen && (
                     <div id="subject-criteria-panel" className="space-y-3 border-t border-slate-200 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-950/30 sm:p-4">

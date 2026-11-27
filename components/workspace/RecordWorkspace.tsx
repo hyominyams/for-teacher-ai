@@ -37,7 +37,10 @@ import type { PolishCategory } from "@/lib/class-polish";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
 import { SubjectPlanUploadDialog } from "@/components/workspace/SubjectPlanUploadDialog";
+import { SubjectOverlapControl } from "@/components/workspace/SubjectOverlapControl";
 import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
+import type { SubjectRemarkDraft } from "@/components/workspace/SubjectRemarkLibrary";
+import { normalizeRemarkSubjectName, subjectRemarkLevels, type SubjectRemarkPhrases } from "@/lib/subject-remarks";
 import { PlaceholderWorkspace } from "@/components/workspace/PlaceholderWorkspace";
 import { studentKeywordPool, defaultKeywords } from "@/lib/constants/behavior-keywords";
 
@@ -304,8 +307,10 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const [isExpanded, setIsExpanded] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [subjectConfig, setSubjectConfig] = useState<SubjectGlobalConfig>(getDefaultSubjectConfig);
+    const [subjectRemarkDraft, setSubjectRemarkDraft] = useState<SubjectRemarkDraft>({ customSubjects: [], phrases: {} });
     const [subjectLogs, setSubjectLogs] = useState<SubjectWorkLogSummary[]>([]);
     const [activeSubjectScopeKey, setActiveSubjectScopeKey] = useState(DEFAULT_SCOPE_KEY);
+    const remarkSubjectId = requestedLogId ? `saved:${requestedLogId}` : `draft:${activeSubjectScopeKey}`;
     const [activeSubjectProject, setActiveSubjectProject] = useState<SubjectProjectSummary | null>(null);
     const restoredSubjectUser = useRef<string | null>(null);
     const hydratedSubjectScope = useRef<{ userId: string; scopeKey: string; epoch: number } | null>(null);
@@ -922,6 +927,24 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         };
     };
 
+    const buildSubjectGenerationMeta = (config: SubjectGlobalConfig, student: Student) => {
+        const name = normalizeRemarkSubjectName(config.subjectName);
+        const customSubject = subjectRemarkDraft.customSubjects.find(subject => subject.name === name);
+        const customPhrases = customSubject && subjectRemarkDraft.phrases[customSubject.id];
+        const currentSubjectPhrases = subjectRemarkDraft.phrases[remarkSubjectId];
+        const remarkPhrases: SubjectRemarkPhrases = {};
+        for (const level of subjectRemarkLevels) {
+            const sources = [currentSubjectPhrases?.[level]?.trim(), customPhrases?.[level]?.trim()].filter(Boolean);
+            if (sources.length) remarkPhrases[level] = sources.join("\n");
+        }
+        return {
+            ...config,
+            individualNote: student.subjectData?.individualNote || "",
+            studentAssessments: student.subjectData?.assessments || [],
+            ...(Object.keys(remarkPhrases).length ? { remarkPhrases } : {}),
+        };
+    };
+
     const handleGenerate = async (id: number, mode: GenerationMode = "replace") => {
         setLogError("");
         setLogMessage("");
@@ -1010,11 +1033,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                     role: student.officerRole || "임원아님",
                     targetChars: charLimits[activeTabId],
                     category: activeTabId,
-                    subjectMeta: activeTabId === 'subject' ? {
-                        ...currentSubjectConfig,
-                        individualNote: student.subjectData?.individualNote || "",
-                        studentAssessments: student.subjectData?.assessments || []
-                    } : undefined
+                    subjectMeta: activeTabId === 'subject' ? buildSubjectGenerationMeta(currentSubjectConfig, student) : undefined
                 })
             });
 
@@ -1127,11 +1146,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                         role: student.officerRole || "임원아님",
                         targetChars: charLimits[activeTabId],
                         category: activeTabId,
-                        subjectMeta: activeTabId === 'subject' ? {
-                            ...currentSubjectConfig,
-                            individualNote: student.subjectData?.individualNote || "",
-                            studentAssessments: student.subjectData?.assessments || []
-                        } : undefined
+                        subjectMeta: activeTabId === 'subject' ? buildSubjectGenerationMeta(currentSubjectConfig, student) : undefined
                     })
                 });
                 const data = await response.json();
@@ -1248,11 +1263,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                         role: student.officerRole || "임원아님",
                         targetChars: charLimits[activeTabId],
                         category: activeTabId,
-                        subjectMeta: activeTabId === 'subject' ? {
-                            ...currentSubjectConfig,
-                            individualNote: student.subjectData?.individualNote || "",
-                            studentAssessments: student.subjectData?.assessments || []
-                        } : undefined
+                        subjectMeta: activeTabId === 'subject' ? buildSubjectGenerationMeta(currentSubjectConfig, student) : undefined
                     })
                 });
                 const data = await response.json();
@@ -1813,6 +1824,17 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     ) : null;
 
     const workspaceLocked = isWorkLogLoading || logBusy || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId);
+    const overlapAction = activeTabId === "subject" ? (
+        <SubjectOverlapControl
+            key={`${userId}:${remarkSubjectId}:${workspaceVersion}`}
+            students={students}
+            setStudents={setStudents}
+            config={subjectConfig}
+            workLogId={requestedLogId || undefined}
+            disabled={workspaceLocked || isSubjectPlanImporting}
+            onPersist={nextStudents => saveWorkLog(true, nextStudents)}
+        />
+    ) : null;
     const planImportAction = activeTabId === "subject" ? (
         <>
             <Button type="button" variant="outline" onClick={() => { setPlanUploadError(""); setUploadOpen(true); }} disabled={workspaceLocked || isSubjectPlanImporting}
@@ -1941,8 +1963,15 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             <SubjectWorkspace
                             key={isSavedEditor ? requestedLogId : "subject-draft"}
                             savedEditor={isSavedEditor}
-                            polishAction={polishAction}
+                            polishAction={<>{polishAction}{overlapAction}</>}
                             planImportAction={planImportAction}
+                            remarkDraft={subjectRemarkDraft}
+                            setRemarkDraft={setSubjectRemarkDraft}
+                            remarkSubjectId={remarkSubjectId}
+                            savedRemarkSubjects={isSavedEditor ? (projectSubjects?.logs ?? []).flatMap(log => {
+                                const name = log.subject_name?.trim();
+                                return log.id === requestedLogId || !name ? [] : [{ id: `saved:${log.id}`, name }];
+                            }) : undefined}
                             handleClearSelection={handleResetSelection}
                             students={students}
                             setStudents={setStudents}

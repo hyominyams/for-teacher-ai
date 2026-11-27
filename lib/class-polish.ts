@@ -1,4 +1,4 @@
-import type { Student } from "@/types";
+import type { RecordRevision, Student } from "@/types";
 
 export type PolishCategory = "behavior" | "subject" | "creative";
 export type PolishRecord = { studentId: number; text: string; protectedTerms: string[] };
@@ -10,12 +10,8 @@ export type PolishProposal = {
     reason: string;
     edits: PolishEdit[];
 };
-export type PolishHistoryEntry = {
-    batchId: string;
-    createdAt: string;
-    before: string;
-    after: string;
-};
+type RevisionHistory = "polishHistory" | "subjectOverlapHistory";
+type RecordReplacement = Pick<PolishProposal, "studentId" | "before" | "after">;
 
 export const POLISH_LIMITS = { students: 40, text: 2000, totalText: 40000, edits: 3, phrase: 160, changes: 24 } as const;
 
@@ -114,14 +110,15 @@ export function verifiedPolishProposals(proposals: PolishProposal[], value: unkn
     });
 }
 
-function historyOf(student: Student): PolishHistoryEntry[] {
-    return (Array.isArray(student.polishHistory) ? student.polishHistory : []).filter(h => h && typeof h.batchId === "string" && typeof h.createdAt === "string" && typeof h.before === "string" && typeof h.after === "string");
+function historyOf(student: Student, field: RevisionHistory): RecordRevision[] {
+    const entries = student[field];
+    return (Array.isArray(entries) ? entries : []).filter(h => h && typeof h.batchId === "string" && typeof h.createdAt === "string" && typeof h.before === "string" && typeof h.after === "string");
 }
 
-export function applyPolishProposals(students: Student[], proposals: PolishProposal[], batchId: string, createdAt: string) {
+export function applyPolishProposals(students: Student[], proposals: RecordReplacement[], batchId: string, createdAt: string, field: RevisionHistory = "polishHistory") {
     const applied: number[] = [];
     const skipped: number[] = [];
-    const unique = new Map<number, PolishProposal>();
+    const unique = new Map<number, RecordReplacement>();
     for (const proposal of proposals) {
         if (unique.has(proposal.studentId)) throw new Error("학생별 제안이 중복되었습니다.");
         unique.set(proposal.studentId, proposal);
@@ -131,31 +128,31 @@ export function applyPolishProposals(students: Student[], proposals: PolishPropo
         if (!proposal) return student;
         if (student.isGenerating || student.aiResult !== proposal.before) { skipped.push(student.id); return student; }
         applied.push(student.id);
-        return { ...student, aiResult: proposal.after, isEditable: true, polishHistory: [...historyOf(student), { batchId, createdAt, before: proposal.before, after: proposal.after }].slice(-3) };
+        return { ...student, aiResult: proposal.after, isEditable: true, [field]: [...historyOf(student, field), { batchId, createdAt, before: proposal.before, after: proposal.after }].slice(-3) };
     });
     for (const id of unique.keys()) if (!students.some(s => s.id === id)) skipped.push(id);
     return { students: next, applied, skipped };
 }
 
-export function latestPolishBatch(students: Student[]) {
-    const entries = students.flatMap(s => historyOf(s).slice(-1));
+export function latestPolishBatch(students: Student[], field: RevisionHistory = "polishHistory") {
+    const entries = students.flatMap(s => historyOf(s, field).slice(-1));
     const latest = entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
     if (!latest) return null;
-    const affected = students.filter(s => historyOf(s).at(-1)?.batchId === latest.batchId);
-    const restorable = affected.filter(s => !s.isGenerating && s.aiResult === historyOf(s).at(-1)?.after);
+    const affected = students.filter(s => historyOf(s, field).at(-1)?.batchId === latest.batchId);
+    const restorable = affected.filter(s => !s.isGenerating && s.aiResult === historyOf(s, field).at(-1)?.after);
     return { batchId: latest.batchId, count: restorable.length, skipped: affected.length - restorable.length };
 }
 
-export function undoPolishBatch(students: Student[], batchId: string) {
+export function undoPolishBatch(students: Student[], batchId: string, field: RevisionHistory = "polishHistory") {
     const restored: number[] = [];
     const skipped: number[] = [];
     const next = students.map(student => {
-        const history = historyOf(student);
+        const history = historyOf(student, field);
         const last = history.at(-1);
         if (!last || last.batchId !== batchId) return student;
         if (student.isGenerating || student.aiResult !== last.after) { skipped.push(student.id); return student; }
         restored.push(student.id);
-        return { ...student, aiResult: last.before, polishHistory: history.slice(0, -1) };
+        return { ...student, aiResult: last.before, [field]: history.slice(0, -1) };
     });
     return { students: next, restored, skipped };
 }

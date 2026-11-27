@@ -85,7 +85,7 @@ async function rpc(client:SupabaseClient,name:string,args:Record<string,unknown>
     }
     throw failure;
 }
-export async function runCreditJob(req:Request,user:User,operation:CreditOperation,fingerprintData:unknown,budgets:CallBudget[],work:(complete:BilledChat)=>Promise<Record<string,unknown>>) {
+export async function runCreditJob(req:Request,user:User,operation:CreditOperation,fingerprintData:unknown,budgets:CallBudget[],work:(complete:BilledChat)=>Promise<Record<string,unknown>>, options?: { timeoutMs: number }) {
     const requestId=req.headers.get("idempotency-key")||randomUUID();
     if(!isRequestId(requestId))return creditFailure(new CreditError("INVALID_REQUEST_ID","요청 번호 형식을 확인해주세요."));
     const client=creditAdminClient(), owner=randomUUID();
@@ -107,7 +107,7 @@ export async function runCreditJob(req:Request,user:User,operation:CreditOperati
             throw new CreditError("CREDIT_REQUEST_FINISHED","이미 처리된 요청입니다. 결과가 필요하면 새 작업으로 요청해주세요.",409);
         }
         claimed=true;
-        const openai=new OpenAI({apiKey:process.env.OPENAI_API_KEY,maxRetries:0,timeout:operation==="subject_plan"?180_000:45_000});
+        const openai=new OpenAI({apiKey:process.env.OPENAI_API_KEY,maxRetries:0,timeout:options?.timeoutMs??(operation==="subject_plan"?180_000:45_000)});
         const complete:BilledChat=async params=>{
             const budget=budgets[callIndex];
             if(!budget||params.model!==budget.model||params.max_completion_tokens!==budget.maxOutput||inputTokenCeiling(params)>budget.inputCeiling)throw new CreditError("BUDGET_MISMATCH","요청 크기를 확인하지 못했습니다. 다시 시도해주세요.",400);
