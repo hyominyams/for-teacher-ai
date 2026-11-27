@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const source = readFileSync(new URL('../extension/popup.js', import.meta.url), 'utf8');
 const importer = readFileSync(new URL('../extension/file-import.js', import.meta.url), 'utf8');
+const workLogRecords = readFileSync(new URL('../extension/work-log-records.js', import.meta.url), 'utf8');
 const account = { access_token: 'test-token', user: { id: 'user-a', email: 'test@example.invalid' } };
 const log = (id, category = 'behavior', archived = false) => ({
   id, category, title: `${id} 반`, revision: 1, student_count: 3, completed_count: 2,
@@ -46,7 +47,7 @@ async function setup({ saved = {}, handler = () => ({ logs: [], total: 0 }) } = 
   element('category').options = [{ value: 'behavior', text: '행특' }, { value: 'subject', text: '학기말 종합의견' }, { value: 'creative', text: '창체' }];
   element('category').value = 'behavior'; element('logState').value = 'editable';
   const radios = ['web', 'csv'].map(id => { const e = element(id); e.value = id; return e; });
-  const data = { forteacherSession: account, ...saved }, listeners = [], calls = [], injections = [];
+  const data = { forteacherSession: account, ...saved }, listeners = [], calls = [], injections = [], messages = [];
   const storage = {
     async get(keys) { return Object.fromEntries(keys.map(k => [k, data[k]])); },
     async set(values) { const changes = {}; for (const [k, v] of Object.entries(values)) { changes[k] = { oldValue: data[k], newValue: v }; data[k] = v; } listeners.forEach(fn => fn(changes, 'local')); },
@@ -55,15 +56,16 @@ async function setup({ saved = {}, handler = () => ({ logs: [], total: 0 }) } = 
   const context = vm.createContext({
     document: { getElementById: element, querySelectorAll: () => radios },
     window: { FORTEACHER_EXTENSION_CONFIG: { appOrigin: 'https://for-teacher-ai.vercel.app' } },
-    chrome: { storage: { local: storage, onChanged: { addListener: fn => listeners.push(fn) } }, tabs: { query: async () => [{ id: 10 }] }, scripting: { executeScript: async payload => { injections.push(payload); return [{ result: { ok: true } }]; } } },
+    chrome: { runtime: { sendMessage: async message => { messages.push(message); return { ok: true, id: 'test-panel', expiresAt: Date.now() + 1800000 }; } }, storage: { local: storage, onChanged: { addListener: fn => listeners.push(fn) } }, tabs: { query: async () => [{ id: 10 }] }, scripting: { executeScript: async payload => { injections.push(payload); return [{ result: { ok: true } }]; } } },
     fetch: async (url, options) => { calls.push({ url, options }); const result = await handler(url, options); return { status: result?.status || 200, ok: !(result?.status >= 400), json: async () => result?.body || result }; },
     URLSearchParams, Date, TextDecoder, Uint8Array, console, navigator: { clipboard: { readText: async () => '' } }
   });
   vm.runInContext(importer, context);
+  vm.runInContext(workLogRecords, context);
   vm.runInContext(source, context);
   await tick(); await tick();
   const emit = async (id, event = 'click', value, details) => { if (value !== undefined) element(id).value = value; await element(id).handlers[event](details); await tick(); };
-  return { element, emit, context, data, storage, calls, injections };
+  return { element, emit, context, data, storage, calls, injections, messages };
 }
 
 test('all categories select independent saved logs; old unowned cache is discarded', async () => {
@@ -153,6 +155,67 @@ test('updated revision requires reviewing fresh preview before panel injection',
   await t.emit('openOverlay'); assert.equal(t.injections.length, 1);
 });
 
+test('reopening restores a moved selection and fetches its latest content for the same account', async () => {
+  const first = log('first'), chosen = log('chosen');
+  let moved = false, deleted = false;
+  const handler = (url, options) => {
+    const { pathname, searchParams } = new URL(url);
+    if (pathname.includes('/chosen')) return { ...chosen, revision: 2, data: { students: [{ id: 1, aiResult: '최신 서버 기록' }] } };
+    if (options.headers.Authorization === 'Bearer other-token') return { logs: [first], total: 1 };
+    const page = Number(searchParams.get('page'));
+    return { logs: page === 0 ? [first] : !deleted && page === (moved ? 2 : 1) ? [chosen] : [], total: 61 };
+  };
+  const initial = await setup({ handler });
+  await initial.emit('nextPage');
+  await initial.emit('loadWebData');
+  moved = true;
+
+  const reopened = await setup({ saved: initial.data, handler });
+  assert.equal(reopened.element('workLog').value, 'chosen');
+  assert.match(reopened.element('pageInfo').textContent, /^3 \/ 3쪽/);
+  assert.match(reopened.element('recordTable').innerHTML, /최신 서버 기록/);
+  assert.ok(!JSON.stringify(reopened.data).includes('최신 서버 기록'));
+
+  const other = await setup({ saved: { ...reopened.data, forteacherSession: { access_token: 'other-token', user: { id: 'other' } } }, handler });
+  assert.equal(other.element('workLog').value, 'first');
+  assert.equal(other.element('recordCount').textContent, '0명');
+
+  deleted = true;
+  const missing = await setup({ saved: reopened.data, handler });
+  assert.match(missing.element('status').textContent, /이전에 선택한 작업로그를 찾을 수 없습니다/);
+  assert.equal(missing.element('openOverlay').disabled, true);
+  assert.ok(missing.calls.every(call => !call.url.endsWith('/chosen')));
+});
+
+test('reopening restores the project and subject, while a deleted subject leaves other tabs ready', async () => {
+  const project = { id: 'group', title: '학기말 프로젝트' };
+  const first = log('first-subject', 'subject');
+  const math = { ...log('math', 'subject'), project, subject_name: '수학' };
+  const korean = { ...log('korean', 'subject'), project, subject_name: '국어' };
+  let hasKorean = true;
+  const handler = url => {
+    const { pathname, searchParams } = new URL(url);
+    const members = hasKorean ? [math, korean] : [math];
+    if (searchParams.has('project')) return { logs: members, total: members.length };
+    if (pathname === '/api/work-logs') return { logs: [first, ...members], total: members.length + 1 };
+    return { ...korean, data: { students: [{ id: 1, aiResult: '재조회한 국어 기록' }] } };
+  };
+  const initial = await setup({ saved: { neisUploadCategory: 'subject' }, handler });
+  await initial.emit('workLog', 'change', 'project:group');
+  await initial.emit('subjectTabs', 'click', undefined, { target: initial.element('subjectTabs').tabs[1] });
+  const reopened = await setup({ saved: initial.data, handler });
+  assert.equal(reopened.element('workLog').value, 'project:group');
+  assert.equal(reopened.element('subjectTabs').tabs[1].attributes['aria-selected'], 'true');
+  assert.match(reopened.element('recordTable').innerHTML, /재조회한 국어 기록/);
+
+  hasKorean = false;
+  const missing = await setup({ saved: reopened.data, handler });
+  assert.equal(missing.element('workLog').value, 'project:group');
+  assert.deepEqual(missing.element('subjectTabs').tabs.map(tab => tab.dataset.logId), ['math']);
+  assert.equal(missing.element('openOverlay').disabled, true);
+  assert.match(missing.element('status').textContent, /이전에 선택한 교과를 찾을 수 없습니다/);
+});
+
 test('new work-log CSV header, quoted multiline text and independent CSV source work', async () => {
   const t = await setup();
   const parsed = vm.runInContext('ForTeacherImport.parseText(\'번호,작성 결과,비고\\n2,"인용 ""문구""\\n다음 문장",메모\\n1,첫째 결과,메모\', \'behavior\')', t.context);
@@ -217,6 +280,9 @@ test('selecting a project immediately presents every subject tab and loads only 
   await t.emit('openOverlay');
   assert.equal(t.injections[0].args[1].categoryLabel, '2학기 <6학년> · 국어');
   assert.ok(t.injections[0].args[1].records.every(r => r.text.startsWith('korean')));
+  assert.deepEqual(Array.from(t.injections[0].args[1].web.subjects, item => item.id), ['math', 'korean']);
+  assert.deepEqual(Array.from(t.messages[0].subjectIds), ['math', 'korean']);
+  assert.equal(t.messages[0].owner, 'user-a');
 });
 
 test('a late result cannot replace a newer subject tab selection', async () => {

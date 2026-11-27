@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NEIS Upload</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="top">
+        <div>
+          <p class="eyebrow">ForTeacher AI</p>
+          <h1>나이스 붙여넣기</h1>
+        </div>
+        <details class="account-menu">
+          <summary id="accountBadge" class="badge">계정 연결</summary>
+          <div class="account-popover">
+            <p id="accountState"></p>
+            <button id="connectWebApp" type="button" class="button primary">웹앱 계정 연결</button>
+            <button id="logoutWebApp" type="button" class="button ghost">로그아웃</button>
+          </div>
+        </details>
+      </header>
+
+      <section class="card" aria-label="기록 가져오기">
+        <div class="source-switch" role="radiogroup" aria-label="데이터 방식">
+          <label>
+            <input type="radio" name="sourceMode" value="web" checked />
+            <span>웹앱</span>
+          </label>
+          <label>
+            <input type="radio" name="sourceMode" value="csv" />
+            <span>내 파일 (CSV·XLSX)</span>
+          </label>
+        </div>
+
+        <div class="source-panel">
+          <label class="label" for="category">나이스 입력 영역</label>
+          <select id="category">
+            <option value="behavior">행특</option>
+            <option value="subject">학기말 종합의견</option>
+            <option value="creative">창체(자율)</option>
+          </select>
+        </div>
+        <div id="webSourcePanel" class="source-panel">
+          <div class="log-toolbar">
+            <label class="label" for="workLog">작업로그</label>
+            <button id="refreshLogs" type="button" class="button compact" aria-label="목록 새로고침" title="목록 새로고침">새로고침</button>
+          </div>
+          <select id="workLog"><option value="">작업로그 없음</option></select>
+          <div class="pagination">
+            <button id="previousPage" type="button" class="button compact" disabled>이전</button>
+            <span id="pageInfo">1 / 1쪽 · 0개</span>
+            <button id="nextPage" type="button" class="button compact" disabled>다음</button>
+          </div>
+          <button id="loadWebData" type="button" class="button full" disabled>불러오기</button>
+          <div id="projectSubjects" class="project-subjects hidden">
+            <div id="subjectTabs" class="subject-tabs" role="tablist" aria-label="붙여넣을 교과"></div>
+          </div>
+        </div>
+
+        <div id="csvSourcePanel" class="source-panel hidden">
+          <label class="label" for="csvFile">CSV 또는 엑셀 파일</label>
+          <input id="csvFile" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-describedby="fileHelp" />
+          <p id="fileHelp" class="file-help">엑셀의 첫 시트를 읽습니다.</p>
+          <div class="file-actions">
+            <button id="downloadTemplate" type="button" class="button compact">예시 CSV</button>
+            <button id="parseClipboard" type="button" class="button compact">클립보드 CSV</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="recordPanel" class="card">
+        <div class="card-head">
+          <h2>학생 미리보기</h2>
+          <strong id="recordCount" class="count">0명</strong>
+        </div>
+        <p id="recordSummary" class="file-label"></p>
+        <div id="recordTable" class="record-table" aria-label="불러온 학생별 데이터"></div>
+      </section>
+
+      <footer>
+        <p id="status" role="status"></p>
+        <button id="openOverlay" type="button" disabled class="button primary full action-button">나이스 패널 열기</button>
+        <div class="utilities">
+          <details class="settings">
+            <summary>설정</summary>
+            <label class="label" for="delay">입력 간격(ms)</label>
+            <input id="delay" type="number" min="0" max="2000" step="50" value="300" />
+          </details>
+          <button id="resetData" type="button" class="utility-button">초기화</button>
+        </div>
+      </footer>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="file-import.js"></script>
+    <script src="work-log-records.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

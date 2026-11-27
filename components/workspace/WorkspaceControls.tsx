@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -142,7 +142,7 @@ export function WorkspaceActionBar({ selectedCount, onClearSelection, expanded, 
     );
 }
 
-export function WorkspaceButton({ className, ...props }: ButtonProps) {
+export function WorkspaceButton({ className, ...props }: ButtonProps & { ref?: Ref<HTMLButtonElement> }) {
     return <Button className={cn(workspaceControlClassName, "px-4", className)} {...props} />;
 }
 

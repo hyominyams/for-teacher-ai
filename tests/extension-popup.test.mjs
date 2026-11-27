@@ -5,6 +5,7 @@ import vm from "node:vm";
 
 const popup = readFileSync(new URL("../extension/popup.js", import.meta.url), "utf8").replace("void init();", "");
 const importer = readFileSync(new URL("../extension/file-import.js", import.meta.url), "utf8");
+const workLogRecords = readFileSync(new URL("../extension/work-log-records.js", import.meta.url), "utf8");
 const copy = (value) => JSON.parse(JSON.stringify(value));
 
 async function harness(saved = {}) {
@@ -51,6 +52,7 @@ async function harness(saved = {}) {
     document: { getElementById: element, querySelectorAll: () => radios },
     window: { FORTEACHER_EXTENSION_CONFIG: { appOrigin: "https://example.test" } },
     chrome: {
+      runtime: { sendMessage: async () => ({ ok: true, id: "test-panel", expiresAt: Date.now() + 1800000 }) },
       storage: {
         local: {
           get: async () => copy(storage),
@@ -72,6 +74,7 @@ async function harness(saved = {}) {
     }
   });
   vm.runInContext(importer, context);
+  vm.runInContext(workLogRecords, context);
   vm.runInContext(popup, context);
   await context.init();
   const change = async (id, value) => { element(id).value = value; await element(id).listeners.change(); };

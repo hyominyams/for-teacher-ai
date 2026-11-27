@@ -1,6 +1,7 @@
 const SESSION_KEY = "forteacherSession";
 const CSV_KEY = "neisUploadCsvRecords";
 const FILE_RECORDS_KEY = "neisUploadFileRecordsByCategory";
+const WEB_SELECTION_PREFIX = "neisUploadLastWorkLog";
 const LEGACY_KEYS = ["neisUploadRecords", "neisUploadWebRecordsByCategory", "neisUploadSubjectScope", "neisUploadRecordLabel"];
 const NEIS_GRID_EDITABLE_SELECTOR = ".cl-textarea:not(.cl-disabled)";
 const BEHAVIOR_SELECTOR = [
@@ -31,11 +32,11 @@ const downloadTemplate = $("downloadTemplate"), fileHelp = $("fileHelp");
 const recordCount = $("recordCount"), recordSummary = $("recordSummary"), recordTable = $("recordTable");
 const delay = $("delay"), accountState = $("accountState"), accountBadge = $("accountBadge");
 const connectWebApp = $("connectWebApp"), logoutWebApp = $("logoutWebApp");
-const category = $("category"), workLog = $("workLog"), logInfo = $("logInfo");
+const category = $("category"), workLog = $("workLog");
 const refreshLogs = $("refreshLogs"), previousPage = $("previousPage"), nextPage = $("nextPage"), pageInfo = $("pageInfo");
 const loadWebData = $("loadWebData"), resetData = $("resetData");
 const webSourcePanel = $("webSourcePanel"), csvSourcePanel = $("csvSourcePanel");
-const projectSubjects = $("projectSubjects"), projectTitle = $("projectTitle"), subjectTabs = $("subjectTabs");
+const projectSubjects = $("projectSubjects"), subjectTabs = $("subjectTabs");
 const recordPanel = $("recordPanel");
 const openOverlay = $("openOverlay"), statusEl = $("status");
 const sourceModeInputs = [...document.querySelectorAll("input[name='sourceMode']")];
@@ -43,6 +44,7 @@ let records = [], csvRecords = [], logs = [], loadedLog = null;
 let loadedProject = null, subjectLogs = [], selectedSubjectId = "";
 let fileRecordsByCategory = {};
 let activeSource = "web", session = null, page = 0, total = 0, epoch = 0, busy = false;
+let selectionStorageKey = "";
 
 function on(element, eventName, handler) {
   element.addEventListener(eventName, handler);
@@ -63,7 +65,7 @@ async function init() {
   await chrome.storage.local.set({ [FILE_RECORDS_KEY]: fileRecordsByCategory });
   await chrome.storage.local.remove([CSV_KEY, ...LEGACY_KEYS]);
   records = activeSource === "csv" ? csvRecords : [];
-  renderAccount(); renderSource(); renderLogList(); renderRecords(activeSource === "csv" ? getFileBucket()?.label : "");
+  renderAccount(); renderSource(); renderLogList(); renderRecords();
   if (activeSource === "web" && session?.access_token) await loadLogList();
 }
 
@@ -79,7 +81,7 @@ function invalidate({ keepProject = false } = {}) {
   }
   csvRecords = getFileBucket()?.records || [];
   records = activeSource === "csv" ? csvRecords : [];
-  renderLogInfo(); renderRecords(activeSource === "csv" ? getFileBucket()?.label : ""); renderControls();
+  renderRecords(); renderControls();
   return epoch;
 }
 
@@ -93,20 +95,28 @@ sourceModeInputs.forEach(input => on(input, "change", async () => {
 
 on(category, "change", async () => {
   page = 0;
+  selectionStorageKey = "";
   invalidate();
   renderSource();
   setStatus("");
   await chrome.storage.local.set({ neisUploadCategory: category.value });
   if (activeSource === "web") await loadLogList();
 } );
-on(refreshLogs, "click", () => { page = 0; return loadLogList(); });
-on(previousPage, "click", () => { page = Math.max(0, page - 1); return loadLogList(); });
-on(nextPage, "click", () => { page += 1; return loadLogList(); });
-on(workLog, "change", prepareSelectedLog);
+on(refreshLogs, "click", () => loadLogList());
+on(previousPage, "click", () => { page = Math.max(0, page - 1); return loadLogList(false); });
+on(nextPage, "click", () => { page += 1; return loadLogList(false); });
+on(workLog, "change", () => {
+  if (activeSource !== "web") return;
+  rememberSelection();
+  return prepareSelectedLog();
+});
 
 on(subjectTabs, "click", event => {
   const id = event.target.closest("button[data-log-id]")?.dataset.logId;
-  if (loadedProject && subjectLogs.some(log => log.id === id)) return loadLogDetail(id, true);
+  if (loadedProject && subjectLogs.some(log => log.id === id)) {
+    rememberSelection(id);
+    return loadLogDetail(id, true);
+  }
 });
 on(subjectTabs, "keydown", event => {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -158,8 +168,10 @@ on(connectWebApp, "click", async () => {
 
 on(logoutWebApp, "click", async () => {
   session = null; logs = []; total = 0; csvRecords = []; fileRecordsByCategory = {};
+  selectionStorageKey = "";
   invalidate(); renderAccount(); renderLogList();
   await chrome.storage.local.remove([SESSION_KEY, CSV_KEY, FILE_RECORDS_KEY, ...LEGACY_KEYS]);
+  await chrome.runtime.sendMessage({ type: "neis-panel-reset" }).catch(() => {});
   setStatus("계정 연결과 불러온 학생 데이터를 지웠습니다.");
 });
 
@@ -169,6 +181,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   // The bridge may send the same session repeatedly.
   if (next?.access_token === session?.access_token && next?.user?.id === session?.user?.id) return;
   session = next; logs = []; total = 0; page = 0;
+  selectionStorageKey = "";
   invalidate(); renderAccount(); renderLogList();
   if (activeSource === "web" && session?.access_token) void loadLogList();
 });
@@ -177,7 +190,8 @@ on(loadWebData, "click", loadSelectedLog);
 on(resetData, "click", async () => {
   csvRecords = []; fileRecordsByCategory = {}; logs = []; total = 0; page = 0; csvFile.value = "";
   invalidate(); renderLogList();
-  await chrome.storage.local.remove([CSV_KEY, FILE_RECORDS_KEY, ...LEGACY_KEYS]);
+  await chrome.storage.local.remove([CSV_KEY, FILE_RECORDS_KEY, ...LEGACY_KEYS, ...(selectionStorageKey ? [selectionStorageKey] : [])]);
+  await chrome.runtime.sendMessage({ type: "neis-panel-reset" }).catch(() => {});
   setStatus("불러온 데이터를 비웠습니다. 작업로그 목록을 새로고침하거나 CSV·XLSX 파일을 선택하세요.");
 });
 
@@ -185,6 +199,7 @@ on(openOverlay, "click", async () => {
   if (!records.length || busy) return;
   const requestEpoch = epoch;
   busy = true; renderControls();
+  setStatus("패널 준비 중…", true);
   try {
     // Check again before handing off to NEIS so a newly edited record is not silently stale.
     if (activeSource === "web") {
@@ -228,7 +243,7 @@ async function importRecords(read, label) {
     }
     fileRecordsByCategory = nextBuckets;
     invalidate();
-    setStatus(`${records.length}명을 불러왔습니다. 영역·번호·내용을 확인한 뒤 나이스 패널을 여세요.`);
+    setStatus("");
   } catch (error) {
     if (requestEpoch === epoch) setStatus(`불러오지 못했습니다: ${error.message}\n기존 목록은 유지됩니다.`);
   } finally {
@@ -247,17 +262,67 @@ async function requestLog(path) {
   return body;
 }
 
-async function loadLogList() {
+function logOptionKey(log) {
+  return log.category === "subject" && log.project?.id && log.project.title ? `project:${log.project.id}` : log.id;
+}
+
+function rememberSelection(detailId = "") {
+  const key = workLog.value;
+  if (!selectionStorageKey || !key) return;
+  // Store only the selection. Every preview is fetched again for the current account.
+  void chrome.storage.local.set({ [selectionStorageKey]: { key, detailId, page } }).catch(() => {});
+}
+
+async function loadLogList(restore = true) {
   const requestEpoch = invalidate();
+  selectionStorageKey = "";
   logs = []; total = 0; busy = true; renderLogList();
-  setStatus("작업로그 목록을 불러오는 중입니다.");
+  setStatus("목록 불러오는 중…", true);
   try {
-    const params = new URLSearchParams({ category: category.value, state: "editable", page: String(page) });
-    const body = await requestLog(`/api/work-logs?${params}`);
+    const categoryValue = category.value;
+    const owner = session?.user?.id;
+    const initialPage = restore ? 0 : page;
+    const storageKey = owner ? `${WEB_SELECTION_PREFIX}:${JSON.stringify([await getAppOrigin(), owner, categoryValue])}` : "";
+    const remembered = restore && storageKey ? (await chrome.storage.local.get([storageKey]))[storageKey] : null;
     if (requestEpoch !== epoch) return;
-    logs = Array.isArray(body.logs) ? body.logs.filter(log => log.category === category.value && !log.archived_at) : []; total = body.total || 0;
+    selectionStorageKey = storageKey;
+    const fetchPage = async pageNumber => {
+      const params = new URLSearchParams({ category: categoryValue, state: "editable", page: String(pageNumber) });
+      const body = await requestLog(`/api/work-logs?${params}`);
+      return {
+        logs: Array.isArray(body.logs) ? body.logs.filter(log => log.category === categoryValue && !log.archived_at) : [],
+        total: body.total || 0,
+        page: pageNumber,
+      };
+    };
+    let result = await fetchPage(initialPage);
+    if (requestEpoch !== epoch) return;
+    let restored = false;
+    if (typeof remembered?.key === "string" && remembered.key) {
+      const pages = Math.min(101, Math.ceil(result.total / 30));
+      const preferred = Number.isInteger(remembered.page) ? remembered.page : 0;
+      const searchPages = [...new Set([0, preferred, ...Array.from({ length: pages }, (_, index) => index)])];
+      for (const candidate of searchPages) {
+        if (candidate < 0 || (candidate >= pages && candidate !== 0)) continue;
+        const current = candidate === initialPage ? result : await fetchPage(candidate);
+        if (requestEpoch !== epoch) return;
+        if (current.logs.some(log => logOptionKey(log) === remembered.key)) {
+          result = current;
+          restored = true;
+          break;
+        }
+      }
+      if (!restored) void chrome.storage.local.remove([storageKey]).catch(() => {});
+    }
+    ({ logs, total, page } = result);
     renderLogList();
-    if (logs.length) await prepareSelectedLog();
+    if (restored) {
+      workLog.value = remembered.key;
+      await prepareSelectedLog(remembered.detailId);
+    } else if (logs.length) {
+      if (remembered?.key) setStatus("이전에 선택한 작업로그를 찾을 수 없습니다. 작업로그를 다시 선택하세요.");
+      else await prepareSelectedLog();
+    }
     else setStatus("저장된 작업로그가 없습니다. 웹앱의 작업로그에 먼저 저장하세요.");
   } catch (error) { if (requestEpoch === epoch) setStatus(`목록을 불러오지 못했습니다: ${error.message}`); }
   finally { if (requestEpoch === epoch) { busy = false; renderControls(); } }
@@ -266,28 +331,32 @@ async function loadLogList() {
 async function loadSelectedLog() {
   const key = workLog.value;
   if (!key || busy) return;
-  return category.value === "subject" ? prepareSelectedLog() : loadLogDetail(key);
+  const detailId = category.value === "subject" ? "" : key;
+  rememberSelection(detailId);
+  return detailId ? loadLogDetail(key) : prepareSelectedLog();
 }
 
-async function prepareSelectedLog() {
+async function prepareSelectedLog(detailId = "") {
   const key = workLog.value;
   if (category.value === "subject") {
     const project = logs.find(log => log.project && key === `project:${log.project.id}`)?.project;
-    if (project) return loadProject(project);
+    if (project) return loadProject(project, detailId);
     const subject = logs.find(log => log.id === key);
     if (subject) {
       invalidate();
       showSubjectTabs({ title: subject.title }, [subject]);
+      if (detailId === subject.id) return loadLogDetail(detailId, true);
       return;
     }
   }
   invalidate();
-  if (key) setStatus("선택한 작업로그를 불러오세요.");
+  if (key && detailId === key) return loadLogDetail(key);
+  if (key) setStatus("");
 }
 
-async function loadProject(project) {
+async function loadProject(project, detailId) {
   const requestEpoch = invalidate();
-  busy = true; renderControls(); setStatus("프로젝트의 교과 목록을 불러오는 중입니다.");
+  busy = true; renderControls(); setStatus("과목 목록 불러오는 중…", true);
   try {
     const members = new Map();
     let projectPage = 0;
@@ -308,6 +377,11 @@ async function loadProject(project) {
     } while (members.size < projectTotal && projectPage <= 100);
     if (members.size < projectTotal) throw new Error("교과 목록을 모두 불러오지 못했습니다.");
     showSubjectTabs(project, [...members.values()]);
+    if (members.has(detailId)) await loadLogDetail(detailId, true);
+    else if (detailId) {
+      rememberSelection();
+      setStatus("이전에 선택한 교과를 찾을 수 없습니다. 교과를 다시 선택하세요.");
+    }
   } catch (error) { if (requestEpoch === epoch) setStatus(`프로젝트를 불러오지 못했습니다: ${error.message}`); }
   finally { if (requestEpoch === epoch) { busy = false; renderControls(); } }
 }
@@ -315,8 +389,8 @@ async function loadProject(project) {
 function showSubjectTabs(project, members) {
   loadedProject = project;
   subjectLogs = members;
-  renderSubjectTabs(); renderLogInfo(); renderRecords(); renderControls();
-  setStatus(subjectLogs.length ? "붙여넣을 교과를 탭에서 선택하세요." : "이 프로젝트에 불러올 교과가 없습니다.");
+  renderSubjectTabs(); renderRecords(); renderControls();
+  setStatus(subjectLogs.length ? "" : "불러올 과목이 없습니다.");
 }
 
 async function loadLogDetail(id, keepProject = false) {
@@ -325,14 +399,14 @@ async function loadLogDetail(id, keepProject = false) {
     selectedSubjectId = id;
     updateSubjectSelection();
   }
-  busy = true; renderControls(); setStatus(keepProject ? "선택한 교과 결과를 불러오는 중입니다." : "선택한 작업로그를 불러오는 중입니다.");
+  busy = true; renderControls(); setStatus(keepProject ? "과목 불러오는 중…" : "기록 불러오는 중…", true);
   try {
     const log = await requestLog(`/api/work-logs/${encodeURIComponent(id)}`);
     if (requestEpoch !== epoch) return;
     if (log.id !== id || log.category !== category.value) throw new Error("작업로그 영역이 일치하지 않습니다.");
     if (log.archived_at) throw new Error("보관함으로 이동한 기록입니다. 저장본을 다시 선택하세요.");
     applyLoadedLog(log);
-    setStatus(records.length ? `${records.length}명의 작성 결과를 불러왔습니다.` : "이 작업로그에는 작성 결과가 없습니다.");
+    setStatus(records.length ? "" : "작성 결과가 없습니다.");
   } catch (error) { if (requestEpoch === epoch) setStatus(`작업로그를 불러오지 못했습니다: ${error.message}`); }
   finally { if (requestEpoch === epoch) { busy = false; renderControls(); } }
 }
@@ -340,18 +414,19 @@ async function loadLogDetail(id, keepProject = false) {
 function applyLoadedLog(log) {
   const summary = subjectLogs.find(item => item.id === log.id) || logs.find(item => item.id === log.id);
   loadedLog = { ...log, project: summary?.project || log.project, subjectName: log.data.globalConfig?.subjectName || summary?.subject_name };
-  records = workLogToRecords(log.category, log.data, log.title);
-  renderLogInfo(); renderRecords(getCategoryLabel());
+  records = ForTeacherWorkLogs.toRecords(log.category, log.data, log.title);
+  renderRecords();
 }
 
 function renderLogList() {
   const seenProjects = new Set();
   const options = [];
   for (const log of logs) {
-    if (log.category === "subject" && log.project?.id && log.project.title) {
+    const key = logOptionKey(log);
+    if (key !== log.id) {
       if (seenProjects.has(log.project.id)) continue;
       seenProjects.add(log.project.id);
-      options.push(`<option value="project:${escapeHTML(log.project.id)}">${escapeHTML(log.project.title)} · 프로젝트</option>`);
+      options.push(`<option value="${escapeHTML(key)}">${escapeHTML(log.project.title)}</option>`);
     } else {
       options.push(`<option value="${escapeHTML(log.id)}">${escapeHTML(log.title)} · ${log.completed_count}명 · ${escapeHTML(formatDate(log.updated_at))}</option>`);
     }
@@ -359,18 +434,11 @@ function renderLogList() {
   workLog.innerHTML = options.length ? options.join("") : '<option value="">저장된 작업로그 없음</option>';
   pageInfo.parentElement?.classList.toggle("hidden", total <= 30);
   pageInfo.textContent = `${page + 1} / ${Math.max(1, Math.ceil(total / 30))}쪽 · ${total}개`;
-  renderLogInfo(); renderControls();
-}
-function renderLogInfo() {
-  const log = loadedLog || logs.find(log => log.id === workLog.value);
-  if (log) logInfo.textContent = `저장본 · ${formatDate(log.updated_at)} 저장 · 작성 ${log.completed_count}/${log.student_count}명`;
-  else if (loadedProject) logInfo.textContent = `저장본 · ${subjectLogs.length}개 교과`;
-  else logInfo.textContent = "웹앱에서 작업로그에 저장한 결과를 선택하세요.";
+  renderControls();
 }
 
 function renderSubjectTabs() {
   projectSubjects.classList.toggle("hidden", !loadedProject || !subjectLogs.length);
-  projectTitle.textContent = loadedProject?.title || "";
   subjectTabs.innerHTML = subjectLogs.map(log => `<button type="button" class="subject-tab" role="tab" id="subject-tab-${escapeHTML(log.id)}" data-log-id="${escapeHTML(log.id)}" aria-controls="recordPanel">${escapeHTML(log.subject_name || log.title)}</button>`).join("");
   updateSubjectSelection();
 }
@@ -413,9 +481,9 @@ function getCategoryLabel() {
 }
 function renderAccount() {
   const email = session?.user?.email || "";
-  accountBadge.textContent = email ? "연결 완료" : "미연결";
+  accountBadge.textContent = email ? "계정" : "계정 연결";
   accountBadge.classList.toggle("connected", Boolean(email));
-  accountState.textContent = email || "웹앱 계정을 연결하면 작업로그를 불러올 수 있습니다.";
+  accountState.textContent = email;
   connectWebApp.textContent = email ? "계정 다시 연결" : "웹앱 계정 연결";
   logoutWebApp.disabled = !session;
 }
@@ -424,24 +492,22 @@ function renderSource() {
   webSourcePanel.classList.toggle("hidden", activeSource !== "web");
   csvSourcePanel.classList.toggle("hidden", activeSource !== "csv");
   const config = ForTeacherImport.categories[category.value];
-  downloadTemplate.textContent = `${config.label} 예시 CSV 다운로드`;
-  fileHelp.textContent = `번호·이름·${config.headers[0]} 열을 유지해 주세요. 이름은 비워도 됩니다. 예시 학생은 실제 데이터로 바꿔 주세요.`;
+  downloadTemplate.setAttribute("title", `${config.label} 예시 CSV 다운로드`);
+  fileHelp.textContent = `번호·이름(선택)·${config.headers[0]} 열 · 엑셀은 첫 시트`;
 }
 
 void init();
 
-function renderRecords(label) {
+function renderRecords() {
   recordCount.textContent = `${records.length}명`;
-  recordSummary.textContent = label
-    ? `${label}에서 가져온 데이터입니다.`
-    : records.length
-      ? "붙여넣을 학생 데이터를 확인하세요."
-      : "데이터를 불러오면 번호별 목록이 표시됩니다.";
-
+  const label = activeSource === "csv" ? getFileBucket()?.label : "";
+  const prefix = `${ForTeacherImport.categories[category.value].label} · `;
+  recordSummary.textContent = label?.startsWith(prefix) ? label.slice(prefix.length) : label || "";
+  recordPanel.classList.toggle("hidden", !records.length);
   openOverlay.disabled = records.length === 0;
 
   if (!records.length) {
-    recordTable.innerHTML = `<div class="empty-records">${loadedProject && !selectedSubjectId && subjectLogs.length ? "교과 탭을 선택하면 학생별 결과가 표시됩니다." : "아직 불러온 데이터가 없습니다."}</div>`;
+    recordTable.innerHTML = "";
     return;
   }
 
@@ -503,20 +569,6 @@ function readSupabaseSessionFromPage() {
   }
 }
 
-function workLogToRecords(logCategory, data, scopeLabel = "") {
-  const students = data.students || [];
-  return students
-    .map((student, index) => ({
-      id: student.id || String(index + 1),
-      name: student.name || "",
-      category: logCategory,
-      scopeLabel,
-      text: student.aiResult || ""
-    }))
-    .filter((record) => record.text.trim().length > 0)
-    .sort(compareRecordById);
-}
-
 async function runOnActiveTab(action, payload, requestEpoch = epoch) {
   if (!records.length) {
     setStatus("먼저 데이터를 불러오세요.");
@@ -531,6 +583,17 @@ async function runOnActiveTab(action, payload, requestEpoch = epoch) {
   }
 
   try {
+    if (activeSource === "web") {
+      const { id, revision, project } = loadedLog;
+      const subjects = project ? subjectLogs.map(log => ({ id: log.id, label: log.subject_name || log.title })) : [];
+      const response = await chrome.runtime.sendMessage({
+        type: "neis-panel-open", tabId: tab.id, logId: id, projectId: project?.id,
+        category: category.value, subjectIds: subjects.map(subject => subject.id), owner: session.user?.id, page
+      });
+      if (requestEpoch !== epoch) return;
+      if (!response?.ok) throw new Error(response?.error || "패널을 준비하지 못했습니다.");
+      payload.web = { sessionId: response.id, expiresAt: response.expiresAt, logId: id, revision, subjects };
+    }
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       func: runUploaderInPage,
@@ -555,7 +618,7 @@ function getPayload() {
     category: category.value,
     selector: getSelectorForCategory(),
     fallbackSelector: NEIS_GRID_EDITABLE_SELECTOR,
-    delayMs: Math.max(0, Number(delay.value) || 300),
+    delayMs: delay.value === "" ? 300 : Math.min(2000, Math.max(0, Number(delay.value) || 0)),
     categoryLabel: getCategoryLabel() || "ForTeacher AI"
   };
 }
@@ -565,15 +628,9 @@ function getSelectorForCategory() {
   return DEFAULT_SELECTORS[category.value] || BEHAVIOR_SELECTOR;
 }
 
-function setStatus(message) {
+function setStatus(message, loading = false) {
   statusEl.textContent = message;
-}
-
-function compareRecordById(a, b) {
-  const aNumber = Number(a.id);
-  const bNumber = Number(b.id);
-  if (Number.isFinite(aNumber) && Number.isFinite(bNumber)) return aNumber - bNumber;
-  return String(a.id || "").localeCompare(String(b.id || ""), "ko");
+  statusEl.classList.toggle("loading", loading);
 }
 
 function escapeHTML(value) {
@@ -590,13 +647,14 @@ async function runUploaderInPage(action, payload) {
     return { ok: false, count: 0, message: "지원하지 않는 실행 방식입니다." };
   }
 
-  const records = payload?.records || [];
+  let records = payload?.records || [];
   const preferredSelector = payload?.selector || "";
   const fallbackSelector = payload?.fallbackSelector || ".cl-textarea:not(.cl-disabled)";
-  const delayMs = payload?.delayMs || 300;
+  const delayMs = payload?.delayMs ?? 300;
   const categoryLabel = payload?.categoryLabel || "ForTeacher AI";
   const isSubjectUpload = payload?.category === "subject";
   const matchStudentNumber = Boolean(payload?.matchStudentNumber);
+  const web = payload?.web;
 
   if (!records.length) {
     return { ok: false, count: 0, message: "불러온 데이터가 없습니다." };
@@ -606,8 +664,10 @@ async function runUploaderInPage(action, payload) {
   if (!selector) {
     return { ok: false, count: 0, message: "이 프레임에는 나이스 입력칸이 없습니다." };
   }
+  const existing = document.getElementById("forteacher-neis-overlay");
+  if (existing?.dataset.running === "true") return { ok: true, message: "나이스 패널에서 입력 중입니다." };
   installSelectionTracker(selector);
-  mountOverlay();
+  mountOverlay(existing);
   return { ok: true, count: records.length, message: "나이스 화면에 업로드 패널을 띄웠습니다." };
 
   function getUsableSelector(primarySelector, secondarySelector) {
@@ -628,19 +688,26 @@ async function runUploaderInPage(action, payload) {
     window.__forTeacherSelectionTrackerInstalled = true;
     document.addEventListener("mousedown", (event) => {
       const target = event.target?.closest?.(window.__forTeacherActiveSelector || activeSelector);
-      if (target) window.__forTeacherLastEditable = target;
+      if (target) rememberEditable(target);
     }, true);
     document.addEventListener("focusin", (event) => {
       const target = event.target?.closest?.(window.__forTeacherActiveSelector || activeSelector);
-      if (target) window.__forTeacherLastEditable = target;
+      if (target) rememberEditable(target);
     }, true);
   }
 
-  function mountOverlay() {
-    document.getElementById("forteacher-neis-overlay")?.remove();
+  function rememberEditable(target) {
+    window.__forTeacherLastEditable = target;
+    window.__forTeacherSelectionVersion = (window.__forTeacherSelectionVersion || 0) + 1;
+  }
+
+  function mountOverlay(existing) {
+    existing?.__forteacherDispose?.();
+    existing?.remove();
 
     const overlay = document.createElement("section");
     overlay.id = "forteacher-neis-overlay";
+    const canSwitchSubject = web?.subjects?.length > 1;
     overlay.innerHTML = `
       <style>
         #forteacher-neis-overlay {
@@ -648,7 +715,7 @@ async function runUploaderInPage(action, payload) {
           right: 24px;
           bottom: 24px;
           z-index: 2147483647;
-          width: 360px;
+          width: min(340px, calc(100vw - 36px));
           color: #111827;
           font-family: "Pretendard", "Noto Sans KR", "Segoe UI", sans-serif;
           letter-spacing: 0;
@@ -657,26 +724,18 @@ async function runUploaderInPage(action, payload) {
         .ft-panel {
           overflow: hidden;
           border: 1px solid #cfd8e3;
-          border-radius: 8px;
+          border-radius: 14px;
           background: #ffffff;
           box-shadow: 0 22px 54px rgba(17, 24, 39, 0.18);
         }
         .ft-head {
           display: flex;
-          align-items: flex-start;
+          align-items: center;
           justify-content: space-between;
           gap: 12px;
-          padding: 14px 14px 10px;
+          padding: 10px 12px;
           border-bottom: 1px solid #e6ebf1;
           background: #f8fafc;
-        }
-        .ft-kicker {
-          margin: 0 0 3px;
-          color: #0f766e;
-          font-size: 10px;
-          font-weight: 900;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
         }
         .ft-title {
           margin: 0;
@@ -697,28 +756,24 @@ async function runUploaderInPage(action, payload) {
         }
         .ft-body {
           display: grid;
-          gap: 12px;
-          padding: 14px;
+          gap: 9px;
+          padding: 12px;
         }
         .ft-meta {
           display: grid;
-          grid-template-columns: 1fr auto;
+          grid-template-columns: minmax(0, 1fr) auto;
           gap: 10px;
           align-items: center;
-          padding: 10px;
-          border: 1px solid #e1e7ee;
-          border-radius: 8px;
-          background: #ffffff;
+          min-height: 32px;
         }
-        .ft-meta p {
-          margin: 0;
-          color: #64748b;
-          font-size: 11px;
-          line-height: 1.45;
+        .ft-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #475569; font-size: 12px; }
+        .ft-subject {
+          width: 100%; min-width: 0; height: 34px; padding: 0 8px; border: 1px solid #c8d1ed;
+          border-radius: 8px; background: #f5f6ff; color: #363f82; font: inherit; font-size: 13px; font-weight: 700;
         }
         .ft-count {
           color: #0f766e;
-          font-size: 18px;
+          font-size: 14px;
           font-weight: 900;
         }
         .ft-controls {
@@ -744,10 +799,11 @@ async function runUploaderInPage(action, payload) {
           font-size: 12px;
         }
         .ft-mode {
-          display: grid;
-          gap: 6px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px 12px;
           margin: 0;
-          padding: 8px 10px 10px;
+          padding: 5px 9px 8px;
           border: 1px solid #e1e7ee;
           border-radius: 8px;
           color: #334155;
@@ -756,9 +812,8 @@ async function runUploaderInPage(action, payload) {
         .ft-mode legend { padding: 0 4px; font-weight: 900; }
         .ft-mode label { display: flex; align-items: center; gap: 6px; }
         .ft-mode input { margin: 0; accent-color: #0f766e; }
-        .ft-mode p { margin: 0; color: #64748b; font-size: 11px; }
         .ft-progress {
-          height: 8px;
+          height: 5px;
           overflow: hidden;
           border-radius: 999px;
           background: #e5eaf0;
@@ -770,13 +825,22 @@ async function runUploaderInPage(action, payload) {
           background: #0f766e;
           transition: width 160ms ease;
         }
+        .ft-feedback { display: flex; align-items: flex-start; gap: 8px; }
         .ft-status {
-          min-height: 34px;
           margin: 0;
           color: #475569;
-          font-size: 12px;
+          font-size: 11px;
           line-height: 1.45;
         }
+        .ft-feedback:has(.ft-status:empty):has(.ft-spinner[hidden]):has(.ft-retry[hidden]) { display: none; }
+        .ft-spinner {
+          flex: none; width: 12px; height: 12px; margin-top: 2px; border: 2px solid #b8dcd7;
+          border-top-color: #0f766e; border-radius: 50%; animation: ft-spin .7s linear infinite;
+        }
+        @keyframes ft-spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { .ft-spinner { animation: none; } }
+        #forteacher-neis-overlay [hidden] { display: none !important; }
+        .ft-retry { flex: none; padding: 0; border: 0; background: transparent; color: #0f766e; font: inherit; font-size: 11px; text-decoration: underline; cursor: pointer; }
         .ft-actions {
           display: grid;
           grid-template-columns: 1fr 1fr;
@@ -805,35 +869,36 @@ async function runUploaderInPage(action, payload) {
       </style>
       <div class="ft-panel">
         <div class="ft-head">
-          <div>
-            <p class="ft-kicker">ForTeacher AI</p>
-            <h2 class="ft-title">나이스 붙여넣기 패널</h2>
-          </div>
+          <h2 class="ft-title">나이스 붙여넣기</h2>
           <button class="ft-close" type="button" aria-label="닫기">×</button>
         </div>
         <div class="ft-body">
           <div class="ft-meta">
-            <p>${escapeText(categoryLabel)}<br />${matchStudentNumber ? "파일의 번호와 나이스 학생 번호를 대조해 입력합니다." : "첫 입력칸을 클릭한 뒤 시작하세요."}</p>
+            ${canSwitchSubject ? `<select class="ft-subject" aria-label="과목">${web.subjects.map(subject => `<option value="${escapeText(subject.id)}">${escapeText(subject.label)}</option>`).join("")}</select>`
+              : `<span class="ft-source" title="${escapeText(categoryLabel)}">${escapeText(categoryLabel)}</span>`}
             <strong class="ft-count">${records.length}명</strong>
           </div>
           <div class="ft-controls">
             <div class="ft-field">
-              <label>시작 번호</label>
-              <input class="ft-start-id" type="number" min="1" value="${escapeText(records[0]?.id || "1")}" />
+              <label for="ft-start-id">시작 번호</label>
+              <input id="ft-start-id" class="ft-start-id" type="number" min="1" value="${escapeText(records[0]?.id || "1")}" />
             </div>
             <div class="ft-field">
-              <label>입력 간격(ms)</label>
-              <input class="ft-delay" type="number" min="0" max="2000" step="50" value="${delayMs}" />
+              <label for="ft-delay">입력 간격(ms)</label>
+              <input id="ft-delay" class="ft-delay" type="number" min="0" max="2000" step="50" value="${delayMs}" />
             </div>
           </div>
           <fieldset class="ft-mode">
             <legend>붙여넣기 방식</legend>
-            <label><input type="radio" name="ft-write-mode" value="append" checked /> 기존 내용 뒤에 이어쓰기</label>
-            <label><input type="radio" name="ft-write-mode" value="replace" /> 기존 내용 덮어쓰기</label>
-            <p>이어쓰기는 기존 문장 끝에 공백 한 칸을 두고 붙입니다.</p>
+            <label title="기존 문장 끝에 공백 한 칸을 두고 추가"><input type="radio" name="ft-write-mode" value="append" checked /> 이어쓰기</label>
+            <label><input type="radio" name="ft-write-mode" value="replace" /> 덮어쓰기</label>
           </fieldset>
-          <div class="ft-progress"><span></span></div>
-          <p class="ft-status" role="status">대기 중입니다. 나이스의 첫 입력칸을 클릭하세요.</p>
+          <div class="ft-progress" hidden><span></span></div>
+          <div class="ft-feedback">
+            <span class="ft-spinner" aria-hidden="true" hidden></span>
+            <p class="ft-status" role="status">첫 입력칸을 클릭하세요.</p>
+            <button type="button" class="ft-retry" hidden>다시 불러오기</button>
+          </div>
           <div class="ft-actions">
             <button class="ft-button primary ft-start" type="button">시작</button>
             <button class="ft-button ft-detect" type="button">선택 확인</button>
@@ -847,17 +912,31 @@ async function runUploaderInPage(action, payload) {
     const detect = overlay.querySelector(".ft-detect");
     const status = overlay.querySelector(".ft-status");
     const progress = overlay.querySelector(".ft-progress span");
+    const progressBar = progress.parentElement;
     const startIdInput = overlay.querySelector(".ft-start-id");
     const delayInput = overlay.querySelector(".ft-delay");
     const writeMode = overlay.querySelector(".ft-mode");
+    const subjectSelect = overlay.querySelector(".ft-subject");
+    const countLabel = overlay.querySelector(".ft-count");
+    const spinner = overlay.querySelector(".ft-spinner");
+    const retry = overlay.querySelector(".ft-retry");
+    let logId = web?.logId, revision = web?.revision;
+    let loading = false, running = false, expired = false, failed = false;
+    let selectionAfter = -1;
+    let expiryTimer;
 
-    close.addEventListener("click", () => overlay.remove());
+    if (subjectSelect) subjectSelect.value = logId;
+    if (web) expiryTimer = setTimeout(expirePanel, Math.max(0, web.expiresAt - Date.now()));
+    overlay.__forteacherDispose = () => { clearTimeout(expiryTimer); records = []; overlay.remove(); };
+    close.addEventListener("click", () => overlay.__forteacherDispose());
+    subjectSelect?.addEventListener("change", () => switchSubject(subjectSelect.value));
+    retry.addEventListener("click", () => switchSubject(logId));
     detect.addEventListener("click", () => {
-      const selected = getCurrentEditable(selector);
-      status.textContent = selected ? "선택한 입력칸을 찾았습니다. 시작할 수 있습니다." : "입력칸을 찾지 못했습니다. 나이스 칸을 한 번 클릭하세요.";
+      status.textContent = chosenEditable() ? "입력칸을 확인했습니다." : "나이스에서 첫 입력칸을 클릭하세요.";
     });
     start.addEventListener("click", async () => {
-      const selected = getCurrentEditable(selector);
+      if (loading || running || expired || !records.length) return;
+      const selected = chosenEditable();
       if (!selected) {
         status.textContent = "입력칸을 찾지 못했습니다. 첫 학생 입력칸을 클릭한 뒤 다시 시작하세요.";
         return;
@@ -869,13 +948,13 @@ async function runUploaderInPage(action, payload) {
         status.textContent = "불러온 목록에 없는 시작 번호입니다. 번호를 확인하세요.";
         return;
       }
-      const uploadRecords = records.slice(startRecordIndex);
-      const interval = Math.max(0, Number(delayInput.value) || 0);
+      const interval = Math.min(2000, Math.max(0, Number(delayInput.value) || 0));
       const append = writeMode.querySelector("input:checked").value === "append";
 
-      start.disabled = true;
-      detect.disabled = true;
-      writeMode.disabled = true;
+      if (web && !await checkLatest(selected)) return;
+      const uploadRecords = records.slice(startRecordIndex);
+      running = true; syncControls();
+      progressBar.hidden = false;
       progress.style.width = "0%";
       status.textContent = "입력을 시작합니다.";
       let completed = 0;
@@ -893,13 +972,95 @@ async function runUploaderInPage(action, payload) {
       } catch (error) {
         status.textContent = `${completed}/${uploadRecords.length}개 입력 후 ${uploadRecords[completed]?.id || "-"}번에서 중단했습니다. ${error.message}`;
       } finally {
-        start.disabled = false;
-        detect.disabled = false;
-        writeMode.disabled = false;
+        running = false; syncControls();
       }
     });
 
     document.body.appendChild(overlay);
+    syncControls();
+
+    function syncControls() {
+      const unavailable = loading || running || expired;
+      start.disabled = unavailable || !records.length;
+      detect.disabled = unavailable || !records.length;
+      if (subjectSelect) subjectSelect.disabled = unavailable;
+      writeMode.disabled = unavailable;
+      startIdInput.disabled = unavailable;
+      delayInput.disabled = unavailable;
+      close.disabled = running;
+      spinner.hidden = !loading;
+      retry.hidden = !failed || unavailable;
+      overlay.dataset.running = String(running);
+      overlay.setAttribute("aria-busy", String(loading));
+    }
+
+    function expirePanel() {
+      expired = true;
+      records = [];
+      countLabel.textContent = "—";
+      status.textContent = "시간이 지나 연결이 끝났습니다. 확장 프로그램에서 패널을 다시 여세요.";
+      syncControls();
+    }
+
+    function chosenEditable() {
+      return (window.__forTeacherSelectionVersion || 0) > selectionAfter ? getCurrentEditable(selector) : null;
+    }
+
+    async function readRecords(remember) {
+      const result = await chrome.runtime.sendMessage({ type: "neis-panel-read", id: web.sessionId, logId, remember });
+      if (!result?.ok) throw new Error(result?.error || "기록을 다시 불러오지 못했습니다.");
+      return result;
+    }
+
+    function setRecords(result) {
+      records = result.records;
+      revision = result.revision;
+      failed = !records.length;
+      startIdInput.value = records[0]?.id || "";
+      countLabel.textContent = `${records.length}명`;
+      progressBar.hidden = true;
+    }
+
+    async function switchSubject(next) {
+      if (loading || running || expired) return;
+      logId = next;
+      selectionAfter = window.__forTeacherSelectionVersion || 0;
+      records = []; countLabel.textContent = "—"; startIdInput.value = ""; progressBar.hidden = true;
+      loading = true; failed = false; syncControls();
+      status.textContent = canSwitchSubject ? "과목 불러오는 중…" : "기록 확인 중…";
+      try {
+        const result = await readRecords(true);
+        if (!overlay.isConnected || expired) return;
+        setRecords(result);
+        selectionAfter = window.__forTeacherSelectionVersion || 0;
+        status.textContent = records.length
+          ? canSwitchSubject ? "나이스에서 같은 과목을 열고 첫 입력칸을 클릭하세요." : "첫 입력칸을 클릭하세요."
+          : "작성 결과가 없습니다.";
+      } catch (error) {
+        if (!expired) { failed = true; status.textContent = error.message; }
+      } finally { loading = false; syncControls(); }
+    }
+
+    async function checkLatest(selected) {
+      loading = true; syncControls(); status.textContent = "최신 기록 확인 중…";
+      try {
+        const result = await readRecords(false);
+        if (!overlay.isConnected || expired) return false;
+        if (result.revision !== revision) {
+          setRecords(result);
+          status.textContent = records.length ? "기록이 갱신됐습니다. 시작 번호를 확인하고 다시 시작하세요." : "작성 결과가 없습니다.";
+          return false;
+        }
+        if (chosenEditable() !== selected) {
+          status.textContent = "입력칸이 바뀌었습니다. 첫 입력칸을 클릭하고 다시 시작하세요.";
+          return false;
+        }
+        return true;
+      } catch (error) {
+        if (!expired) { records = []; countLabel.textContent = "—"; failed = true; status.textContent = error.message; }
+        return false;
+      } finally { loading = false; syncControls(); }
+    }
   }
 
   function findFocusedEditable(inputSelector) {

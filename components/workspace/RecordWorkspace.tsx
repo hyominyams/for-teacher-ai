@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo, Suspense } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
     UserCheck,
@@ -26,6 +26,7 @@ import { creditAIFetch } from "@/lib/credit-client";
 import { appendRecordText, type GenerationMode } from "@/lib/record-generation";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
 import { WorkLogSessionBar } from "@/components/workspace/WorkLogSessionBar";
+import type { SubjectCopyScope } from "@/components/workspace/SubjectWorkLogCopyDialog";
 import { WorkspaceButton, WorkspaceNumberSelect, workspaceToolButtonClassName } from "@/components/workspace/WorkspaceControls";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getSavedWorkLog, listSubjectProjectLogs, workLogRequest, WorkLogError } from "@/lib/work-log-client";
@@ -64,6 +65,8 @@ function subjectPlanSelection(subjects: ParsedSubjectPlanSubject[], target: Subj
 
 // Allow the server's 210-second window plus time for upload and connection overhead.
 const SUBJECT_PLAN_TIMEOUT_MS = 240_000;
+const SAVED_LOG_AUTOSAVE_DELAY = 60_000;
+const SAVED_LOG_AUTOSAVE_MAX_WAIT = 180_000;
 const SUBJECT_PLAN_TIMEOUT_MESSAGE = "평가계획 분석 응답 시간이 초과되었습니다. 문서가 길면 교과별 HWPX 파일로 나눠 가져와 주세요.";
 
 const features = [
@@ -271,12 +274,16 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const [logBusy, setLogBusy] = useState(false);
     const [logMessage, setLogMessage] = useState("");
     const [logError, setLogError] = useState("");
+    const [savedSubjectCopy, setSavedSubjectCopy] = useState<{ id: string; epoch: number; message: string } | null>(null);
     const [loadedSavedId, setLoadedSavedId] = useState("");
     const saveQueue = useRef(Promise.resolve(true));
+    const pendingSavedEditSince = useRef<number | null>(null);
+    const [autoSavePaused, setAutoSavePaused] = useState(false);
     const draftSaveQueue = useRef(Promise.resolve());
     const [draftSaveStatus, setDraftSaveStatus] = useState("");
     const lastSnapshot = useRef<{ fingerprint: string; id: string } | null>(null);
     const snapshotAttempt = useRef<{ fingerprint: string; id: string } | null>(null);
+    const subjectCopyAttempt = useRef<{ fingerprint: string; id: string; projectId: string } | null>(null);
     const [staleEdit, setStaleEdit] = useState<{ title: string; data: WorkLogData } | null>(null);
     const invalidateWorkspace = () => {
         aiAbort.current.abort(); aiAbort.current = new AbortController();
@@ -332,6 +339,13 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const savedEditorProject = loadedSavedId === requestedLogId ? savedLog?.project : undefined;
     const savedEditorProjectId = savedEditorProject?.id;
     const projectSubjects = savedProjectSubjects?.id === savedEditorProjectId ? savedProjectSubjects : null;
+    const allSubjectCopyDescription = isSavedEditor
+        ? savedEditorProject && `‘${savedEditorProject.title}’의 편집 가능한 과목을 한 프로젝트로 저장합니다.`
+        : activeSubjectProject
+            ? `‘${activeSubjectProject.title}’의 과목을 한 프로젝트로 저장합니다.`
+            : subjectLogs.some(log => !log.project && log.scopeKey !== activeSubjectScopeKey)
+                ? "프로젝트에 속하지 않은 과목들을 한 프로젝트로 저장합니다."
+                : undefined;
     const editCacheKey = userId && requestedLogId ? `ftai:saved-edit:${userId}:${requestedLogId}` : null;
 
     const activeProjectTitle = activeTabId === "subject" ? activeSubjectProject?.title : undefined;
@@ -340,6 +354,8 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     }, [activeTabId, activeProjectTitle, isSavedEditor]);
 
     useEffect(() => {
+        pendingSavedEditSince.current = null;
+        setAutoSavePaused(false);
         if (!userId || !requestedLogId) { savedLogRef.current = null; setSavedLog(null); setLoadedSavedId(""); return; }
         const abort = new AbortController();
         invalidateWorkspace(); setIsWorkLogLoading(true); setLoadedSavedId(""); setLogError(""); setLogMessage(""); setStaleEdit(null); setImportedDraftScope(null);
@@ -397,26 +413,52 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         return () => { window.removeEventListener("beforeunload", beforeUnload); document.removeEventListener("click", leaveLink, true); };
     }, [editorDirty]);
 
-    const persistSavedEdits = (overrideStudents?: Student[]) => {
-        const snapshot = normalizeWorkData({ ...currentData, students: overrideStudents || students }, activeTabId as "behavior" | "subject" | "creative" | "docs");
+    const persistSavedEdits = useCallback((overrideStudents?: Student[], automatic = false) => {
+        const snapshot = overrideStudents
+            ? normalizeWorkData({ ...currentData, students: overrideStudents }, activeTabId as WorkCategory)
+            : currentData;
         const expectedId = requestedLogId, title = logTitle, epoch = workEpoch.current;
+        const fingerprint = workFingerprint(snapshot, title);
         const run = async () => {
             const log = savedLogRef.current;
-            if (!log || log.id !== expectedId || log.archived_at) return false;
+            if (epoch !== workEpoch.current || !log || log.id !== expectedId || log.archived_at) return false;
+            if (fingerprint === workFingerprint(normalizeWorkData(log.data, log.category), log.title)) return true;
             setLogBusy(true); setLogError("");
             try {
                 const updated = await workLogRequest<SavedWorkLog>(`/api/work-logs/${log.id}`, { method: "PUT", body: JSON.stringify({ id: log.id, category: log.category, revision: log.revision, title, data: snapshot }) });
                 if (epoch === workEpoch.current) {
                     const response = { ...updated, project: log.project };
-                    savedLogRef.current = response; setSavedLog(response); setSavedBaseline(workFingerprint(snapshot, title));
+                    savedLogRef.current = response; setSavedLog(response); setSavedBaseline(fingerprint);
+                    pendingSavedEditSince.current = null; setAutoSavePaused(false);
+                    try { if (editCacheKey) sessionStorage.removeItem(editCacheKey); } catch { /* Server save succeeded. */ }
+                    setLogMessage(automatic ? "작업로그에 자동 저장했습니다." : "수정 내용을 작업로그에 저장했습니다.");
                 }
-                if (editCacheKey) sessionStorage.removeItem(editCacheKey);
-                if (epoch === workEpoch.current) setLogMessage("수정 내용을 작업로그에 저장했습니다."); return true;
-            } catch (e) { setLogError(e instanceof Error ? e.message : "저장하지 못했습니다."); return false; }
+                return true;
+            } catch (error) {
+                if (epoch === workEpoch.current) {
+                    if (error instanceof WorkLogError && [400, 401, 403, 404, 409].includes(error.status)) setAutoSavePaused(true);
+                    setLogError(error instanceof Error ? error.message : "저장하지 못했습니다.");
+                }
+                return false;
+            }
             finally { setLogBusy(false); }
         };
         saveQueue.current = saveQueue.current.then(run, run); return saveQueue.current;
-    };
+    }, [activeTabId, currentData, editCacheKey, logTitle, requestedLogId]);
+
+    const generating = students.some(student => student.isGenerating);
+    useEffect(() => {
+        if (!editorDirty) { pendingSavedEditSince.current = null; return; }
+        if (!userId || !logTitle.trim() || isWorkLogLoading || logBusy || isSubjectPlanImporting || generating || autoSavePaused) return;
+        const now = Date.now();
+        pendingSavedEditSince.current ??= now;
+        const remaining = SAVED_LOG_AUTOSAVE_MAX_WAIT - (now - pendingSavedEditSince.current);
+        const timer = window.setTimeout(() => {
+            pendingSavedEditSince.current = Date.now();
+            void persistSavedEdits(undefined, true);
+        }, Math.max(0, Math.min(SAVED_LOG_AUTOSAVE_DELAY, remaining)));
+        return () => window.clearTimeout(timer);
+    }, [autoSavePaused, editorDirty, generating, isSubjectPlanImporting, isWorkLogLoading, logBusy, logTitle, persistSavedEdits, userId]);
 
     const requestWorkspaceAI = async (url: string, options: RequestInit) => {
         const epoch = workEpoch.current, signal = aiAbort.current.signal;
@@ -632,7 +674,9 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
             }));
         draftSaveQueue.current = task.then(() => {}, () => {});
         const { error } = await task;
-        if (epoch === workEpoch.current) setDraftSaveStatus(error ? "임시 저장 실패 · 작업로그에 저장을 다시 눌러주세요" : "임시 작업 저장 완료");
+        if (epoch === workEpoch.current) setDraftSaveStatus(error
+            ? activeTabId === "subject" ? "임시 저장 실패 · 변경사항 저장을 눌러주세요" : "임시 저장 실패 · 작업로그 저장을 눌러주세요"
+            : "임시 작업 저장 완료");
 
         if (error) {
             // Silence common auth/session errors
@@ -1247,7 +1291,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     };
 
     const handleResetAll = async () => {
-        if (!confirm(isSavedEditor ? "수정 중인 입력값을 비우시겠습니까? 저장 버튼을 누르기 전에는 저장본이 유지됩니다." : "현재 입력값을 비우시겠습니까? 작업로그의 저장본은 유지됩니다.")) return;
+        if (!confirm(isSavedEditor ? "현재 작업로그의 입력값을 비우시겠습니까? 비운 내용은 자동 저장됩니다." : "현재 입력값을 비우시겠습니까? 작업로그의 저장본은 유지됩니다.")) return;
         invalidateWorkspace();
         const nextStudents = students.map(s => ({
             ...s,
@@ -1264,7 +1308,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         }));
         setStudents(nextStudents);
         if (!isSavedEditor) await saveWorkLog(false, nextStudents);
-        alert(isSavedEditor ? "입력을 비웠습니다. 수정 내용 저장을 누르면 반영됩니다." : "입력을 비웠습니다. 저장된 작업로그는 유지됩니다.");
+        alert(isSavedEditor ? "입력을 비웠습니다. 변경사항은 자동 저장됩니다." : "입력을 비웠습니다. 저장된 작업로그는 유지됩니다.");
     };
 
     const handleResetBehaviorKeywords = async () => {
@@ -1276,7 +1320,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         }));
         setStudents(nextStudents);
         if (!isSavedEditor) await saveWorkLog(false, nextStudents);
-        alert(isSavedEditor ? "키워드를 비웠습니다. 수정 내용 저장을 누르면 반영됩니다." : "키워드 초기화 및 임시 저장이 완료되었습니다.");
+        alert(isSavedEditor ? "키워드를 비웠습니다. 변경사항은 자동 저장됩니다." : "키워드 초기화 및 임시 저장이 완료되었습니다.");
     };
 
     const handleDeleteUnusedBehaviorKeywords = async () => {
@@ -1286,7 +1330,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         }));
         setStudents(nextStudents);
         if (!isSavedEditor) await saveWorkLog(false, nextStudents);
-        alert(isSavedEditor ? "미선택 키워드를 지웠습니다. 수정 내용 저장을 누르면 반영됩니다." : "미선택 키워드를 지웠습니다.");
+        alert(isSavedEditor ? "미선택 키워드를 지웠습니다. 변경사항은 자동 저장됩니다." : "미선택 키워드를 지웠습니다.");
     };
 
     const handleResetSelection = () => {
@@ -1544,7 +1588,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
             setSubjectConfig({ schoolLevel: subject.schoolLevel || subjectConfig.schoolLevel, grade: subject.grade || subjectConfig.grade, subjectName: subject.subjectName, assessments: subject.assessments.map(a => ({ ...a, id: crypto.randomUUID(), criteriaLevels: getCriteriaLevels(a) })) });
             setStudents(prev => prev.map(student => ({ ...student, subjectData: { ...student.subjectData, assessments: [], individualNote: student.subjectData?.individualNote || "" } })));
             setSubjectPlanImport(null); setSelectedSubjectPlanIndexes([]);
-            setLogMessage("평가계획을 적용했습니다. 학생별 평가를 입력한 뒤 수정 내용 저장을 눌러주세요.");
+            setLogMessage("평가계획을 적용했습니다. 변경사항은 자동 저장됩니다.");
             return;
         }
         await runSubjectAction(async epoch => {
@@ -1625,13 +1669,16 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         });
     };
 
-    const leaveEditor = (url: string) => {
-        if (editorDirty && !confirm("저장하지 않은 수정 내용이 있습니다. 나가시겠습니까?")) return false;
+    const leaveEditor = async (url: string) => {
+        if (editorDirty && (!logTitle.trim() || !await persistSavedEdits())) {
+            if (!logTitle.trim()) setLogError("작업 이름을 입력한 뒤 이동해주세요.");
+            return false;
+        }
         invalidateWorkspace(); setStudents([]); setIsWorkLogLoading(true); router.push(url); return true;
     };
     const changeCategory = async (id: string) => {
         if (logBusy || isWorkLogLoading || isSubjectPlanImporting || id === activeTabId) return;
-        if (isSavedEditor) leaveEditor(`/app/workspace/${id}`);
+        if (isSavedEditor) await leaveEditor(`/app/workspace/${id}`);
         else {
             setLogBusy(true);
             try {
@@ -1650,36 +1697,71 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         const saved = await saveWorkLog(true, empty, config, null);
         if (!saved) setLogError("저장본은 보존됐지만 새 작업의 임시 저장에 실패했습니다. 화면을 유지하고 다시 저장해주세요.");
     };
+    const saveSubjectChanges = async () => {
+        if (isSavedEditor) { await persistSavedEdits(); return; }
+        await runSubjectAction(async epoch => {
+            setLogMessage("");
+            setSavedSubjectCopy(null);
+            const saved = await saveWorkLog(true);
+            if (epoch !== workEpoch.current) return;
+            if (saved) setLogMessage("현재 교과의 임시 작업을 저장했습니다.");
+            else setLogError("변경사항을 저장하지 못했습니다. 입력은 유지됩니다.");
+        });
+    };
+    const saveSubjectCopy = async (scope: SubjectCopyScope, title: string, startNew = false) => {
+        if (!userId || logBusy || isWorkLogLoading || students.some(student => student.isGenerating)
+            || (isSavedEditor && loadedSavedId !== requestedLogId)) return false;
+        const epoch = workEpoch.current;
+        const sourceLogId = isSavedEditor ? requestedLogId : null;
+        const sourceProjectId = isSavedEditor ? null : activeSubjectProject?.id ?? null;
+        const sourceScope = isSavedEditor ? savedLog?.source_scope_key ?? DEFAULT_SCOPE_KEY : activeSubjectScopeKey;
+        const currentTitle = isSavedEditor ? logTitle.trim() : null;
+        const fingerprint = stableWorkJson({ scope, title, sourceLogId, sourceProjectId, sourceScope, currentTitle, data: currentData });
+        if (subjectCopyAttempt.current?.fingerprint !== fingerprint) {
+            subjectCopyAttempt.current = { fingerprint, id: crypto.randomUUID(), projectId: crypto.randomUUID() };
+        }
+        const { id, projectId } = subjectCopyAttempt.current;
+        setLogBusy(true); setLogError(""); setLogMessage(""); setSavedSubjectCopy(null);
+        try {
+            let count = 1;
+            if (scope === "all") {
+                if (!isSavedEditor && !await saveWorkLog(true)) throw new Error("현재 교과를 임시 저장하지 못했습니다. 다시 시도해주세요.");
+                if (epoch !== workEpoch.current) return false;
+                const result = await supabase.rpc("copy_subject_work_logs", {
+                    p_id: projectId, p_current_id: id, p_title: title, p_scope_key: sourceScope,
+                    p_source_project_id: sourceProjectId, p_source_log_id: sourceLogId, p_current_data: currentData,
+                    p_current_title: currentTitle
+                });
+                if (result.error || !result.data) throw new Error("전체 과목을 저장하지 못했습니다. 다시 시도해주세요.");
+                count = result.data;
+            } else {
+                await workLogRequest<SavedWorkLog>("/api/work-logs", {
+                    method: "POST", body: JSON.stringify({ id, category: "subject", title, data: currentData, source_scope_key: sourceScope })
+                });
+            }
+            subjectCopyAttempt.current = null;
+            if (epoch !== workEpoch.current) return false;
+            if (startNew) {
+                await clearCurrentDraft();
+                setLogMessage("작업로그에 저장하고 새 작업을 시작했습니다.");
+            } else {
+                const message = scope === "all" ? `‘${title}’에 ${count}개 과목을 저장했습니다.` : `현재 과목을 ‘${title}’에 저장했습니다.`;
+                setSavedSubjectCopy({ id, epoch, message });
+                setLogMessage(message);
+            }
+            return true;
+        } finally { setLogBusy(false); }
+    };
     const saveSnapshot = async (startNew: boolean) => {
         if (logBusy || students.some(s => s.isGenerating) || isWorkLogLoading) return;
-        if (isSavedEditor) { await persistSavedEdits(); return; }
-        if (activeTabId === "subject" && activeSubjectProject && userId) {
-            await runSubjectAction(async epoch => {
-                setLogMessage("");
-                if (!await saveWorkLog(true)) { setLogError("현재 교과를 저장하지 못했습니다. 작업을 유지했습니다."); return; }
-                if (epoch !== workEpoch.current) return;
-                const { data, error } = await supabase.from("work_logs").select("scope_key,data")
-                    .eq("user_id", userId).eq("category", "subject").eq("subject_project_id", activeSubjectProject.id)
-                    .order("scope_key");
-                if (error || !data?.length) { setLogError("묶을 교과를 불러오지 못했습니다. 다시 시도해주세요."); return; }
-                const fingerprint = stableWorkJson({ project: activeSubjectProject.id, title: logTitle.trim(), drafts: data });
-                let count = data.length;
-                if (lastSnapshot.current?.fingerprint !== fingerprint) {
-                    if (snapshotAttempt.current?.fingerprint !== fingerprint) snapshotAttempt.current = { fingerprint, id: crypto.randomUUID() };
-                    const id = snapshotAttempt.current.id;
-                    const saved = await supabase.rpc("save_subject_project", { p_source_id: activeSubjectProject.id, p_id: id, p_title: logTitle });
-                    if (saved.error || !saved.data) { setLogError("프로젝트를 저장하지 못했습니다. 다시 시도해주세요."); return; }
-                    count = saved.data;
-                    lastSnapshot.current = { fingerprint, id };
-                    snapshotAttempt.current = null;
-                }
-                if (epoch !== workEpoch.current) return;
-                if (startNew) await clearCurrentDraft();
-                setLogMessage(`‘${logTitle.trim()}’ 프로젝트의 ${count}개 교과를 작업로그에 저장했습니다.`);
-            });
+        if (activeTabId === "subject") {
+            if (!startNew) { await saveSubjectChanges(); return; }
+            try { await saveSubjectCopy(activeSubjectProject ? "all" : "current", logTitle.trim(), true); }
+            catch (error) { setLogError(error instanceof Error ? error.message : "작업로그를 저장하지 못했습니다."); }
             return;
         }
-        const payload = { category: activeTabId, title: logTitle, data: currentData, source_scope_key: activeTabId === "subject" ? activeSubjectScopeKey : DEFAULT_SCOPE_KEY };
+        if (isSavedEditor) { await persistSavedEdits(); return; }
+        const payload = { category: activeTabId, title: logTitle, data: currentData, source_scope_key: DEFAULT_SCOPE_KEY };
         const fingerprint = stableWorkJson(payload), epoch = workEpoch.current;
         if (lastSnapshot.current?.fingerprint === fingerprint) {
             if (startNew) { setLogBusy(true); try { await clearCurrentDraft(); setLogMessage("이미 저장된 기록을 유지하고 새 작업을 시작했습니다."); } finally { setLogBusy(false); } }
@@ -1767,10 +1849,18 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             <a href="/extension/bridge" target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white"><PlugZap aria-hidden="true" className="size-4" />나이스 확장 연결</a>
                         </div>
                     </header>
-                    <WorkLogSessionBar saving={logBusy} editing={isSavedEditor} project={!!activeProjectTitle && !isSavedEditor} singleSubject={activeTabId === "subject"} title={logTitle} onTitle={setLogTitle}
+                    <WorkLogSessionBar key={requestedLogId || `${activeTabId}:${activeSubjectScopeKey}`} saving={logBusy} editing={isSavedEditor} project={!!activeProjectTitle && !isSavedEditor} title={logTitle} onTitle={setLogTitle}
+                        subjectSave={activeTabId === "subject" ? {
+                            subjectName: subjectConfig.subjectName.trim() || "현재 교과",
+                            allSubjects: allSubjectCopyDescription,
+                            copyTitle: savedEditorProject?.title || logTitle,
+                            onSaveCopy: saveSubjectCopy,
+                        } : undefined}
+                        savedCopyHref={savedSubjectCopy?.epoch === workEpoch.current && savedSubjectCopy.message === logMessage
+                            ? `/app/workspace/subject?log=${encodeURIComponent(savedSubjectCopy.id)}` : undefined}
                         busy={logBusy || isWorkLogLoading || isSubjectPlanImporting || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} dirty={editorDirty}
-                        message={logMessage} error={logError} draftStatus={isSavedEditor ? undefined : draftSaveStatus} onSave={() => void saveSnapshot(false)} onSaveNew={() => void saveSnapshot(true)}
-                        onReset={() => void startEmptyDraft()} onBack={() => leaveEditor("/app/logs")}
+                        message={logMessage} error={logError} autoSavePaused={autoSavePaused} draftStatus={isSavedEditor ? undefined : draftSaveStatus} onSave={() => void saveSnapshot(false)} onSaveNew={() => void saveSnapshot(true)}
+                        onReset={() => void startEmptyDraft()} onBack={() => void leaveEditor("/app/logs")}
                         settings={<fieldset disabled={workspaceLocked} aria-label="작성 설정과 가져오기" className="m-0 grid min-w-0 grid-cols-2 items-end gap-3 border-0 p-0 sm:flex sm:flex-wrap">
                             <WorkspaceNumberSelect id="workspace-student-count" label="학생 수" value={studentCount} unit="명" className="sm:w-28"
                                 options={Array.from({ length: 40 }, (_, i) => i + 1)} onValueChange={changeStudentCount}
@@ -1799,7 +1889,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                                         const active = log.id === requestedLogId;
                                         return <button key={log.id} type="button" aria-current={active ? "page" : undefined}
                                             disabled={workspaceLocked || isSubjectPlanImporting}
-                                            onClick={() => { if (!active) leaveEditor(`/app/workspace/subject?log=${encodeURIComponent(log.id)}`); }}
+                                            onClick={() => { if (!active) void leaveEditor(`/app/workspace/subject?log=${encodeURIComponent(log.id)}`); }}
                                             className={cn("min-h-9 rounded-xl border px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-50",
                                                 active ? "border-indigo-600 bg-indigo-600 text-white" : "border-indigo-100 bg-white text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-slate-950 dark:text-indigo-200 dark:hover:bg-indigo-950")}>
                                             {active ? subjectConfig.subjectName || log.title : log.subject_name || log.title}
@@ -1893,7 +1983,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             />
                         ) : <PlaceholderWorkspace title={activeTab.title} onBack={() => changeCategory("behavior")} />}
                     </fieldset>
-                    <p className="mt-5 text-xs leading-6 text-slate-500">나이스에 가져갈 기록은 먼저 작업로그에 저장하세요. <a href="https://chromewebstore.google.com/detail/forteacher-ai-neis-upload/kccpnhgkaombpfajdjgonenibmglpcmp?hl=ko" target="_blank" rel="noreferrer" className="underline underline-offset-4">크롬 확장 프로그램 설치</a></p>
+                    <p className="mt-5 text-xs leading-6 text-slate-500">{activeTabId !== "subject" && "나이스에 가져갈 기록은 먼저 작업로그에 저장하세요. "}<a href="https://chromewebstore.google.com/detail/forteacher-ai-neis-upload/kccpnhgkaombpfajdjgonenibmglpcmp?hl=ko" target="_blank" rel="noreferrer" className="underline underline-offset-4">크롬 확장 프로그램 설치</a></p>
                 </div>
             </main>
 
