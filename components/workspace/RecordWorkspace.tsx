@@ -36,6 +36,7 @@ import type { PolishCategory } from "@/lib/class-polish";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
 import { CreativeActivityWorkspace } from "@/components/workspace/CreativeActivityWorkspace";
 import { SubjectPlanUploadDialog } from "@/components/workspace/SubjectPlanUploadDialog";
+import { SubjectOverlapControl } from "@/components/workspace/SubjectOverlapControl";
 import { SubjectWorkspace } from "@/components/workspace/SubjectWorkspace";
 import type { SubjectRemarkDraft } from "@/components/workspace/SubjectRemarkLibrary";
 import { normalizeRemarkSubjectName, subjectRemarkLevels, type SubjectRemarkPhrases } from "@/lib/subject-remarks";
@@ -1741,6 +1742,17 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     ) : null;
 
     const workspaceLocked = isWorkLogLoading || logBusy || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId);
+    const overlapAction = activeTabId === "subject" ? (
+        <SubjectOverlapControl
+            key={`${userId}:${remarkSubjectId}:${workspaceVersion}`}
+            students={students}
+            setStudents={setStudents}
+            config={subjectConfig}
+            workLogId={requestedLogId || undefined}
+            disabled={workspaceLocked || isSubjectPlanImporting}
+            onPersist={nextStudents => saveWorkLog(true, nextStudents)}
+        />
+    ) : null;
     const planImportAction = activeTabId === "subject" ? (
         <>
             <Button type="button" variant="outline" onClick={() => { setPlanUploadError(""); setUploadOpen(true); }} disabled={workspaceLocked || isSubjectPlanImporting}
@@ -1861,7 +1873,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             <SubjectWorkspace
                             key={isSavedEditor ? requestedLogId : "subject-draft"}
                             savedEditor={isSavedEditor}
-                            polishAction={polishAction}
+                            polishAction={<>{polishAction}{overlapAction}</>}
                             planImportAction={planImportAction}
                             remarkDraft={subjectRemarkDraft}
                             setRemarkDraft={setSubjectRemarkDraft}

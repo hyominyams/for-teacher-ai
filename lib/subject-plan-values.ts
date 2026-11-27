@@ -1,3 +1,17 @@
+import type { AchievementLevel, SubjectAssessmentInfo } from "@/types";
+
+export const subjectAchievementLevels: readonly AchievementLevel[] = ["상", "중", "하"];
+
+export function getSubjectCriteriaForLevel({ criteria, criteriaLevels }: SubjectAssessmentInfo, level: AchievementLevel) {
+    const explicit = criteriaLevels?.[level]?.trim();
+    if (explicit) return explicit;
+
+    // Older records can store all levels together in the criteria text.
+    const sections = [...(criteria || "").matchAll(/(?:^|\n)[^\S\n]*([상중하])[^\S\n]*[):：-]([\s\S]*?)(?=\n[^\S\n]*[상중하][^\S\n]*[):：-]|$)/g)];
+    if (sections.length) return sections.find(section => section[1] === level)?.[2].trim() || "";
+    return criteria;
+}
+
 export type SchoolLevel = 'elementary' | 'middle' | 'high';
 export function normalizeSchoolLevel(value: unknown, fallback: unknown = 'elementary'): SchoolLevel {
     const read = (input: unknown): SchoolLevel | undefined => {

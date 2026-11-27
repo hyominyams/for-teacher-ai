@@ -3,6 +3,7 @@ import { assertEditableWorkLog, workLogFailure } from "@/lib/server/work-log-acc
 import { runRecordContinuation } from "@/lib/server/record-continuation";
 import { MAX_EXISTING_RECORD_CHARS, removeRecordEmoji } from "@/lib/record-generation";
 import { selectSubjectRemarkReferences, SUBJECT_REMARK_INSTRUCTIONS } from "@/lib/subject-remarks";
+import { getSubjectCriteriaForLevel, subjectAchievementLevels } from "@/lib/subject-plan-values";
 import type { AchievementLevel, SubjectAssessmentInfo } from "@/types";
 import { OpenAI } from "openai";
 import fs from "fs";
@@ -11,18 +12,6 @@ import path from "path";
 type StudentAssessment = {
     assessmentId: string;
     level?: string;
-};
-
-const ACHIEVEMENT_LEVELS = ["상", "중", "하"] as const;
-
-const getCriteriaForLevel = ({ criteria, criteriaLevels }: SubjectAssessmentInfo, level: AchievementLevel) => {
-    const explicit = criteriaLevels?.[level]?.trim();
-    if (explicit) return explicit;
-
-    // Older records can store the levels together in the criteria text.
-    const sections = [...(criteria || "").matchAll(/(?:^|\n)[^\S\n]*([상중하])[^\S\n]*[):：-]([\s\S]*?)(?=\n[^\S\n]*[상중하][^\S\n]*[):：-]|$)/g)];
-    if (sections.length) return sections.find((section) => section[1] === level)?.[2].trim() || "";
-    return criteria;
 };
 
 export const maxDuration = 90;
@@ -73,10 +62,10 @@ export async function POST(req: Request) {
 
                 const assessmentsText = ((assessments || []) as SubjectAssessmentInfo[]).flatMap((a) => {
                     const selectedLevel = ((studentAssessments || []) as StudentAssessment[]).find((sa) => sa.assessmentId === a.id)?.level;
-                    const studentLevel = ACHIEVEMENT_LEVELS.find((level) => level === selectedLevel);
+                    const studentLevel = subjectAchievementLevels.find((level) => level === selectedLevel);
                     if (!studentLevel) return [];
                     assessedLevels.add(studentLevel);
-                    const criteria = getCriteriaForLevel(a, studentLevel);
+                    const criteria = getSubjectCriteriaForLevel(a, studentLevel);
 
                     return `- 영역: ${a.area}
   - 성취기준: ${a.standard}

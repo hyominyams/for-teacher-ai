@@ -1,3 +1,10 @@
+export type RecordRevision = {
+    batchId: string;
+    createdAt: string;
+    before: string;
+    after: string;
+};
+
 export interface Student {
     id: number;
     name: string;
@@ -7,13 +14,9 @@ export interface Student {
     isGenerating: boolean;
     isEditable: boolean;
     selected: boolean;
-    // Original text is persisted with work_logs for the last three polish actions.
-    polishHistory?: Array<{
-        batchId: string;
-        createdAt: string;
-        before: string;
-        after: string;
-    }>;
+    // Original text is persisted with work_logs for the last three revisions of each kind.
+    polishHistory?: RecordRevision[];
+    subjectOverlapHistory?: RecordRevision[];
 
     // 창체활동 영역
     participatedEvents?: string[];
