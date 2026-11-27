@@ -298,7 +298,7 @@ export function SubjectOverlapControl({ students, setStudents, config, workLogId
                                     <ComparedText text={active.after} against={active.before} proposed />
                                 </section>
                             </div>
-                            {active.excluded && <p className="mt-3 text-sm text-amber-800 dark:text-amber-200">문장 구조, 숫자 또는 중복 검사에서 제외되어 원문을 유지합니다.</p>}
+                            {active.excluded && <p className="mt-3 text-sm text-amber-800 dark:text-amber-200">숫자가 달라졌거나 다른 학생 기록과 동일한 제안은 원문을 유지합니다.</p>}
                             {getStatus(active) === "stale" && <p className="mt-3 text-sm text-amber-800 dark:text-amber-200">검토 이후 원문이나 평가 자료가 바뀌었습니다. 새로 검토해주세요.</p>}
                             {(active.evidence.assessments.length > 0 || active.evidence.individualNote.trim()) && <details className="mt-3 rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-800">
                                 <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-200">평가 기준과 개별 특이사항 보기</summary>
