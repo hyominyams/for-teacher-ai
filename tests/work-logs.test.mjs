@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeWorkData, parseSavedLogInput, workLogCsv, workFingerprint, defaultWorkTitle, isUuid } from "../lib/work-logs.ts";
+import { normalizeWorkData, mergeSubjectDraftIntoSavedLog, parseSavedLogInput, workLogCsv, workFingerprint, defaultWorkTitle, isUuid } from "../lib/work-logs.ts";
 const id = "fa4971cd-2e54-41aa-a524-482e03c3729d";
 const raw = { students: [{ id: 1, aiResult: '첫째 결과, "인용"\n둘째 줄', isGenerating: true, selected: true, polishHistory: [{ before: "원문", after: "윤문", batchId: "b", createdAt: "2026-11-05" }] }, { id: 2, aiResult: "둘째 학생" }], studentCount: 2, charLimit: 200 };
 test("saved data clears transient flags but preserves result and polish originals", () => {
@@ -31,6 +31,17 @@ test("new working fields cannot modify an independent saved snapshot", () => {
     const saved = JSON.parse(JSON.stringify(normalizeWorkData(raw, "behavior")));
     const newDraft = normalizeWorkData({ ...raw, students: raw.students.map(s => ({ ...s, aiResult: "", selectedKeywords: [] })) }, "behavior");
     assert.equal(newDraft.students[0].aiResult, ""); assert.equal(saved.students[0].aiResult, raw.students[0].aiResult);
+});
+test("updating a subject project preserves other students and saved-only history", () => {
+    const saved = normalizeWorkData({ ...raw, legacyData: "보존" }, "subject");
+    const draft = normalizeWorkData({ students: [{ id: 1, aiResult: "수정된 기록" }] }, "subject");
+    const updated = mergeSubjectDraftIntoSavedLog(saved, draft);
+    assert.equal(updated.students[0].aiResult, "수정된 기록");
+    assert.equal(updated.students[0].polishHistory[0].before, "원문");
+    assert.deepEqual(updated.students[1], saved.students[1]);
+    assert.equal(updated.studentCount, 2);
+    assert.equal(updated.legacyData, "보존");
+    assert.equal(saved.students[0].aiResult, raw.students[0].aiResult);
 });
 test("CSV quotes commas, quotes and multiline text and includes category inputs", () => {
     const csv = workLogCsv({ category: "behavior", data: normalizeWorkData(raw, "behavior") });

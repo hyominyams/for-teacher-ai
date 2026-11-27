@@ -17,7 +17,7 @@ type Props = {
         copyTitle: string;
         onSaveCopy: (scope: SubjectCopyScope, title: string) => Promise<boolean>;
     };
-    savedCopyHref?: string;
+    savedSubjectHref?: string;
 };
 
 export function WorkLogSessionBar(p: Props) {
@@ -34,7 +34,9 @@ export function WorkLogSessionBar(p: Props) {
         : savingDraft || savingChanges ? Loader2 : savedDraft || (p.editing && !p.dirty) ? Check : Circle;
     const status = p.editing
         ? p.dirty ? p.saving ? "작업로그 저장 중…" : p.autoSavePaused ? "자동 저장 일시 중지" : "자동 저장 대기" : "저장된 내용과 같음"
-        : failed ? p.draftStatus : savingDraft ? "임시 저장 중…" : savedDraft ? "임시 저장됨" : "임시 작업 자동 저장";
+        : failed ? p.draftStatus
+            : subjectSave ? savingDraft ? "서버에 저장 중…" : savedDraft ? "서버에 저장됨" : "자동 저장"
+                : savingDraft ? "임시 저장 중…" : savedDraft ? "임시 저장됨" : "임시 작업 자동 저장";
     const closeCopy = () => {
         setCopyOpen(false);
         requestAnimationFrame(() => saveTrigger.current?.focus());
@@ -76,7 +78,7 @@ export function WorkLogSessionBar(p: Props) {
                             }}>
                             <DropdownMenuItem onSelect={p.onSave} disabled={p.editing && !p.title.trim()} className="items-start rounded-lg px-2.5 py-2">
                                 <Save aria-hidden="true" className="mt-0.5" />
-                                <span><span className="block font-semibold">변경사항 저장</span><span className="block text-xs leading-5 text-muted-foreground">{p.editing ? "열어 둔 작업로그에 반영" : "현재 교과의 임시 작업에 반영"}</span></span>
+                                <span><span className="block font-semibold">변경사항 저장</span><span className="block text-xs leading-5 text-muted-foreground">{p.editing ? "열어 둔 작업로그에 반영" : "기존 프로젝트의 해당 교과에 반영"}</span></span>
                             </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => { openCopyAfterMenu.current = true; }} className="items-start rounded-lg px-2.5 py-2">
                                 <FilePlus2 aria-hidden="true" className="mt-0.5" />
@@ -106,8 +108,8 @@ export function WorkLogSessionBar(p: Props) {
         </div>
         {subjectSave && <p className="mt-3 text-xs leading-5 text-slate-600 dark:text-slate-300">{p.editing
             ? "변경사항은 입력을 멈추면 약 1분 뒤 저장됩니다. 나이스로 바로 가져갈 때는 ‘변경사항 저장’을 눌러주세요."
-            : "나이스에 가져갈 교과는 ‘다른 이름으로 작업로그 저장’으로 저장하세요. 기존 저장본을 수정하려면 작업로그에서 해당 기록을 여세요."}</p>}
-        {p.message && <p role="status" className="mt-3 text-sm text-emerald-700 dark:text-emerald-400">{p.message}{p.savedCopyHref && <Link className="ml-2 font-semibold underline underline-offset-4" href={p.savedCopyHref} target="_blank" rel="noreferrer">저장본 열기</Link>}</p>}
+            : "‘변경사항 저장’을 누르면 기존 프로젝트에 반영됩니다. ‘다른 이름으로 작업로그 저장’으로 새 프로젝트나 교과 저장본을 만들 수 있습니다."}</p>}
+        {p.message && <p role="status" className="mt-3 text-sm text-emerald-700 dark:text-emerald-400">{p.message}{p.savedSubjectHref && <Link className="ml-2 font-semibold underline underline-offset-4" href={p.savedSubjectHref} target="_blank" rel="noreferrer">저장본 열기</Link>}</p>}
         {p.error && <p role="alert" className="mt-3 text-sm leading-6 text-red-700 dark:text-red-400">{p.error}</p>}
         {copyOpen && subjectSave && <SubjectWorkLogCopyDialog title={subjectSave.copyTitle} subjectName={subjectSave.subjectName}
             allSubjects={subjectSave.allSubjects} busy={!!p.saving} error={copyError} onClose={closeCopy}

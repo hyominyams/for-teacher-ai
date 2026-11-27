@@ -3,7 +3,7 @@ import type { Student, SubjectGlobalConfig } from "@/types";
 export const WORK_CATEGORIES = { behavior: "행동특성", subject: "학기말 종합의견", creative: "창의적 체험활동", docs: "문서" } as const;
 export type WorkCategory = keyof typeof WORK_CATEGORIES;
 export type WorkLogData = { students: Student[]; studentCount: number; charLimits: Record<string, number>; charLimit?: number; globalConfig?: SubjectGlobalConfig };
-export type SubjectProjectSummary = { id: string; title: string };
+export type SubjectProjectSummary = { id: string; title: string; source_project_id?: string | null };
 export type SavedWorkLog = {
     id: string; category: WorkCategory; title: string; revision: number; data: WorkLogData;
     source_scope_key: string; legacy_work_log_id?: string | null; student_count: number; completed_count: number;
@@ -11,6 +11,7 @@ export type SavedWorkLog = {
     project?: SubjectProjectSummary;
 };
 export type WorkLogSummary = Omit<SavedWorkLog, "data"> & { subject_name?: string | null };
+export type SubjectSaveTarget = WorkLogSummary & { project: SubjectProjectSummary };
 
 export function groupSavedWorkLogs(logs: WorkLogSummary[]) {
     const projects = new Map<string, { project: SubjectProjectSummary; logs: WorkLogSummary[] }>();
@@ -37,6 +38,17 @@ export function normalizeWorkData(raw: unknown, category: WorkCategory): WorkLog
         return { ...s, name: s.name || `${s.id}번 학생`, customKeywords: Array.isArray(s.customKeywords) ? s.customKeywords : [], selectedKeywords: Array.isArray(s.selectedKeywords) ? s.selectedKeywords : [], participatedEvents: Array.isArray(s.participatedEvents) ? s.participatedEvents : [], officerRole: s.officerRole || "임원아님", officerPeriod: s.officerPeriod || "", subjectData: s.subjectData || { assessments: [], individualNote: "" }, aiResult: typeof s.aiResult === "string" ? s.aiResult : "", isGenerating: false, isEditable: !!s.aiResult, selected: false };
     });
     return { ...data, ...(category === "subject" ? { globalConfig: { schoolLevel: "elementary", grade: "1", subjectName: "", assessments: [], ...data.globalConfig } } : {}), students, studentCount: students.length, charLimits: { behavior: 300, subject: 300, creative: 300, docs: 500, ...(data.charLimit ? { [category]: data.charLimit } : {}), ...data.charLimits } };
+}
+
+export function mergeSubjectDraftIntoSavedLog(saved: WorkLogData, draft: WorkLogData) {
+    const studentsById = new Map(saved.students.map(student => [student.id, student]));
+    for (const student of draft.students) studentsById.set(student.id, { ...studentsById.get(student.id), ...student });
+    return normalizeWorkData({
+        ...saved,
+        ...draft,
+        globalConfig: { ...saved.globalConfig, ...draft.globalConfig },
+        students: [...studentsById.values()].sort((a, b) => a.id - b.id),
+    }, "subject");
 }
 
 export function parseSavedLogInput(value: unknown, update = false) {

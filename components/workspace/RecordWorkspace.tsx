@@ -27,11 +27,12 @@ import { appendRecordText, type GenerationMode } from "@/lib/record-generation";
 import type { AchievementLevel, CriteriaLevels, ParsedSubjectPlanSubject, Student, SubjectAssessmentInfo, SubjectGlobalConfig } from "@/types";
 import { WorkLogSessionBar } from "@/components/workspace/WorkLogSessionBar";
 import type { SubjectCopyScope } from "@/components/workspace/SubjectWorkLogCopyDialog";
+import { SubjectSaveTargetDialog } from "@/components/workspace/SubjectSaveTargetDialog";
 import { WorkspaceButton, WorkspaceNumberSelect, workspaceToolButtonClassName } from "@/components/workspace/WorkspaceControls";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getSavedWorkLog, listSubjectProjectLogs, workLogRequest, WorkLogError } from "@/lib/work-log-client";
-import { defaultWorkTitle, normalizeWorkData, type WorkCategory, workFingerprint, workLogCsv, stableWorkJson } from "@/lib/work-logs";
-import type { SavedWorkLog, SubjectProjectSummary, WorkLogSummary } from "@/lib/work-logs";
+import { getSavedWorkLog, listSubjectProjectLogs, listSubjectSaveTargets, workLogRequest, WorkLogError } from "@/lib/work-log-client";
+import { defaultWorkTitle, mergeSubjectDraftIntoSavedLog, normalizeWorkData, type WorkCategory, workFingerprint, workLogCsv, stableWorkJson } from "@/lib/work-logs";
+import type { SavedWorkLog, SubjectProjectSummary, SubjectSaveTarget, WorkLogSummary } from "@/lib/work-logs";
 import { ClassPolishControl } from "@/components/workspace/ClassPolishControl";
 import type { PolishCategory } from "@/lib/class-polish";
 import { BehaviorWorkspace } from "@/components/workspace/BehaviorWorkspace";
@@ -277,7 +278,9 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     const [logBusy, setLogBusy] = useState(false);
     const [logMessage, setLogMessage] = useState("");
     const [logError, setLogError] = useState("");
-    const [savedSubjectCopy, setSavedSubjectCopy] = useState<{ id: string; epoch: number; message: string } | null>(null);
+    const [savedSubjectResult, setSavedSubjectResult] = useState<{ id: string; epoch: number; message: string } | null>(null);
+    const [subjectSaveTargets, setSubjectSaveTargets] = useState<{ epoch: number; targets: SubjectSaveTarget[] } | null>(null);
+    const subjectSavePreferences = useRef(new Map<string, { id: string; revision: number }>());
     const [loadedSavedId, setLoadedSavedId] = useState("");
     const saveQueue = useRef(Promise.resolve(true));
     const pendingSavedEditSince = useRef<number | null>(null);
@@ -436,7 +439,10 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         const run = async () => {
             const log = savedLogRef.current;
             if (epoch !== workEpoch.current || !log || log.id !== expectedId || log.archived_at) return false;
-            if (fingerprint === workFingerprint(normalizeWorkData(log.data, log.category), log.title)) return true;
+            if (fingerprint === workFingerprint(normalizeWorkData(log.data, log.category), log.title)) {
+                if (!automatic) setLogMessage("저장할 변경사항이 없습니다.");
+                return true;
+            }
             setLogBusy(true); setLogError("");
             try {
                 const updated = await workLogRequest<SavedWorkLog>(`/api/work-logs/${log.id}`, { method: "PUT", body: JSON.stringify({ id: log.id, category: log.category, revision: log.revision, title, data: snapshot }) });
@@ -691,7 +697,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         draftSaveQueue.current = task.then(() => {}, () => {});
         const { error } = await task;
         if (epoch === workEpoch.current) setDraftSaveStatus(error
-            ? activeTabId === "subject" ? "임시 저장 실패 · 변경사항 저장을 눌러주세요" : "임시 저장 실패 · 작업로그 저장을 눌러주세요"
+            ? activeTabId === "subject" ? "서버 저장 실패 · 변경사항 저장을 눌러주세요" : "임시 저장 실패 · 작업로그 저장을 눌러주세요"
             : "임시 작업 저장 완료");
 
         if (error) {
@@ -1714,6 +1720,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
     };
     const clearCurrentDraft = async () => {
         invalidateWorkspace(); lastSnapshot.current = null;
+        if (activeTabId === "subject") subjectSavePreferences.current.delete(JSON.stringify([userId, activeSubjectScopeKey]));
         const empty = createInitialStudents(studentCount), config = getDefaultSubjectConfig();
         setStudents(empty);
         if (activeTabId === "subject") { setSubjectConfig(config); setActiveSubjectProject(null); }
@@ -1722,15 +1729,59 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
         const saved = await saveWorkLog(true, empty, config, null);
         if (!saved) setLogError("저장본은 보존됐지만 새 작업의 임시 저장에 실패했습니다. 화면을 유지하고 다시 저장해주세요.");
     };
+    const subjectSaveKey = JSON.stringify([userId, activeSubjectScopeKey]);
+    const saveToSubjectProject = async (target: SubjectSaveTarget, epoch: number) => {
+        try {
+            const original = await getSavedWorkLog(target.id);
+            if (epoch !== workEpoch.current) return;
+            if (original.archived_at || original.project?.id !== target.project.id || original.source_scope_key !== activeSubjectScopeKey || original.category !== "subject" || original.revision !== target.revision) {
+                throw new WorkLogError("작업로그가 변경되었습니다. 다시 저장해 최신 프로젝트를 확인해주세요.", "WORK_LOG_CONFLICT", 409);
+            }
+            const data = mergeSubjectDraftIntoSavedLog(original.data, currentData);
+            const updated = workFingerprint(data, original.title) === workFingerprint(normalizeWorkData(original.data, "subject"), original.title)
+                ? original
+                : await workLogRequest<SavedWorkLog>(`/api/work-logs/${original.id}`, {
+                    method: "PUT", body: JSON.stringify({ category: "subject", revision: original.revision, title: original.title, data }),
+                });
+            if (epoch !== workEpoch.current) return;
+            subjectSavePreferences.current.set(subjectSaveKey, { id: updated.id, revision: updated.revision });
+            setSubjectSaveTargets(null);
+            const message = `‘${target.project.title}’ 작업로그에 저장했습니다.`;
+            setLogMessage(message);
+            setSavedSubjectResult({ id: updated.id, epoch, message });
+        } catch (error) {
+            if (epoch !== workEpoch.current) return;
+            if (error instanceof WorkLogError && [404, 409].includes(error.status)) {
+                setSubjectSaveTargets(null);
+                setLogError("작업로그가 변경되었습니다. ‘변경사항 저장’을 다시 눌러 최신 프로젝트를 확인해주세요.");
+            } else setLogError(error instanceof Error ? error.message : "프로젝트에 저장하지 못했습니다.");
+        }
+    };
     const saveSubjectChanges = async () => {
         if (isSavedEditor) { await persistSavedEdits(); return; }
         await runSubjectAction(async epoch => {
             setLogMessage("");
-            setSavedSubjectCopy(null);
-            const saved = await saveWorkLog(true);
-            if (epoch !== workEpoch.current) return;
-            if (saved) setLogMessage("현재 교과의 임시 작업을 저장했습니다.");
-            else setLogError("변경사항을 저장하지 못했습니다. 입력은 유지됩니다.");
+            setSavedSubjectResult(null);
+            try {
+                if (!await saveWorkLog(true)) { setLogError("변경사항을 저장하지 못했습니다. 입력은 유지됩니다."); return; }
+                const targets = await listSubjectSaveTargets(activeSubjectScopeKey);
+                if (epoch !== workEpoch.current) return;
+                if (!targets.length) {
+                    setLogMessage("현재 교과를 서버에 저장했습니다. 반영할 기존 프로젝트가 없습니다.");
+                    return;
+                }
+                const previous = subjectSavePreferences.current.get(subjectSaveKey);
+                const remembered = previous && targets.find(target => target.id === previous.id);
+                const exact = activeSubjectProject && targets.filter(target => target.project.id === activeSubjectProject.id);
+                const matching = activeSubjectProject && targets.filter(target => target.project.source_project_id === activeSubjectProject.id);
+                const target = previous
+                    ? remembered && remembered.revision === previous.revision ? remembered : undefined
+                    : exact?.length === 1 ? exact[0] : matching?.length === 1 ? matching[0] : undefined;
+                if (target) await saveToSubjectProject(target, epoch);
+                else setSubjectSaveTargets({ epoch, targets });
+            } catch (error) {
+                if (epoch === workEpoch.current) setLogError(error instanceof Error ? error.message : "저장할 프로젝트를 불러오지 못했습니다.");
+            }
         });
     };
     const saveSubjectCopy = async (scope: SubjectCopyScope, title: string, startNew = false) => {
@@ -1746,7 +1797,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
             subjectCopyAttempt.current = { fingerprint, id: crypto.randomUUID(), projectId: crypto.randomUUID() };
         }
         const { id, projectId } = subjectCopyAttempt.current;
-        setLogBusy(true); setLogError(""); setLogMessage(""); setSavedSubjectCopy(null);
+        setLogBusy(true); setLogError(""); setLogMessage(""); setSavedSubjectResult(null);
         try {
             let count = 1;
             if (scope === "all") {
@@ -1771,7 +1822,7 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                 setLogMessage("작업로그에 저장하고 새 작업을 시작했습니다.");
             } else {
                 const message = scope === "all" ? `‘${title}’에 ${count}개 과목을 저장했습니다.` : `현재 과목을 ‘${title}’에 저장했습니다.`;
-                setSavedSubjectCopy({ id, epoch, message });
+                setSavedSubjectResult({ id, epoch, message });
                 setLogMessage(message);
             }
             return true;
@@ -1892,8 +1943,8 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
                             copyTitle: savedEditorProject?.title || logTitle,
                             onSaveCopy: saveSubjectCopy,
                         } : undefined}
-                        savedCopyHref={savedSubjectCopy?.epoch === workEpoch.current && savedSubjectCopy.message === logMessage
-                            ? `/app/workspace/subject?log=${encodeURIComponent(savedSubjectCopy.id)}` : undefined}
+                        savedSubjectHref={savedSubjectResult?.epoch === workEpoch.current && savedSubjectResult.message === logMessage
+                            ? `/app/workspace/subject?log=${encodeURIComponent(savedSubjectResult.id)}` : undefined}
                         busy={logBusy || isWorkLogLoading || isSubjectPlanImporting || students.some(s => s.isGenerating) || (isSavedEditor && loadedSavedId !== requestedLogId)} dirty={editorDirty}
                         message={logMessage} error={logError} autoSavePaused={autoSavePaused} draftStatus={isSavedEditor ? undefined : draftSaveStatus} onSave={() => void saveSnapshot(false)} onSaveNew={() => void saveSnapshot(true)}
                         onReset={() => void startEmptyDraft()} onBack={() => void leaveEditor("/app/logs")}
@@ -2032,6 +2083,8 @@ function WorkspaceView({ category }: { category: WorkCategory }) {
 
             {uploadOpen && <SubjectPlanUploadDialog busy={isSubjectPlanImporting} error={planUploadError}
                 onFileChange={() => setPlanUploadError("")} onStart={handleSubjectPlanUpload} onClose={closePlanUpload} />}
+            {subjectSaveTargets?.epoch === workEpoch.current && <SubjectSaveTargetDialog targets={subjectSaveTargets.targets} busy={logBusy} error={logError}
+                onClose={() => setSubjectSaveTargets(null)} onSave={target => void runSubjectAction(epoch => saveToSubjectProject(target, epoch))} />}
             {subjectPlanImport && (
                 <div className="fixed inset-0 z-[10000] bg-slate-950/50 px-4 py-6 flex items-center justify-center">
                     <div ref={planDialogRef} role="dialog" aria-modal="true" aria-labelledby="plan-import-heading" onKeyDown={event => {

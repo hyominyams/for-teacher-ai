@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isUuid, isWorkCategory, parseSavedLogInput } from "@/lib/work-logs";
+import { isUuid, isWorkCategory, parseSavedLogInput, type SubjectProjectSummary } from "@/lib/work-logs";
 import { workLogFailure, workLogUser } from "@/lib/server/work-log-access";
 
 export async function GET(req: Request) {
@@ -9,29 +9,32 @@ export async function GET(req: Request) {
         const page = Math.min(100, Math.max(0, Math.floor(Number(params.get("page")) || 0)));
         const state = params.get("state") || "editable", category = params.get("category"), search = (params.get("q") || "").trim().slice(0, 100);
         const projectId = params.get("project");
+        const sourceScope = params.get("sourceScope");
         if (projectId !== null && !isUuid(projectId)) return NextResponse.json({ error: "프로젝트를 다시 선택해주세요." }, { status: 400 });
+        if (sourceScope !== null && (!sourceScope.trim() || sourceScope.length > 100)) return NextResponse.json({ error: "저장할 교과를 다시 선택해주세요." }, { status: 400 });
         const columns = "id,category,title,revision,source_scope_key,legacy_work_log_id,student_count,completed_count,archived_at,created_at,updated_at,subject_name:data->globalConfig->>subjectName";
         const table = client.from("saved_work_logs");
-        let query = (projectId
+        let query = (projectId || sourceScope
             ? table.select(`${columns},membership:subject_project_saved_logs!inner()` as const, { count: "exact" })
             : table.select(columns, { count: "exact" })).eq("user_id", user.id);
         query = state === "archived" ? query.not("archived_at", "is", null) : query.is("archived_at", null);
         if (projectId) query = query.eq("category", "subject").eq("membership.project_id", projectId);
         else if (isWorkCategory(category)) query = query.eq("category", category);
+        if (sourceScope) query = query.eq("category", "subject").eq("source_scope_key", sourceScope);
         if (search) query = query.ilike("title", `%${search.replace(/[\\%_]/g, "\\$&")}%`);
         const { data, count, error } = await query.order("updated_at", { ascending: false }).order("id", { ascending: false }).range(page * 30, page * 30 + 29);
         if (error) throw error;
         const logs = data || [];
         const subjectIds = logs.filter(log => log.category === "subject").map(log => log.id);
-        const projects = new Map<string, { id: string; title: string }>();
+        const projects = new Map<string, SubjectProjectSummary>();
         if (subjectIds.length > 0) {
             const links = await client.from("subject_project_saved_logs")
-                .select("saved_log_id,project:subject_projects(id,title)")
+                .select("saved_log_id,project:subject_projects(id,title,source_project_id)")
                 .eq("user_id", user.id).in("saved_log_id", subjectIds);
             if (links.error) throw links.error;
             for (const link of links.data || []) {
                 const project = Array.isArray(link.project) ? link.project[0] : link.project;
-                if (project) projects.set(link.saved_log_id, project);
+                if (project) projects.set(link.saved_log_id, sourceScope ? project : { id: project.id, title: project.title });
             }
         }
         return NextResponse.json({ logs: logs.map(log => ({ ...log, project: projects.get(log.id) })), total: count || 0 }, { headers: { "Cache-Control": "no-store" } });
